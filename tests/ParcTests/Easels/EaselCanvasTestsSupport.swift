@@ -180,9 +180,11 @@ enum EaselCanvasTestsSupport {
         let view = NSView()
         var approved = false
         var pending: (() -> Void)?
+        var replacements: [EaselDocument] = []
         func surface(for item: EaselItem) -> NSView? { item.kind == .browser ? view : nil }
         func synchronize(items: [EaselItem], selection: Set<UUID>, interacting: Bool) {}
         func prepareReplacement(_ next: EaselDocument, valid: @escaping () -> Bool, completion: @escaping (Bool) -> Void) {
+            replacements.append(next)
             pending = { [weak self] in completion(self?.approved == true && valid()) }
         }
     }

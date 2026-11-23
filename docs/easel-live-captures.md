@@ -83,7 +83,15 @@ security, capture-stop and crash owners. Selected-object input uses the existing
 single-selection canvas policy. The original screenshot remains immutable even
 when the live page navigates: navigation never rewrites capture provenance.
 Going back to the snapshot, deletion and Undo ask all original shared-document child
-owners to retire before committing. A refused close preserves live mode. Pending positioning is suspended during retirement or physical-window transfer and resumes only after settlement; an already positioned page keeps its current interaction state.
+owners to retire before committing. A refused close preserves live mode. In a
+multi-page Easel the check reads the whole document, so deleting or undoing on
+one page never closes a live page that stays on another.
+
+A board with any live page draws each object in its own layer around the native
+pages; a board without one paints everything itself. When the last live page
+leaves (deletion, Cut, Back to snapshot, Undo or Redo, on any page) or a first
+one arrives, the canvas repaints the whole board in that same step, so nothing
+waits for a zoom to come back. Pending positioning is suspended during retirement or physical-window transfer and resumes only after settlement; an already positioned page keeps its current interaction state.
 Cross-Profile moves retire these same children before the document moves; the
 destination owns fresh content in its destination Profile, never a rebound
 source renderer.

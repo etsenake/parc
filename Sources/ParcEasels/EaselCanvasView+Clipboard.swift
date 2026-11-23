@@ -26,7 +26,7 @@ extension EaselCanvasView {
         refuseLocked(selection)
         guard !doomed.isEmpty else { return false }
         let next = EaselArrange.dissolvingSingletonGroups(EaselDependents.removing(doomed, from: session.document))
-        prepareReplacement(next) { [weak self] in
+        prepareReplacement(session.merged(next)) { [weak self] in
             guard let self, self.withObjectMotion(.vanish, { self.commit("Delete objects", { $0 = next }) }) else { return }
             self.selection.subtract(doomed)
         }

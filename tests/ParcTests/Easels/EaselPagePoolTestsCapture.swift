@@ -135,4 +135,38 @@ struct EaselPagePoolTestsCapture {
         let asset = try #require(board.item.assetID)
         #expect(try board.session.assetData(asset) == Board.png)
     }
+
+    @MainActor @Test(arguments: [true, false])
+    func deletingACaptureWhileItLinesUpLeavesTheBoardPainted(_ lastLivePage: Bool) throws {
+        let board = try Board(.capture)
+        defer { board.close() }
+        let shape = EaselItem(kind: .rectangle, frame: .init(x: 600, y: 420, width: 60, height: 60), zIndex: 3)
+        try board.session.perform("Shape") { $0.items.append(shape) }
+        if !lastLivePage { _ = try board.appendWebpage() }
+        let (surface, engine, _) = try board.open()
+        board.select()
+        surface.needsLayout = true
+        surface.layoutSubtreeIfNeeded()
+        try #require(engine.positionRequests > 0)
+        let position = engine.positionRequests - 1
+        let status = try #require(captureStatus(in: surface))
+        #expect(!status.isHiddenOrHasHiddenAncestor)
+        board.canvas.wantsLayer = true
+        board.canvas.layoutSubtreeIfNeeded()
+        board.canvas.layer?.displayIfNeeded()
+        var painted = NSRect.null
+        board.canvas.onDrawOverlay = { dirty, _ in painted = painted.union(dirty) }
+        defer { board.canvas.onDrawOverlay = nil }
+        board.source.engine.allowsClose = true
+        #expect(board.canvas.deleteSelection())
+        #expect(engine.isClosed)
+        engine.reply(atPosition: position, success: true)
+        board.canvas.layoutSubtreeIfNeeded()
+        board.canvas.layer?.displayIfNeeded()
+        #expect(!board.session.document.items.contains { $0.id == board.item.id })
+        #expect(surface.superview == nil)
+        #expect(board.pool.entries[board.item.id] == nil)
+        #expect(board.canvas.usesObjectSurfaces != lastLivePage)
+        if lastLivePage { #expect(painted.contains(board.canvas.rect(shape))) }
+    }
 }

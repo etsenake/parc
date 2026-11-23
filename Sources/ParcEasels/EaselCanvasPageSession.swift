@@ -42,6 +42,8 @@ package final class EaselPageSession {
 
     func view(of document: EaselDocument) -> EaselDocument { EaselPages.view(document, page: page) }
 
+    func merged(_ view: EaselDocument) -> EaselDocument { EaselPages.merging(view, page: currentPage, into: base.document) }
+
     func perform(_ name: String, coalescing group: UUID? = nil, _ mutation: (inout EaselDocument) throws -> Void) throws {
         let page = currentPage
         try base.perform(name, coalescing: group ?? adoptedGroup) { document in
