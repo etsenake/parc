@@ -21,6 +21,7 @@
 #include "base/no_destructor.h"
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "video_overlay_window.h"
@@ -153,6 +154,9 @@ bool IsNativeDownloadDialogProfile(Profile& profile);
 gfx::NativeWindow PrepareNativeDownloadDialogParent(Profile& profile);
 bool IsNativeDownloadDialogParent(Profile& profile, gfx::NativeWindow window);
 namespace {
+NSString* LossyNSString(std::string_view value) {
+  return base::SysUTF16ToNSString(base::UTF8ToUTF16(value));
+}
 NSError* Error(NSString* message) {
   return [NSError errorWithDomain:@"org.parc.independent-engine"
                              code:1
@@ -439,16 +443,16 @@ switch (snapshot.state) {
 }
 return @{
   @"offTheRecord" : @(off_the_record),
-    @"id" : base::SysUTF8ToNSString(snapshot.guid),
+    @"id" : LossyNSString(snapshot.guid),
   @"profilePath" :
-      base::SysUTF8ToNSString(snapshot.profile_path.value()),
-  @"name" : base::SysUTF8ToNSString(snapshot.name),
-  @"path" : base::SysUTF8ToNSString(snapshot.path.value()),
-  @"sourceURL" : base::SysUTF8ToNSString(snapshot.url),
-  @"sourceDomain" : base::SysUTF8ToNSString(snapshot.source_domain),
-  @"mimeType" : base::SysUTF8ToNSString(snapshot.mime_type),
+      LossyNSString(snapshot.profile_path.value()),
+  @"name" : LossyNSString(snapshot.name),
+  @"path" : LossyNSString(snapshot.path.value()),
+  @"sourceURL" : LossyNSString(snapshot.url),
+  @"sourceDomain" : LossyNSString(snapshot.source_domain),
+  @"mimeType" : LossyNSString(snapshot.mime_type),
   @"timeRemaining" : @(snapshot.time_remaining_seconds),
-  @"itemIdentity" : base::SysUTF8ToNSString(snapshot.item_identity),
+  @"itemIdentity" : LossyNSString(snapshot.item_identity),
   @"startedAt" : @(snapshot.started_at),
   @"canOpen" : @(snapshot.can_open),
   @"canReveal" : @(snapshot.can_reveal),
@@ -2838,7 +2842,7 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
               }
               NSMutableArray<NSString*>* ids = [NSMutableArray array];
               for (const auto& snapshot : service->Snapshots()) {
-                [ids addObject:base::SysUTF8ToNSString(snapshot.guid)];
+                [ids addObject:parc::LossyNSString(snapshot.guid)];
               }
               reply([ids copy], nil);
             }, reply, profile->GetWeakPtr()));
@@ -3054,7 +3058,7 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
         }
         NSMutableArray<NSString*>* ids = [NSMutableArray array];
         for (const auto& snapshot : service->Snapshots())
-          [ids addObject:base::SysUTF8ToNSString(snapshot.guid)];
+          [ids addObject:parc::LossyNSString(snapshot.guid)];
         reply([ids copy], nil);
       }, weak, profile->GetWeakPtr(), [completion copy]));
 }
@@ -3186,7 +3190,7 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
         }
         NSMutableArray<NSString*>* ids = [NSMutableArray array];
         for (const auto& snapshot : service->Snapshots())
-          [ids addObject:base::SysUTF8ToNSString(snapshot.guid)];
+          [ids addObject:parc::LossyNSString(snapshot.guid)];
         reply([ids copy], nil);
       }, weak, profile->GetWeakPtr(), [completion copy]));
 }
