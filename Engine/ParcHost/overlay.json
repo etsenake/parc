@@ -4595,7 +4595,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "fec4fa8b0a8b14ff07c570bf759291b3919952445ddc273af6aac4b7a8bd5906",
+      "sha256": "6648a21b261724914d24ed0dc749242eb25253fa9ef7afdafdef4b6347e3d7ec",
       "files": [
         {
           "target": "components/cdm/renderer/external_clear_key_key_system_info.cc",
@@ -5170,7 +5170,7 @@
         {
           "target": "third_party/blink/renderer/modules/remoteplayback/remote_playback.cc",
           "before_sha256": "8044ef2050948bd5f021f32b6643044ca209717de6cd4ddf5e3fdcaac9bcceeb",
-          "after_sha256": "653f6c9e7ac0a7da0da3d18e9898834c746789e7b4fa5812b04fc54b47290df4"
+          "after_sha256": "4205e13c9f5e5e51f838a5c17c3225c92d920c0818bdf6a20cb31449d5ad5f98"
         },
         {
           "target": "media/base/audio_renderer.h",

@@ -8748,9 +8748,9 @@
  #if !BUILDFLAG(IS_ANDROID)
    media_element_->Play();
 -  media_element_->GetWebMediaPlayer()->RequestMediaRemoting();
-+  if (!parc_air_play_->TakeRemotingRequestedWhileFrozen()) {
-+    media_element_->GetWebMediaPlayer()->RequestMediaRemoting();
-+  }
++  WebMediaPlayer* player = media_element_->GetWebMediaPlayer();
++  if (!parc_air_play_->TakeRemotingRequestedWhileFrozen() && player)
++    player->RequestMediaRemoting();
  #endif
 -
 +
