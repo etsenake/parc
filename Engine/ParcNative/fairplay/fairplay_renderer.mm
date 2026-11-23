@@ -27,51 +27,28 @@
 using parc::fairplay::FairPlayRenderer;
 using parc::fairplay::PostTask;
 
-// WebKit's SourceBufferPrivateAVFObjC::enqueueSampleBuffer, before the
-// readyForDisplay notification became public in macOS 14.4.
 @interface AVSampleBufferDisplayLayer (ParcPrerollDecode)
 - (void)prerollDecodeWithCompletionHandler:(void (^)(BOOL success))handler;
 @end
 
-// Sample attachment keys. CoreMedia exports these strings without naming
-// them in its headers; they are what AVStreamDataParser attaches to protected
-// samples (and what WebKit writes when it rebuilds protected samples in its GPU
-// process, CMUtilities.mm).
-// kCMSampleAttachmentKey_CryptorInitializationVector (exported, no header).
 static const CFStringRef kCryptorIV = CFSTR("CryptorIV");
-// Sum of the sample's clear bytes; AVStreamDataParser sets it with the
-// subsample data.
 static const CFStringRef kBytesOfClearDataCount = CFSTR("BytesOfClearDataCount");
 
 @interface PCFairPlayRendererObserver : NSObject
 - (instancetype)initWithHandler:(std::function<void(NSString*)>)handler;
 @end
 
-// The layer the compositor places (display_layer()). It holds the display
-// layer, and while a replacement joins the key session (SetCdm after media
-// was processed) the outgoing one above it, each filling its bounds.
 @interface PCFairPlayVideoHost : CALayer
 @end
 
 namespace parc::fairplay {
 namespace {
 
-// WebKit's MediaSource::monitorSourceBuffers: HAVE_ENOUGH_DATA once the
-// buffered ranges hold 3 s past the current time.
 constexpr double kEnoughAheadSeconds = 3;
-// How far past the clock samples held for a key are taken, a little beyond
-// kEnoughAheadSeconds so held data can reach it.
 constexpr double kHeldAheadSeconds = 4;
-// The stall boundary is armed once the clock is this close to it; the clock
-// observer polls every 0.1 s.
 constexpr double kStallArmSeconds = 0.25;
-// How far ahead of the clock an audio renderer replacing another starts: its
-// first sample must reach it before the clock does (ReplaceRenderers).
 constexpr double kAudioHandOffLeadSeconds = 0.25;
-// SetPlaybackRateAt: how far past its start a held clock may join the line.
 constexpr double kLateAnchorSeconds = 0.02;
-// Video presentation times kept for the upcoming lower bound (EnqueueVideo);
-// WebKit's TrackBuffer looks as far.
 constexpr size_t kUpcomingWindow = 16;
 
 class ScopedFormat {
@@ -93,16 +70,11 @@ class ScopedFormat {
   CMFormatDescriptionRef format_ = nullptr;
 };
 
-// Serializes stopping a renderer's media-data request between the owner
-// sequence and the request block. |current| names the live request; the
-// owner bumps it whenever it stops or re-arms, so a block from an older
-// request never stops a newer one.
 struct RequestGate {
   std::mutex mutex;
   uint64_t current = 0;
 };
 
-// The system default output device's Core Audio UID, nil if unavailable.
 NSString* DefaultOutputDeviceUid() {
   AudioObjectPropertyAddress address = {kAudioHardwarePropertyDefaultOutputDevice,
                                         kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
@@ -121,8 +93,6 @@ NSString* DefaultOutputDeviceUid() {
   return (__bridge_transfer NSString*)uid;
 }
 
-// Whether Core Audio still has a device with |uid|: an unplugged headset or a
-// disconnected Bluetooth device leaves the list.
 bool AudioDeviceExists(NSString* uid) {
   AudioObjectPropertyAddress address = {kAudioHardwarePropertyTranslateUIDToDevice,
                                         kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
@@ -134,7 +104,6 @@ bool AudioDeviceExists(NSString* uid) {
          device != kAudioObjectUnknown;
 }
 
-// The system's device list and default output device.
 constexpr AudioObjectPropertyAddress kAudioDeviceChanges[] = {
     {kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain},
     {kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain},
@@ -205,12 +174,6 @@ bool SampleEntryMatches(VideoCodec codec, uint32_t entry) {
   return false;
 }
 
-// The entry type CoreMedia decodes. hev1, avc3 and dvhe mark parameter sets
-// that travel in-band, but VideoToolbox configures its decoder only from the
-// format description's record: AVSampleBufferDisplayLayer rejects every frame
-// of an 'hev1' description (-12906) that it decodes as 'hvc1'. Chromium
-// re-inserts parameter sets before keyframes anyway, so the out-of-band type
-// is always used (and the record built from in-band sets when it has none).
 uint32_t DecodableSampleEntry(uint32_t entry) {
   if (entry == FourCC('h', 'e', 'v', '1')) return FourCC('h', 'v', 'c', '1');
   if (entry == FourCC('a', 'v', 'c', '3')) return FourCC('a', 'v', 'c', '1');
@@ -218,8 +181,6 @@ uint32_t DecodableSampleEntry(uint32_t entry) {
   return entry;
 }
 
-// Whether a decoder configuration record carries what VideoToolbox needs
-// (SPS for avcC; VPS, SPS and PPS for hvcC; any av1C or vpcC).
 bool RecordHasParameterSets(VideoCodec codec, const std::vector<uint8_t>& record) {
   if (codec == VideoCodec::kAV1 || codec == VideoCodec::kVP9) {
     return !record.empty();
@@ -246,7 +207,6 @@ bool RecordHasParameterSets(VideoCodec codec, const std::vector<uint8_t>& record
   return vps && sps && pps;
 }
 
-// The parameter set NAL units in an avcC (SPS, PPS) or hvcC (VPS, SPS, PPS).
 std::vector<std::vector<uint8_t>> ParameterSetsInRecord(VideoCodec codec, const std::vector<uint8_t>& record) {
   std::vector<std::vector<uint8_t>> sets;
   auto take = [&](size_t* pos) {
@@ -279,13 +239,12 @@ std::vector<std::vector<uint8_t>> ParameterSetsInRecord(VideoCodec codec, const 
     for (uint32_t k = 0; k < count; ++k) {
       size_t before = sets.size();
       if (!take(&pos)) return sets;
-      if (type < 32 || type > 34) sets.resize(before);  // Only VPS/SPS/PPS.
+      if (type < 32 || type > 34) sets.resize(before);
     }
   }
   return sets;
 }
 
-// Parameter set NAL units in a length-prefixed access unit.
 std::vector<std::vector<uint8_t>> ParameterSetsInSample(VideoCodec codec, const uint8_t* data, size_t size,
                                                         size_t length_size) {
   const bool avc = codec == VideoCodec::kH264;
@@ -328,17 +287,13 @@ bool IsTransportStreamKeyId(const std::vector<uint8_t>& key_id) {
                     std::end(kTransportStreamKeyId) - 1);
 }
 
-// The format type AVStreamDataParser gives an MPEG-2 TS SAMPLE-AES stream:
-// zavc for H.264, and for audio the PMT's audio_type: zaac, zach or zacp as
-// the AAC setup data signals AAC, HE-AAC or HE-AACv2, zac3 or zec3. 0 for
-// codecs TS SAMPLE-AES doesn't carry.
 uint32_t TransportStreamFormatType(VideoCodec codec) {
   return codec == VideoCodec::kH264 ? FourCC('z', 'a', 'v', 'c') : 0;
 }
 
 uint32_t TransportStreamFormatType(const AudioConfig& config) {
   if (config.ts_audio_type)
-    return config.ts_audio_type;  // AVStreamDataParser uses the PMT declaration.
+    return config.ts_audio_type;
   switch (config.codec) {
     case AudioCodec::kAAC: {
       const int type = AacSignaledObjectType(config.extra_data);
@@ -353,8 +308,6 @@ uint32_t TransportStreamFormatType(const AudioConfig& config) {
   }
 }
 
-// The clear format's extensions plus the TransportStreamEncryptionInitData
-// extension that marks the format as SAMPLE-AES protected.
 NSDictionary* TransportStreamExtensions(CMFormatDescriptionRef clear, uint32_t type, uint32_t media_type) {
   NSMutableDictionary* extensions =
       [(__bridge NSDictionary*)CMFormatDescriptionGetExtensions(clear) mutableCopy] ?: [NSMutableDictionary dictionary];
@@ -363,7 +316,7 @@ NSDictionary* TransportStreamExtensions(CMFormatDescriptionRef clear, uint32_t t
   return extensions;
 }
 
-}  // namespace
+}
 
 class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRenderer::Impl> {
  public:
@@ -426,8 +379,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     if (!video && !audio) {
       return Result::Error(Exception::kTypeError, "no stream to render");
     }
-    // Each attempt reports its own natural size; a failed attempt's queued
-    // report is dropped (ReportNaturalSize checks the attempt).
     ++initialize_attempt_;
     natural_width_ = 0;
     natural_height_ = 0;
@@ -513,11 +464,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     return JoinCdm(layer_);
   }
 
-  // As AudioVideoRendererAVFObjC::addTrack does for a video track selected
-  // while another plays: the renderer is flushed, keeping its picture, and
-  // the clock waits for a frame of the new track (flushVideo, then
-  // updateAllRenderersHaveAvailableSamples). The new track's samples before
-  // the current time are decoded, not shown.
   Result ReplaceVideo(const VideoConfig& config) {
     if (!video_renderer_) {
       return Result::Error(Exception::kInvalidState, "no video stream");
@@ -533,11 +479,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     video_upcoming_.clear();
     [outgoing_video_renderer_ flush];
     RemoveSizeObservers();
-    // A size not shown yet waits for the new track's first sample.
     size_change_pending_ = natural_width_ != reported_width_ || natural_height_ != reported_height_;
     video_ = Stream();
     video_.start = GetMediaTime().InSeconds();
-    // The old track's samples held for a key went with it.
     const auto streams = Streams();
     if (waiting_reported_ && std::none_of(streams.begin(), streams.end(), [this](StreamId stream) {
           return StreamFor(stream) && !StreamFor(stream)->held.empty();
@@ -546,7 +490,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
     ResetVideoFrameAvailability();
     video_reset_pending_ = true;
-    // The end moves to the new track's.
     RemoveEndObserver();
     UpdateBuffering();
     NotifyNeedData(StreamType::kVideo);
@@ -579,11 +522,12 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
     AVSampleBufferAudioRenderer* renderer = audio->renderer;
     StopRequest({StreamType::kAudio, track});
-    [renderer flush];
-    [synchronizer_ removeRenderer:renderer atTime:CMTimebaseGetTime(synchronizer_.timebase) completionHandler:nil];
-    StopObserving(renderer);
+    if (renderer) {
+      [renderer flush];
+      [synchronizer_ removeRenderer:renderer atTime:CMTimebaseGetTime(synchronizer_.timebase) completionHandler:nil];
+      StopObserving(renderer);
+    }
     if (auto outgoing = outgoing_audio_.find(track); outgoing != outgoing_audio_.end()) {
-      // Silent until it leaves at the time it was given.
       for (AVSampleBufferAudioRenderer* leaving : outgoing->second) {
         [leaving flush];
       }
@@ -597,19 +541,14 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       recipients_.erase(recipient);
     }
     audio_.erase(track);
-    // The end moves with the streams that remain.
     RemoveEndObserver();
     UpdateBuffering();
     ScheduleEndIfComplete();
   }
 
-  // A stream added during playback: the clock waits for its samples
-  // (AudioVideoRendererAVFObjC::updateAllRenderersHaveAvailableSamples) and
-  // HAVE_ENOUGH for its data; samples before the current time aren't shown.
   void OnStreamAdded(StreamId stream) {
     StreamFor(stream)->start = GetMediaTime().InSeconds();
     renderers_have_samples_ = false;
-    // The end moves to the new stream's, unless it was reported already.
     RemoveEndObserver();
     if (std::exchange(have_enough_, false)) {
       PostInGeneration([](Impl& impl) { impl.client_->OnBufferingStateChange(false); });
@@ -618,8 +557,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     NotifyNeedData(stream);
   }
 
-  // A renderer created after AttachCdm joins its key session: it hasn't
-  // processed media yet, so AVFoundation takes it.
   Result JoinCdm(id renderer) {
     if (!cdm_) {
       return Result::Ok();
@@ -636,8 +573,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   }
 
   Result CreateVideoRenderer() {
-    // The owner sequence may have no run loop to commit an implicit
-    // transaction, so the layer's setup is committed explicitly.
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     if (!host_) {
@@ -645,15 +580,10 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
     layer_ = [AVSampleBufferDisplayLayer layer];
     video_upcoming_.clear();
-    // What CARendererLayerTree::FillProtectedLayer gives a display layer it
-    // places itself; it places the host instead. cc lays the video out at its
-    // display aspect ratio, protected video is never captured, and the flip is
-    // Chromium's workaround for transformed HDR content (crbug.com/398425794).
     layer_.videoGravity = AVLayerVideoGravityResize;
     layer_.preventsCapture = YES;
     layer_.geometryFlipped = YES;
     layer_.frame = host_.bounds;
-    // Below an outgoing layer, which covers it until it has a frame.
     [host_ insertSublayer:layer_ atIndex:0];
     [host_ setNeedsLayout];
     [CATransaction commit];
@@ -692,7 +622,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       impl.ResumeVideoDecoding();
       impl.CheckRendererStatus();
     });
-    // readyForDisplay isn't key-value observable (VideoFrameAvailable).
     if (UsesDisplayReadinessNotification()) {
       if (@available(macOS 14.4, *)) {
         AddNotification(center, AVSampleBufferDisplayLayerReadyForDisplayDidChangeNotification, layer_,
@@ -702,8 +631,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     return Result::Ok();
   }
 
-  // With the volume, mute, pitch and output device the others have
-  // (AudioVideoRendererAVFObjC::addAudioRenderer).
   Result CreateAudioRenderer(uint32_t track) {
     AudioTrack& audio = audio_[track];
     audio.renderer = [[AVSampleBufferAudioRenderer alloc] init];
@@ -719,8 +646,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
     Observe(audio.renderer, @"status");
     Observe(audio.renderer, @"error");
-    // The flush time belongs to the timeline of the moment AVFoundation
-    // posts it, so the generation is read then, not when the task runs.
     std::weak_ptr<Impl> weak = weak_from_this();
     std::shared_ptr<const PostTask> poster = poster_;
     std::shared_ptr<std::atomic<uint64_t>> flushes = flush_count_;
@@ -743,11 +668,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     return Result::Ok();
   }
 
-  // -addRenderer: throws for a renderer AVFoundation couldn't set up (an
-  // AVSampleBufferAudioRenderer is invalid when Core Audio's services are out
-  // of reach, as in a sandbox that denies them). Initialize then fails and
-  // leaves the renderer uninitialized instead of taking the process down; a
-  // stream added later fails alone.
   Result AddToSynchronizer(id<AVQueuedSampleBufferRendering> renderer, const char* kind) {
     NSString* reason = nil;
     @try {
@@ -763,8 +683,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   }
 
   void AbandonInitialize() {
-    // Renderers go first, so Shutdown sends nothing more to an invalid one;
-    // it still removes what was observed through its own records.
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     [layer_ removeFromSuperlayer];
@@ -774,7 +692,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     for (auto& [track, audio] : audio_) {
       audio.renderer = nil;
     }
-    // A CDM set before Initialize waits for the next attempt.
     FairPlayCdm* pending_cdm = pending_cdm_;
     Shutdown();
     pending_cdm_ = pending_cdm;
@@ -785,15 +702,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
   }
 
-  // The renderers join the key system's AVContentKeySession as content key
-  // recipients. AVSampleBufferAttachContentKey would attach keys per sample
-  // instead, but on macOS it needs the private
-  // com.apple.private.coremedia.allow-fps-attachment entitlement (WebKit's GPU
-  // process has it; other processes get -11836 <- -12161, "not authorized").
-  //
-  // Chromium's pipeline calls SetCdm before Initialize when MediaKeys were
-  // attached first (the usual EME order); the CDM is then kept and attached
-  // when Initialize creates the renderers.
   Result SetCdm(FairPlayCdm* cdm) {
     Result result = Result::Ok();
     if (!synchronizer_) {
@@ -802,7 +710,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       result = AttachCdm(cdm);
     }
     if (result.ok() && cdm && cdm_detached_) {
-      // WebKit's setCDMInstance then attemptToDecrypt: the held samples go.
       cdm_detached_ = false;
       if (cdm_) {
         OnKeysChanged();
@@ -813,15 +720,10 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
 
   void DetachCdm() { cdm_detached_ = true; }
 
-  // Joins every renderer to |cdm|'s key session; cdm_ is set only once every
-  // recipient joined. A null |cdm| detaches.
   Result AttachCdm(FairPlayCdm* cdm) {
     if (cdm == cdm_) {
       return Result::Ok();
     }
-    // A recipient can't join another key session once it left one, so a new
-    // CDM always takes new renderers; the outgoing ones keep the old CDM's
-    // keys until they leave (ReleaseOutgoingRecipients).
     const bool replacing = cdm && cdm_;
     if (cdm_) {
       cdm_->RemoveKeysChangedObserver(observer_id_);
@@ -897,17 +799,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     return Result::Ok();
   }
 
-  // AVFoundation takes content key recipients only before they process media,
-  // and Safari attaches each sample's key itself instead
-  // (AVSampleBufferAttachContentKey, a private entitlement). So renderers that
-  // played without a CDM hand over to new ones that join its key session
-  // first, in the same synchronizer, as WebKit's stageVideoRenderer swaps
-  // video renderers on one timeline: the clock and the page see nothing. The
-  // outgoing display layer stays above its replacement, showing its picture,
-  // until the replacement has a frame (RetireOutgoingLayer); each outgoing
-  // audio renderer plays on until the first sample replayed into the new one
-  // (Replay). Nothing is enqueued into the new renderers before AttachCdm
-  // joins them.
   Result ReplaceRenderers() {
     for (StreamId stream : Streams()) {
       StopRequest(stream);
@@ -919,8 +810,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       StopObserving(video_renderer_);
       StopObserving(layer_);
       if (outgoing_layer_ && !LayerHasFrame()) {
-        // An earlier hand-off's layer has no frame yet: it goes, and the one
-        // still showing the picture stays above the new one.
         RemoveLayer(layer_, video_renderer_);
       } else {
         RetireOutgoingLayer();
@@ -949,10 +838,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     return result;
   }
 
-  // Feeds the replacements what the outgoing renderers hold (see
-  // ReplaceRenderers): video from the last keyframe at or before the clock,
-  // hidden up to it; audio from the first sample kAudioHandOffLeadSeconds
-  // ahead, where the outgoing renderer leaves the synchronizer.
   void Replay() {
     const double now = GetMediaTime().InSeconds();
     if (video_renderer_) {
@@ -978,13 +863,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     std::map<uint32_t, double> leaves;
     for (auto& [track, audio] : audio_) {
       Stream& state = audio.stream;
-      // After an earlier hand-off's outgoing renderer leaves, so no stretch
-      // plays twice.
       auto earlier = audio_outgoing_end_.find(track);
       const double from = std::max(now + kAudioHandOffLeadSeconds,
                                    earlier == audio_outgoing_end_.end() ? now : earlier->second);
-      // One that ran dry still leaves only once the new one plays: taking the
-      // synchronizer's last audio renderer away first moves its clock back.
       double leave = std::max(from, state.enqueued_end);
       bool replaying = false;
       state.queued_end = -std::numeric_limits<double>::infinity();
@@ -1005,7 +886,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
         ++status_.redelivered;
       }
       leaves[track] = leave;
-      // What the outgoing renderer plays: until it leaves, or its last sample.
       audio_outgoing_end_[track] = std::min(leave, state.enqueued_end);
     }
     for (auto& [track, renderer] : std::exchange(leaving_audio_, {})) {
@@ -1013,8 +893,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
   }
 
-  // An outgoing audio renderer leaves the synchronizer at |leave| on its
-  // timeline, as WebKit's removeRendererFromSynchronizerIfNeeded removes one.
   void RetireOutgoingAudio(uint32_t track, AVSampleBufferAudioRenderer* renderer, double leave) {
     std::weak_ptr<Impl> weak = weak_from_this();
     std::shared_ptr<const PostTask> poster = poster_;
@@ -1032,16 +910,12 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
                 }];
   }
 
-  // A hand-off that failed: the renderers it replaced leave at once.
   void RetireLeavingAudio(double now) {
     for (auto& [track, renderer] : std::exchange(leaving_audio_, {})) {
       RetireOutgoingAudio(track, renderer, now);
     }
   }
 
-  // Detaches outgoing renderers from the key session of the CDM they kept
-  // (every one when |renderer| is nil); the CDM's owner keeps it alive for
-  // this renderer (FairPlayRendererAdapter::SetCdm).
   void ReleaseOutgoingRecipients(id renderer) {
     for (auto it = outgoing_recipients_.begin(); it != outgoing_recipients_.end();) {
       if (!renderer || it->second == renderer) {
@@ -1075,8 +949,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     [CATransaction commit];
   }
 
-  // The replacement display layer has a frame: the outgoing one above it
-  // leaves, with its counts kept for LoadVideoMetrics.
   void RetireOutgoingLayer() {
     if (!outgoing_layer_) {
       return;
@@ -1084,13 +956,11 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     AVSampleBufferDisplayLayer* layer = std::exchange(outgoing_layer_, nil);
     RemoveLayer(layer, std::exchange(outgoing_video_renderer_, nil));
     if (@available(macOS 14.4, *)) {
-      // Frames replayed into the new layer were counted by the outgoing one
-      // too (most of them; never below zero).
       const int64_t replayed = static_cast<int64_t>(std::exchange(video_replayed_, 0));
       std::weak_ptr<Impl> weak = weak_from_this();
       std::shared_ptr<const PostTask> poster = poster_;
       [layer.sampleBufferRenderer loadVideoPerformanceMetricsWithCompletionHandler:^(AVVideoPerformanceMetrics* metrics) {
-        (void)layer;  // Kept until the answer.
+        (void)layer;
         if (!metrics) {
           return;
         }
@@ -1114,10 +984,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
   }
 
-  // A new decoder config mid-stream (Chromium's DemuxerStream kConfigChanged,
-  // also a new codec after MSE changeType) for the samples enqueued from now
-  // on. Clear and protected samples may follow either way: each sample's
-  // DecryptInfo picks its format, as with clear lead.
   Result Reconfigure(const VideoConfig& config) {
     if (!video_renderer_) {
       return Result::Error(Exception::kInvalidState, "no video stream");
@@ -1160,16 +1026,11 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     if (!renderer || state->end_of_stream) {
       return false;
     }
-    // Samples held for a key queue up to kHeldAheadSeconds past the clock,
-    // as WebKit keeps taking samples into its blocked queue, so held data
-    // counts towards HAVE_ENOUGH (UpdateBuffering).
     if (!state->held.empty()) {
       return state->given_end - GetMediaTime().InSeconds() < kHeldAheadSeconds;
     }
     const bool ready = renderer.readyForMoreMediaData;
     if (!ready) {
-      // Capacity can turn false between Enqueue's check and the caller's
-      // next read. Register at the check that actually stops the producer.
       ArmRequest(stream);
     }
     return ready;
@@ -1183,8 +1044,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     Stream& state = *StreamFor(stream);
     if (stream.type == StreamType::kAudio && sample.duration.IsValid() &&
         sample.pts.InSeconds() + sample.duration.InSeconds() <= state.start) {
-      // Entirely before the start time: dropped, as Chromium's audio renderer
-      // discards preroll before its start timestamp.
       return EnqueueResult::kEnqueued;
     }
     Held held;
@@ -1232,18 +1091,10 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     state.end_of_stream = true;
     StopRequest(stream);
     state.armed = false;
-    // A stream that ends before AVFoundation considers it sufficient (a short
-    // clip, the last segment) counts as enough from here on, once none of its
-    // samples wait for a key.
     UpdateBuffering();
     ScheduleEndIfComplete();
   }
 
-  // The clock stays at |time| until HAVE_ENOUGH and every renderer has
-  // samples to play (UpdateClock), whatever rate is set meanwhile: Chromium's
-  // CompleteSeek calls StartPlayingFrom and SetPlaybackRate in one task, and
-  // RendererImpl starts its time source only on HAVE_ENOUGH. The requested
-  // rate is kept and applied then.
   void StartPlayingFrom(MediaTime time) {
     start_time_ = time;
     anchor_.reset();
@@ -1252,11 +1103,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     ended_ = false;
     have_enough_ = false;
     renderers_have_samples_ = false;
-    // WebKit's flushVideo: after a start or seek no video frame is available
-    // until one decodes at the new time, and the clock waits for it
-    // (updateAllRenderersHaveAvailableSamples). Releasing it on enqueued data
-    // alone starts the clock while decoding still runs from the keyframe
-    // before |time|, so the first frames arrive late and are dropped.
     ResetVideoFrameAvailability();
     video_reset_pending_ = video_renderer_ != nil;
     clock_held_ = true;
@@ -1275,15 +1121,10 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
 
   void SetPlaybackRate(double rate) {
     anchor_.reset();
-    // Playing by itself: a SetPlaybackRateAt still on its way from before
-    // (another pipe) no longer applies.
     follows_ = false;
     SetRate(rate);
   }
 
-  // WebKit's AudioVideoRendererAVFObjC::setRateAtHostTime: the synchronizer
-  // is set so its clock reads |time| at the host time, as another renderer's
-  // does, starting early or catching up as needed.
   bool SetPlaybackRateAt(double rate, MediaTime time, int64_t host_time_us) {
     if (!follows_) {
       return false;
@@ -1301,9 +1142,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
   }
 
-  // The requested rate, on the anchored line if one is pending. Before the
-  // clock first ran, a line already past the start time (ready too late to
-  // take over on that clock) is left: the renderer plays from its start.
   void RunClock() {
     std::optional<Anchor> anchor = std::exchange(anchor_, std::nullopt);
     if (anchor && !clock_ran_ && status_.rate > 0) {
@@ -1327,11 +1165,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     UpdatePitchAlgorithm();
   }
 
-  // WebKit's AudioVideoRendererAVFObjC (setRate, addAudioRenderer,
-  // setPreservesPitchAndCorrectionAlgorithm) with MediaSessionManagerCocoa::
-  // audioTimePitchAlgorithmForMediaPlayerPitchCorrectionAlgorithm: Varispeed
-  // at the requested rate 0 or 1 or without pitch preservation, else
-  // Spectral. The SDK's default (TimeDomain) would apply otherwise.
   void UpdatePitchAlgorithm() {
     const float rate = status_.rate;
     NSString* algorithm = (!preserves_pitch_ || rate == 0 || rate == 1)
@@ -1357,7 +1190,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
   }
 
-  // Every audio renderer still playing, outgoing ones included.
   std::vector<AVSampleBufferAudioRenderer*> AudioRenderers() const {
     std::vector<AVSampleBufferAudioRenderer*> renderers;
     for (const auto& [track, audio] : audio_) {
@@ -1368,14 +1200,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
     return renderers;
   }
-  // AVSampleBufferAudioRenderer throws on a nil device ID, so once a device
-  // was named the renderers stay pinned to one, and "the system default" is
-  // the default device's UID, followed as it changes. Kept for audio
-  // renderers made later, as AudioVideoRendererAVFObjC::setOutputDeviceId
-  // keeps m_audioOutputDeviceId.
   Result SetAudioOutputDevice(const std::string& unique_id) {
     if (unique_id.empty() && !output_device_uid_) {
-      return Result::Ok();  // Still following the system default.
+      return Result::Ok();
     }
     NSString* uid = unique_id.empty() ? DefaultOutputDeviceUid() : @(unique_id.c_str());
     if (!uid.length) {
@@ -1384,7 +1211,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     follows_default_output_ = unique_id.empty();
     RouteAudio(uid);
     WatchAudioDevices();
-    OnAudioDevicesChanged();  // The device may have gone already.
+    OnAudioDevicesChanged();
     return Result::Ok();
   }
 
@@ -1413,10 +1240,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
   }
 
-  // A named device that went away would stop the clock or fail the audio
-  // renderers (WebKit leaves that to AVFoundation); every audio renderer
-  // moves to the default device instead and plays on, as Chromium's audio
-  // output falls back to it, and then follows the default.
   void OnAudioDevicesChanged() {
     if (!output_device_uid_ || (!follows_default_output_ && AudioDeviceExists(output_device_uid_))) {
       return;
@@ -1429,7 +1252,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   }
 
   void Flush(std::function<void()> done) {
-    // Samples already due stay counted; the rest never will be.
     CountPassedVideo();
     video_due_ = {};
     synchronizer_.rate = 0;
@@ -1437,7 +1259,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     anchor_.reset();
     follows_ = false;
     RemoveEndObserver();
-    // A size not shown yet waits for the next sample queued.
     RemoveSizeObservers();
     size_change_pending_ = natural_width_ != reported_width_ || natural_height_ != reported_height_;
     for (StreamId stream : Streams()) {
@@ -1446,8 +1267,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       *StreamFor(stream) = Stream();
     }
     video_upcoming_.clear();
-    // Outgoing renderers play nothing more; a layer's picture stays until
-    // its replacement has a frame at the new time.
     [outgoing_video_renderer_ flush];
     for (const auto& [track, outgoing] : outgoing_audio_) {
       for (AVSampleBufferAudioRenderer* renderer : outgoing) {
@@ -1459,8 +1278,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     ended_ = false;
     ++generation_;
     flush_count_->store(generation_);
-    // Like RendererImpl::Flush: back to HAVE_NOTHING without a callback; the
-    // next HAVE_ENOUGH follows StartPlayingFrom.
     have_enough_ = false;
     renderers_have_samples_ = false;
     ResetVideoFrameAvailability();
@@ -1470,8 +1287,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     Post([done](Impl&) { done(); });
   }
 
-  // Any thread: CMTimebase reads are thread-safe, and the timebase is
-  // retained for the renderer's lifetime.
   MediaTime GetMediaTime() const {
     CMTimebaseRef timebase = timebase_.load();
     return timebase ? FromCMTime(CMTimebaseGetTime(timebase)) : MediaTime::Invalid();
@@ -1496,7 +1311,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
         status.video_error = renderer.error ? Describe(renderer.error) : "";
         status.video_requires_flush = renderer.requiresFlushToResumeDecoding;
       } else {
-// macOS 13 has only the layer's own queue state (deprecated from 15).
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
         status.video = Map(layer_.status);
@@ -1550,8 +1364,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
                     metrics.numberOfFramesDisplayedUsingOptimizedCompositing;
                 result.accumulated_frame_delay = metrics.totalAccumulatedFrameDelay;
               }
-              // The replaced layers' counts are added on the owner sequence,
-              // where they are kept.
               (*poster)([weak, done, result]() mutable {
                 if (auto impl = weak.lock(); impl && result.available) {
                   const VideoMetrics& base = impl->retired_video_metrics_;
@@ -1574,13 +1386,12 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
 
  private:
   struct Held {
-    CMSampleBufferRef buffer = nullptr;  // Owned.
+    CMSampleBufferRef buffer = nullptr;
     bool encrypted = false;
     std::vector<uint8_t> key_id;
-    double start = 0;  // Presentation start, seconds.
-    double end = 0;    // Presentation end, seconds.
+    double start = 0;
+    double end = 0;
     bool keyframe = true;
-    // Given to AVFoundation before, and held again (HoldRedelivered).
     bool redelivered = false;
 
     Held() = default;
@@ -1617,13 +1428,11 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
   };
 
-  // A buffer already given to AVFoundation, kept for re-delivery.
   struct Submitted {
-    CMSampleBufferRef buffer = nullptr;  // Retained.
+    CMSampleBufferRef buffer = nullptr;
     double start = 0;
     double end = 0;
     bool keyframe = true;
-    // For holding it again after DetachCdm (HoldRedelivered).
     bool encrypted = false;
     std::vector<uint8_t> key_id;
 
@@ -1670,26 +1479,17 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
 
   struct Stream {
     std::deque<Held> held;
-    // What AVFoundation holds or may need again: audio from the playback
-    // position on, video from the last keyframe at or before it.
     std::deque<Submitted> submitted;
     bool end_of_stream = false;
     bool armed = false;
     MediaTime last_end;
-    double enqueued_end = -1;  // End of the last sample given to AVFoundation.
-    // End of the last sample this stream was given, enqueued or held for a
-    // key: the end of its buffered data as far as the renderer knows.
+    double enqueued_end = -1;
     double given_end = -1;
-    // Audio: end of the latest sample in the renderer since it was flushed.
     double queued_end = -std::numeric_limits<double>::infinity();
-    // Samples ending before it aren't shown: the start time, or for a stream
-    // added during playback the time it joined.
     double start = -std::numeric_limits<double>::infinity();
-    // See UpdateBuffering.
     bool has_samples = false;
   };
 
-  // An audio track's renderer, formats and samples (see StreamId).
   struct AudioTrack {
     AVSampleBufferAudioRenderer* renderer = nil;
     AudioConfig config;
@@ -1697,10 +1497,10 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     const std::shared_ptr<RequestGate> gate = std::make_shared<RequestGate>();
     ScopedFormat clear_format;
     std::map<std::vector<uint8_t>, std::unique_ptr<ScopedFormat>> protected_formats;
-    std::vector<uint8_t> protected_key;  // Of the protected format used last.
-    bool awaiting_config = false;        // dac3/dec3 from the next syncframe.
+    std::vector<uint8_t> protected_key;
+    bool awaiting_config = false;
     bool failure_reported = false;
-    id flushed_token = nil;  // AVSampleBufferAudioRendererWasFlushedAutomaticallyNotification.
+    id flushed_token = nil;
   };
 
   static RenderingStatus Map(AVQueuedSampleBufferRenderingStatus status) {
@@ -1723,7 +1523,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     auto it = audio_.find(track);
     return it == audio_.end() ? nullptr : &it->second;
   }
-  // Null for an audio track that doesn't exist (removed).
   Stream* StreamFor(StreamId stream) {
     if (stream.type == StreamType::kVideo) {
       return &video_;
@@ -1739,7 +1538,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     const AudioTrack* audio = Audio(stream.audio_track);
     return audio ? audio->renderer : nil;
   }
-  // Video and every audio track.
   std::vector<StreamId> Streams() const {
     std::vector<StreamId> streams{StreamType::kVideo};
     for (const auto& [track, audio] : audio_) {
@@ -1757,9 +1555,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     });
   }
 
-  // Posts |task| for the current flush generation only: anything about the
-  // media before a Flush (end reached, more data wanted, buffering) is
-  // dropped if it lands after it.
   void PostInGeneration(std::function<void(Impl&)> task) {
     std::weak_ptr<Impl> weak = weak_from_this();
     uint64_t generation = generation_;
@@ -1794,7 +1589,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     notification_tokens_.push_back({object, token});
   }
 
-  // Ends the key-value and notification observation of |object|.
   void StopObserving(id object) {
     for (auto it = observed_.begin(); it != observed_.end();) {
       if (it->first == object) {
@@ -1814,14 +1608,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
   }
 
-  // Format descriptions come from the ISO sample entry the stream would have
-  // carried, converted by CoreMedia's public sample-description parser
-  // (kCMImageDescriptionFlavor_ISOFamily). For a protected entry ('encv'/'enca'
-  // with 'sinf') that yields exactly what AVStreamDataParser produces: Apple's
-  // FairPlay type for the codec (qavc, qhvc, qdh1, qav1, qaac, qach,
-  // qusa, ...), CommonEncryptionOriginalFormat, CommonEncryptionProtected, the
-  // 'tenc' payload and the config and 'sinf' atoms. Content key recipients
-  // match keys by that 'tenc' key ID.
   static Result CreateVideoFormat(const VideoConfig& config,
                                   const TrackEncryption* encryption,
                                   CMFormatDescriptionRef* out) {
@@ -1843,9 +1629,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       if (encryption) {
         return Result::Error(Exception::kNotSupported, "VP9 is never protected");
       }
-      // AVSampleBufferDisplayLayer decodes VP9 only once VideoToolbox's
-      // supplemental decoder is registered in the process, as WebKit's GPU
-      // process does (registerSupplementalVP9Decoder).
       static std::once_flag vp9_decoder;
       std::call_once(vp9_decoder, [] { VTRegisterSupplementalVideoDecoderIfAvailable(kCMVideoCodecType_VP9); });
     }
@@ -1915,8 +1698,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
         break;
       }
       case AudioCodec::kALAC: {
-        // Apple's 'alac' sample entry with its ALACSpecificBox; protected,
-        // CoreMedia makes it 'qlac'.
         std::optional<std::vector<uint8_t>> alac = AlacSpecificBoxPayload(config.extra_data);
         if (!alac) {
           return Result::Error(Exception::kTypeError, "ALAC config needs its ALACSpecificConfig");
@@ -1926,10 +1707,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
         break;
       }
       case AudioCodec::kPCM: {
-        // ISO 23003-5 'ipcm' or 'fpcm' with its 'pcmC' (little-endian), which
-        // CoreMedia makes 'lpcm', as AVStreamDataParser does. Protected, it
-        // stays 'enca': CoreAudio has no protected PCM decoder, so it fails at
-        // the first enqueue, as it does in Safari.
         if (config.channels <= 0 ||
             (config.pcm_float ? config.pcm_bits != 32
                               : config.pcm_bits != 16 && config.pcm_bits != 24 && config.pcm_bits != 32)) {
@@ -1943,8 +1720,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       case AudioCodec::kVorbis:
         break;
     }
-    // Opus in ISO-BMFF states 48 kHz in the sample entry whatever the input
-    // rate ('dOps' carries that).
     const uint32_t entry_rate =
         config.codec == AudioCodec::kOpus ? 48000 : static_cast<uint32_t>(config.sample_rate);
     std::vector<uint8_t> entry =
@@ -1962,11 +1737,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     return Result::Ok();
   }
 
-  // What AVStreamDataParser gives an MPEG-2 TS SAMPLE-AES stream: the clear
-  // format under the stream's SAMPLE-AES type, with its extensions (and for
-  // audio its cookie and channel layout) and TransportStreamEncryptionInitData.
-  // Recipients decrypt those with the mpts request's key and the IV its CKC
-  // carries; samples bring no IV or subsamples.
   static Result CreateTransportStreamFormat(const VideoConfig& config, CMFormatDescriptionRef* out) {
     const uint32_t type = TransportStreamFormatType(config.codec);
     if (!type) {
@@ -2016,10 +1786,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     return Result::Ok();
   }
 
-  // Vorbis has no ISO sample entry. WebKit hands AVSampleBufferAudioRenderer
-  // the Xiph-laced headers as the magic cookie of a 'vorb' description
-  // (cookieFromVorbisCodecPrivate), which AudioToolbox decodes on macOS
-  // without any registration.
   static Result CreateVorbisFormat(const AudioConfig& config,
                                    const TrackEncryption* encryption,
                                    CMFormatDescriptionRef* out) {
@@ -2043,14 +1809,11 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     return Result::Ok();
   }
 
-  // (Re)creates the clear video format and drops the protected ones, which
-  // are rebuilt per key ID; one is built up front when the key ID is known.
   Result CreateVideoFormats(std::string* error) {
     CMFormatDescriptionRef clear = nullptr;
     if (Result result = CreateVideoFormat(*video_config_, nullptr, &clear); !result.ok()) {
       return result;
     }
-    // Nothing changes unless every format builds.
     ScopedFormat previous_clear;
     previous_clear.Swap(video_clear_format_);
     video_clear_format_.Reset(clear);
@@ -2071,7 +1834,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     if (Result result = CreateAudioFormat(audio.config, nullptr, &clear); !result.ok()) {
       return result;
     }
-    // Nothing changes unless every format builds.
     ScopedFormat previous_clear;
     previous_clear.Swap(audio.clear_format);
     audio.clear_format.Reset(clear);
@@ -2087,9 +1849,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     return Result::Ok();
   }
 
-  // Takes |config| for the samples enqueued from now on. A record that isn't
-  // complete yet (empty, or without parameter sets) waits for the next
-  // keyframe.
   Result ConfigureVideo(const VideoConfig& config, std::string* error) {
     if (config.coded_width <= 0 || config.coded_height <= 0 || config.coded_width > 0xffff ||
         config.coded_height > 0xffff) {
@@ -2127,7 +1886,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     audio.config = config;
     audio.clear_format.Reset(nullptr);
     audio.protected_formats.clear();
-    // Only AC-3/E-AC-3 build their box from the first syncframe.
     audio.awaiting_config = config.extra_data.empty() &&
                             (config.codec == AudioCodec::kAC3 || config.codec == AudioCodec::kEAC3);
     if (audio.awaiting_config) {
@@ -2136,11 +1894,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     return CreateAudioFormats(audio, error);
   }
 
-  // The first size is reported at once (metadata). A later one, from a new
-  // config or a keyframe's own size, is reported when the clock reaches the
-  // first sample in that size, as WebKit's AudioVideoRendererAVFObjC::
-  // sizeWillChangeAtTime does with a boundary observer per change, not when
-  // samples in it are queued ahead of playback.
   void ReportNaturalSize(int32_t width, int32_t height) {
     if (width == natural_width_ && height == natural_height_) {
       return;
@@ -2151,7 +1904,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       PostNaturalSize(width, height);
       return;
     }
-    size_change_pending_ = true;  // Armed at the next sample, its first.
+    size_change_pending_ = true;
   }
 
   void PostNaturalSize(int32_t width, int32_t height) {
@@ -2160,8 +1913,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
     reported_width_ = width;
     reported_height_ = height;
-    // Only for the Initialize attempt that queued it, and only if that
-    // attempt succeeded (a synchronizer exists).
     const uint64_t attempt = initialize_attempt_;
     Post([width, height, attempt](Impl& impl) {
       if (impl.synchronizer_ && impl.initialize_attempt_ == attempt) {
@@ -2201,11 +1952,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     size_observers_.clear();
   }
 
-  // Keyframes carry the decoder configuration in-band (Chromium re-inserts
-  // SPS/PPS/VPS before each one; AV1 keyframes start with a sequence header).
-  // Builds the record from it when the config had none, and rebuilds it when
-  // it changes (an adaptive-streaming switch). A failed rebuild leaves the
-  // previous record, sets and formats in place.
   bool UpdateVideoConfigFromKeyframe(const uint8_t* data, size_t size, std::string* error) {
     const VideoCodec codec = video_config_->codec;
     if (codec == VideoCodec::kVP9) {
@@ -2259,7 +2005,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
     const bool avc = codec == VideoCodec::kH264;
     const std::vector<uint8_t>& record = video_config_->extra_data;
-    size_t length_size = 4;  // Annex B input is rewritten with 4-byte lengths.
+    size_t length_size = 4;
     if (video_config_->format == BitstreamFormat::kLengthPrefixed && record.size() > (avc ? 4u : 21u)) {
       length_size = (record[avc ? 4 : 21] & 3) + 1;
     }
@@ -2268,9 +2014,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       *error = "no parameter sets in the config record or before the first frame";
       return !awaiting_video_config_;
     }
-    // A keyframe may repeat only some sets (a new SPS and PPS under the same
-    // VPS, or PPS 0 but not PPS 1): earlier sets whose kind and ID it doesn't
-    // carry stay as they were.
     auto kind = [avc](const std::vector<uint8_t>& nal) {
       return avc ? (nal[0] & 0x1f) : ((nal[0] >> 1) & 0x3f);
     };
@@ -2292,7 +2035,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     if (!awaiting_video_config_ && sorted(sets) == sorted(parameter_sets_)) {
       return true;
     }
-    // CoreMedia takes them in kind order: (VPS,) SPS, PPS.
     std::stable_sort(sets.begin(), sets.end(), [&](const std::vector<uint8_t>& a, const std::vector<uint8_t>& b) {
       return kind(a) < kind(b);
     });
@@ -2338,17 +2080,12 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
     parameter_sets_ = std::move(sets);
     awaiting_video_config_ = false;
-    // The config's natural size (Chromium's, from tkhd and pasp) wins; the
-    // stream's own display size is used only when the config has none.
     if (!video_config_->natural_width || !video_config_->natural_height) {
       ReportNaturalSize(static_cast<int32_t>(presentation.width), static_cast<int32_t>(presentation.height));
     }
     return true;
   }
 
-  // dac3/dec3 from the first syncframe's clear header; when the syncframes
-  // are encrypted (whole-sample audio encryption), from the config's sample
-  // rate and channel count.
   bool UpdateAudioConfigFromSyncframe(AudioTrack& audio, const uint8_t* data, size_t size,
                                       const std::vector<SubsampleEntry>* subsamples, std::string* error) {
     AudioConfig& config = audio.config;
@@ -2359,8 +2096,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     if (!payload && subsamples) {
       payload = eac3 ? Eac3SpecificBoxFromConfig(config.sample_rate, channels)
                      : Ac3SpecificBoxFromConfig(config.sample_rate, channels);
-      // A box of the 5.1 core (AC-3 6.1/7.1, E-AC-3 6.1) gets a sample
-      // entry of 6 channels to match it; E-AC-3 7.1 keeps its 8.
       if (payload && channels > 6 && (!eac3 || channels != 8)) {
         config.channels = 6;
       }
@@ -2381,11 +2116,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     return true;
   }
 
-  // The protected format description for samples encrypted with |key_id|
-  // (and |pattern|): recipients match keys by the format description's 'tenc'
-  // key ID, so each key gets its own. Fields the config lacks come from the
-  // sample: its pattern, and per-sample 16-byte IVs when no constant IV is
-  // known (Chromium copies the constant IV into every DecryptConfig).
   CMFormatDescriptionRef ProtectedVideoFormat(const std::vector<uint8_t>& key_id,
                                               const std::optional<EncryptionPattern>& pattern, std::string* error) {
     return ProtectedFormat(*video_config_, video_protected_formats_, video_protected_key_, key_id, pattern, error);
@@ -2451,9 +2181,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       *error = "encrypted sample on a track configured as clear";
       return false;
     }
-    // TS SAMPLE-AES leaves NAL unit headers, start codes, ADTS headers and
-    // syncframe headers clear and has no subsamples: its samples reframe as
-    // clear ones.
     const bool transport_stream = encrypted && IsTransportStreamKeyId(sample.decrypt->key_id);
     std::vector<SubsampleEntry> subsamples;
     if (encrypted) {
@@ -2461,7 +2188,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
     std::vector<SubsampleEntry>* clear_ranges = encrypted && !transport_stream ? &subsamples : nullptr;
 
-    // Reframe into what the format description declares.
     std::vector<uint8_t> converted;
     const uint8_t* bytes = sample.data;
     size_t size = sample.size;
@@ -2543,9 +2269,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       CFRelease(block);
       return false;
     }
-    // Chromium's DecoderBuffer has no decode timestamp. Copying the PTS would
-    // make it run backwards across reordered frames, so it stays invalid and
-    // AVFoundation decodes in enqueue order.
     CMSampleTimingInfo timing = {ToCMTime(sample.duration), ToCMTime(sample.pts),
                                  sample.dts.IsValid() ? ToCMTime(sample.dts) : kCMTimeInvalid};
     if (!sample.duration.IsValid()) {
@@ -2574,9 +2297,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       if (!sample.is_keyframe) {
         CFDictionarySetValue(attachments, kCMSampleAttachmentKey_NotSync, kCFBooleanTrue);
       }
-      // WebKit's reenqueueMediaForTime: samples before the one containing the
-      // start time decode without display; that one is shown, so a frame is
-      // ready at the start time (VideoFrameAvailable) and the clock can run.
       const double start = video_.start;
       const bool before = sample.duration.IsValid()
                               ? sample.pts.InSeconds() + sample.duration.InSeconds() <= start
@@ -2604,8 +2324,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       CFDictionarySetValue(attachments, kBytesOfClearDataCount,
                            (__bridge CFNumberRef)@(clear_total));
     }
-    // Per-sample IVs only. AVStreamDataParser attaches none for a constant
-    // IV, and Chromium repeats the constant IV in every DecryptConfig.
     std::vector<uint8_t> iv = sample.decrypt->iv;
     if (encryption.default_per_sample_iv_size == 8 && iv.size() == 16 &&
         std::all_of(iv.begin() + 8, iv.end(), [](uint8_t b) { return b == 0; })) {
@@ -2617,11 +2335,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     return true;
   }
 
-  // Enqueues once the key system holds a usable key for an encrypted sample:
-  // a protected sample enqueued without one fails the renderer with
-  // AVFoundationErrorDomain -11800 "no content key present". After DetachCdm
-  // none is enqueued (AudioVideoRendererAVFObjC::canEnqueueSample without a
-  // CDM).
   bool Submit(StreamId stream, Held& held) {
     if (held.encrypted) {
       if (!cdm_ || cdm_detached_ || !cdm_->HasUsableKey(held.key_id)) {
@@ -2637,7 +2350,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     } else {
       [RendererFor(stream) enqueueSampleBuffer:held.buffer];
     }
-    // A sample given again is counted, and its video due, from the first time.
     if (held.redelivered) {
       ++status_.redelivered;
     } else {
@@ -2658,8 +2370,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     return true;
   }
 
-  // Moves the video samples the clock has reached from video_due_ into
-  // video_frames_passed_ (VideoMetrics::frames_passed).
   uint64_t CountPassedVideo() {
     const double now = GetMediaTime().InSeconds();
     while (!video_due_.empty() && video_due_.top() <= now) {
@@ -2673,7 +2383,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     std::deque<Submitted>& submitted = StreamFor(stream)->submitted;
     const double now = GetMediaTime().InSeconds();
     if (stream.type == StreamType::kAudio) {
-      // A little behind the clock, for a flush reported as it plays.
       while (!submitted.empty() && submitted.front().end < now - 0.5) {
         submitted.pop_front();
       }
@@ -2688,24 +2397,12 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     submitted.erase(submitted.begin(), submitted.begin() + static_cast<std::ptrdiff_t>(keep_from));
   }
 
-  // AVSampleBufferAudioRenderer flushes itself when the output changes (a
-  // route or device switch) and reports the start of the first sample it
-  // dropped; without re-delivery the queued duration would play as silence.
-  // As WebKit's SourceBufferPrivate::reenqueSamples (NeedsFlush::Yes) does:
-  // flush the renderer first, then enqueue again, in order, every submitted
-  // sample from the one containing the clock. The renderer is empty when the
-  // first goes in and nothing else enqueues meanwhile (one sequence), so each
-  // sample is in it once, including any the pipeline enqueued between
-  // AVFoundation's flush and this notice, which |submitted| holds too.
   void OnAudioFlushedAutomatically(uint32_t track, double flush_time) {
     AudioTrack* audio = Audio(track);
     if (!audio) {
       return;
     }
     ++status_.audio_automatic_flushes;
-    // A flush of the previous timeline whose notice arrives after Flush
-    // carries a time outside what was enqueued since; acting on it would
-    // flush the new audio for nothing.
     Stream& state = audio->stream;
     const std::deque<Submitted>& submitted = state.submitted;
     if (submitted.empty() || flush_time + 1e-6 < submitted.front().start ||
@@ -2717,7 +2414,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     state.armed = false;
     [audio->renderer flush];
     state.queued_end = -std::numeric_limits<double>::infinity();
-    // An outgoing renderer still plays what comes before its end (Replay).
     const auto outgoing = audio_outgoing_end_.find(track);
     const double from = outgoing == audio_outgoing_end_.end() ? -std::numeric_limits<double>::infinity()
                                                               : outgoing->second - 1e-6;
@@ -2736,12 +2432,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     NotifyNeedData(stream);
   }
 
-  // A flush's re-delivery after DetachCdm, or a replay into renderers of a
-  // new CDM without that sample's key: WebKit enqueues the samples again
-  // through enqueueSample, which holds protected ones without a CDM or key
-  // (canEnqueueSample). So the submitted samples from |from|, a protected
-  // one, go back to the front of the held queue, in order, and wait as
-  // Enqueue's do.
   bool HoldRedelivered(StreamId stream, size_t from) {
     Stream& state = *StreamFor(stream);
     std::deque<Submitted>& submitted = state.submitted;
@@ -2772,10 +2462,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     return true;
   }
 
-  // Audio enters the renderer in presentation order, so a sample more than
-  // half queued already plays twice (RendererStatus::audio_double_enqueues).
-  // Appends overlapping audio already read, in a misaligned frame grid, count
-  // too; the harness's content has none.
   void NoteAudioQueued(Stream& audio, double start, double end) {
     if (start + (end - start) / 2 < audio.queued_end) {
       ++status_.audio_double_enqueues;
@@ -2783,9 +2469,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     audio.queued_end = std::max(audio.queued_end, end);
   }
 
-  // A video decoder that lost its state (requiresFlushToResumeDecoding) is
-  // flushed and fed again from the last keyframe at or before the clock;
-  // frames already due are decoded but not displayed.
   void ResumeVideoDecoding() {
     if (!video_renderer_ || !GetStatus().video_requires_flush) {
       return;
@@ -2818,9 +2501,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       RequestVideoFrameAvailability(entry.buffer);
       ++status_.redelivered;
     }
-    // WebKit's flushVideo: no frame is available until one decodes again, and
-    // the clock waits for it (updateAllRenderersHaveAvailableSamples). Only
-    // video's availability changes; audio's stays as it was.
     video_reset_pending_ = true;
     UpdateClock();
     NotifyNeedData(StreamType::kVideo);
@@ -2859,8 +2539,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     if (!IsDisplayableVideoSample(buffer)) {
       return;
     }
-    // As WebKit's pre-14.4 enqueueSampleBuffer: only successful preroll of a
-    // displayable sample supplies the first frame. Queue capacity is not it.
     std::weak_ptr<Impl> weak = weak_from_this();
     auto poster = poster_;
     const uint64_t epoch = video_frame_epoch_;
@@ -2882,7 +2560,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     return !video_reset_pending_ || ended_without_picture || LayerHasFrame();
   }
 
-  // Since the last ResetVideoFrameAvailability.
   bool LayerHasFrame() const {
     if (UsesDisplayReadinessNotification()) {
       if (@available(macOS 14.4, *)) {
@@ -2900,8 +2577,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       PruneHeld(stream, now);
       while (!state.held.empty()) {
         Held& held = state.held.front();
-        // Video the clock already passed while it waited (time runs on over
-        // a frozen picture) is decoded, not shown, from the keyframe kept.
         if (stream.type == StreamType::kVideo && held.end <= now) {
           SetDoNotDisplay(held.buffer);
         }
@@ -2930,13 +2605,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
   }
 
-  // As WebKit's SourceBufferPrivateAVFObjC::setMinimumUpcomingPresentationTime:
-  // without a lower bound on upcoming presentation times, AVFoundation holds
-  // and then skips pictures of reordered (B-frame) video. WebKit looks ahead;
-  // samples arrive here one at a time, so the bound is the (depth + 1)-th
-  // latest time enqueued, no later frame preceding more than the reorder depth
-  // of them, plus one for a depth still growing in the first group of
-  // pictures. Streams that never reorder get none. A flush resets it.
   void EnqueueVideo(CMSampleBufferRef buffer) {
     [video_renderer_ enqueueSampleBuffer:buffer];
     const CMTime pts = CMSampleBufferGetPresentationTimeStamp(buffer);
@@ -2961,12 +2629,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
   }
 
-  // Asks AVFoundation to say when |stream| can take more. AVFoundation calls
-  // the block repeatedly while the renderer is ready, so the first call stops
-  // the request right there (Apple's documented pattern) and hands over to the
-  // owner sequence. The gate keeps that stop from landing on a newer request:
-  // the owner holds it around every request and stop call, and a block that
-  // finds it taken returns and is called again.
   void ArmRequest(StreamId stream) {
     id<AVQueuedSampleBufferRendering> renderer = RendererFor(stream);
     if (!renderer || StreamFor(stream)->armed || StreamFor(stream)->end_of_stream) {
@@ -3001,10 +2663,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     CheckRequestLater(stream, request);
   }
 
-  // AVFoundation sometimes never runs a request's block (seen with a muted
-  // audio renderer armed before the clock started), which would stall the
-  // clock at the end of what the renderer has. So a request still live once
-  // the renderer is ready again is answered here.
   void CheckRequestLater(StreamId stream, uint64_t request) {
     std::weak_ptr<Impl> weak = weak_from_this();
     std::shared_ptr<const PostTask> poster = poster_;
@@ -3019,12 +2677,10 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
         id<AVQueuedSampleBufferRendering> renderer = impl->RendererFor(stream);
         bool answer = false;
         {
-          // Decided under the gate, so the request's own block can't answer
-          // it too.
           std::shared_ptr<RequestGate> gate = impl->GateFor(stream);
           std::lock_guard<std::mutex> lock(gate->mutex);
           if (gate->current != request) {
-            return;  // Answered, stopped or replaced.
+            return;
           }
           answer = renderer.readyForMoreMediaData;
           if (answer) {
@@ -3053,12 +2709,10 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     [renderer stopRequestingMediaData];
   }
 
-  // Only for a stream that has a renderer.
   std::shared_ptr<RequestGate> GateFor(StreamId stream) const {
     return stream.type == StreamType::kVideo ? video_gate_ : Audio(stream.audio_track)->gate;
   }
 
-  // Client callbacks are posted, never made from inside a renderer call.
   void NotifyNeedData(StreamId stream) {
     if (!RendererFor(stream) || StreamFor(stream)->end_of_stream) {
       return;
@@ -3077,31 +2731,13 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
   }
 
-  // A stream that reached end of stream with every sample in its renderer
-  // has all it will get. Samples still held for a key are not there yet.
   static bool Complete(const Stream& state) { return state.end_of_stream && state.held.empty(); }
 
-  // HAVE_ENOUGH: every configured stream has reached end of stream, or was
-  // given samples (enqueued or held for a key) reaching kEnoughAheadSeconds
-  // past the clock, or its renderer has enough for a reliable start; and
-  // after a start or seek a video frame decoded (VideoFrameAvailable), which
-  // the player takes as WebKit's available video frame (the element's
-  // readyState itself comes from the buffered ranges). Latched; only a stall
-  // drops back to HAVE_NOTHING. Every enqueue, key change and readyForDisplay
-  // change calls this; AVFoundation posts no KVO for its sufficiency
-  // property, which turns true on the enqueue that fills the renderer's
-  // preroll.
   void UpdateBuffering() {
     if (outgoing_layer_ && LayerHasFrame()) {
       RetireOutgoingLayer();
     }
     if (!renderers_have_samples_) {
-      // WebKit's allRenderersHaveAvailableSamples over its per-track flags:
-      // every renderer has had samples to play, or its stream is complete.
-      // Latched per stream until Flush or StartPlayingFrom, so samples later
-      // held for a key don't stop the clock (the picture freezes and time
-      // runs on, as in Safari), and a stream added during playback waits for
-      // its own samples only.
       bool ready = true;
       for (StreamId stream : Streams()) {
         id<AVQueuedSampleBufferRendering> renderer = RendererFor(stream);
@@ -3114,11 +2750,8 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       }
       renderers_have_samples_ = ready;
     }
-    // Nothing to have enough of while every stream is removed.
     if (!have_enough_ && (video_renderer_ || !audio_.empty())) {
       const double now = GetMediaTime().InSeconds();
-      // The renderer's own sufficiency counts only while the stream still
-      // has data ahead of the clock, so a stall isn't undone at its own point.
       auto enough = [now](const Stream& state, id<AVQueuedSampleBufferRendering> renderer) {
         return state.end_of_stream || state.given_end - now >= kEnoughAheadSeconds ||
                (state.given_end > now && renderer.hasSufficientMediaDataForReliablePlaybackStart);
@@ -3138,8 +2771,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     UpdateClock();
   }
 
-  // The clock runs at the requested rate once HAVE_ENOUGH and the renderers
-  // have samples, as WebKit's synchronizer runs while shouldBePlaying().
   void UpdateClock() {
     if (video_reset_pending_ && VideoFrameAvailable()) {
       video_reset_pending_ = false;
@@ -3156,7 +2787,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
   }
 
-  // From the clock observer (every 0.1 s of media time while it runs).
   void CheckUnderflow() {
     if (status_.rate == 0) {
       return;
@@ -3165,15 +2795,12 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     for (StreamId stream : Streams()) {
       PruneHeld(stream, now);
       if (!StreamFor(stream)->held.empty()) {
-        NotifyNeedData(stream);  // The held window moved with the clock.
+        NotifyNeedData(stream);
       }
     }
     ArmStall(now);
   }
 
-  // Samples held for a key that the clock passed are never shown; drop them,
-  // keeping video from the last keyframe at or before the clock, which
-  // decoding resumes from once the key arrives.
   void PruneHeld(StreamId stream, double now) {
     std::deque<Held>& held = StreamFor(stream)->held;
     if (stream.type == StreamType::kAudio) {
@@ -3191,10 +2818,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     held.erase(held.begin(), held.begin() + static_cast<std::ptrdiff_t>(keep_from));
   }
 
-  // Where the clock stalls, as WebKit's resetStallForTime places it: at the
-  // end of what a stream that hasn't ended was given (its buffered end), and
-  // nowhere else; a stream at end of stream ends there instead
-  // (ScheduleEndIfComplete). Negative when nothing bounds the clock.
   double StallTime() const {
     double stall = -1;
     for (StreamId stream : Streams()) {
@@ -3207,9 +2830,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     return stall;
   }
 
-  // Arms a boundary observer at the stall time once the running clock is
-  // near it, like WebKit's notifyTimeReachedAndStall, so it stops there
-  // rather than up to a poll late.
   void ArmStall(double now) {
     const double stall = StallTime();
     if (clock_held_ || stall < 0 || stall - now > kStallArmSeconds) {
@@ -3243,7 +2863,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
                              }];
   }
 
-  // The boundary was reached; data that arrived since moves the stall later.
   void OnStallBoundary() {
     const double stall = StallTime();
     RemoveStallObserver();
@@ -3257,15 +2876,11 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
   }
 
-  // Stops the clock at |stall| and reports HAVE_NOTHING; the clock is put
-  // back to |stall| if the synchronizer ran past it, as WebKit's stall cap
-  // masks that overshoot. UpdateBuffering resumes once data is back.
   void Stall(double stall) {
     RemoveStallObserver();
     have_enough_ = false;
     clock_held_ = true;
     anchor_.reset();
-    // Never back before where playback started or seeked to.
     if (start_time_.IsValid()) {
       stall = std::max(stall, start_time_.InSeconds());
     }
@@ -3274,8 +2889,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     } else {
       synchronizer_.rate = 0;
     }
-    // Posted like HAVE_ENOUGH (UpdateBuffering), so the two reach the client
-    // in the order they happened.
     PostInGeneration([](Impl& impl) { impl.client_->OnBufferingStateChange(false); });
   }
 
@@ -3287,11 +2900,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     stall_time_ = -1;
   }
 
-  // The clock ends at the last sample's end once every stream reached end of
-  // stream, samples still held for a key or not: WebKit pauses and ends when
-  // the clock reaches the duration, over a frozen picture if keys never came.
   void ScheduleEndIfComplete() {
-    // An empty renderer (its last audio track removed) hasn't ended.
     if (!video_renderer_ && audio_.empty()) {
       return;
     }
@@ -3354,8 +2963,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
 
   void CheckRendererStatus() {
     RendererStatus status = GetStatus();
-    // A renderer that must flush to resume decoding also reports Failed;
-    // ResumeVideoDecoding recovers it, so it isn't a decode error.
     if (status.video == RenderingStatus::kFailed && !status.video_requires_flush &&
         !video_failure_reported_) {
       video_failure_reported_ = true;
@@ -3379,54 +2986,44 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   FairPlayRendererClient* client_;
   std::shared_ptr<const PostTask> poster_;
   FairPlayCdm* cdm_ = nullptr;
-  FairPlayCdm* pending_cdm_ = nullptr;  // Set before Initialize.
-  bool cdm_detached_ = false;           // See DetachCdm.
+  FairPlayCdm* pending_cdm_ = nullptr;
+  bool cdm_detached_ = false;
   uint64_t observer_id_ = 0;
 
   std::optional<VideoConfig> video_config_;
   const std::shared_ptr<RequestGate> video_gate_ = std::make_shared<RequestGate>();
   ScopedFormat video_clear_format_;
   std::map<std::vector<uint8_t>, std::unique_ptr<ScopedFormat>> video_protected_formats_;
-  NSString* output_device_uid_ = nil;  // The device the audio renderers play to.
+  NSString* output_device_uid_ = nil;
   bool follows_default_output_ = false;
   AudioObjectPropertyListenerBlock audio_devices_listener_ = nil;
   float volume_ = 1;
   bool muted_ = false;
-  uint64_t initialize_attempt_ = 0;  // Bumped by every Initialize call.
-  // Cache key of the protected format last used (GetStatus reports it).
+  uint64_t initialize_attempt_ = 0;
   std::vector<uint8_t> video_protected_key_;
   std::vector<id<AVContentKeyRecipient>> recipients_;
 
   AVSampleBufferRenderSynchronizer* synchronizer_ = nil;
-  PCFairPlayVideoHost* host_ = nil;  // Created with the first video renderer.
+  PCFairPlayVideoHost* host_ = nil;
   AVSampleBufferDisplayLayer* layer_ = nil;
-  // Renderers replaced by ReplaceRenderers, until they leave.
   AVSampleBufferDisplayLayer* outgoing_layer_ = nil;
   id<AVQueuedSampleBufferRendering> outgoing_video_renderer_ = nil;
   std::map<uint32_t, std::vector<AVSampleBufferAudioRenderer*>> outgoing_audio_;
-  // Outgoing renderers still recipients of the CDM they played with.
   std::vector<std::pair<FairPlayCdm*, id<AVContentKeyRecipient>>> outgoing_recipients_;
-  // Audio renderers ReplaceRenderers replaced, until Replay schedules their
-  // leaving, and where the audio of each track's latest outgoing one ends.
   std::vector<std::pair<uint32_t, AVSampleBufferAudioRenderer*>> leaving_audio_;
   std::map<uint32_t, double> audio_outgoing_end_;
-  // The renderers joined a key session, which they can't join again.
   bool renderers_were_recipients_ = false;
-  // Video samples replayed into the current layer, and the counts of the
-  // layers it replaced (LoadVideoMetrics).
   uint64_t video_replayed_ = 0;
   VideoMetrics retired_video_metrics_;
   id<AVQueuedSampleBufferRendering> video_renderer_ = nil;
-  // By track (StreamId::audio_track); Initialize's is 0.
   std::map<uint32_t, AudioTrack> audio_;
   uint32_t next_audio_track_ = 0;
-  // HTMLMediaElement.preservesPitch, true by default.
   bool preserves_pitch_ = true;
   PCFairPlayRendererObserver* observer_ = nil;
   std::vector<std::pair<NSObject*, NSString*>> observed_;
-  std::vector<std::pair<id, id>> notification_tokens_;  // Observed object, token.
+  std::vector<std::pair<id, id>> notification_tokens_;
   id end_observer_ = nil;
-  id stall_observer_ = nil;  // See ArmStall.
+  id stall_observer_ = nil;
   double stall_time_ = -1;
   id clock_observer_ = nil;
 
@@ -3434,51 +3031,34 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   MediaTime start_time_;
   bool waiting_reported_ = false;
   bool have_enough_ = false;
-  // See UpdateBuffering.
   bool renderers_have_samples_ = false;
-  // A start, seek or decoder reset waits for a decoded frame
-  // (VideoFrameAvailable).
   bool video_reset_pending_ = false;
   bool legacy_video_frame_available_ = false;
   uint64_t video_frame_epoch_ = 0;
-  // The clock waits for HAVE_ENOUGH and renderers with samples (start, seek
-  // or stall).
   bool clock_held_ = true;
-  // SetPlaybackRateAt's line, until the clock runs on it.
   struct Anchor {
     CMTime time;
     CMTime host_time;
   };
   std::optional<Anchor> anchor_;
-  // SetPlaybackRateAt applies from StartPlayingFrom until SetPlaybackRate.
   bool follows_ = false;
-  bool clock_ran_ = false;  // At a rate above 0 since StartPlayingFrom.
-  bool awaiting_video_config_ = false;  // Record comes from the next keyframe.
-  std::vector<std::vector<uint8_t>> parameter_sets_;  // Behind the current record.
+  bool clock_ran_ = false;
+  bool awaiting_video_config_ = false;
+  std::vector<std::vector<uint8_t>> parameter_sets_;
   std::vector<uint8_t> av1_sequence_header_;
-  int32_t natural_width_ = 0;   // The size of the samples queued last.
+  int32_t natural_width_ = 0;
   int32_t natural_height_ = 0;
-  int32_t reported_width_ = 0;  // The size last reported to the client.
+  int32_t reported_width_ = 0;
   int32_t reported_height_ = 0;
-  // A new size waits for its first sample to be queued, then for the clock
-  // to reach it (one boundary observer per change, removed by Flush).
   bool size_change_pending_ = false;
   std::vector<id> size_observers_;
-  uint64_t generation_ = 0;  // Bumped by Flush; stale posted tasks compare it.
-  // generation_ for threads other than the owner's (notification blocks).
+  uint64_t generation_ = 0;
   const std::shared_ptr<std::atomic<uint64_t>> flush_count_ = std::make_shared<std::atomic<uint64_t>>(0);
-  // Retained synchronizer timebase, read by GetMediaTime from any thread.
   std::atomic<CMTimebaseRef> timebase_{nullptr};
   bool ended_ = false;
   bool video_failure_reported_ = false;
   RendererStatus status_;
-  // Presentation starts of the video samples given to AVFoundation (once
-  // each; re-deliveries aren't counted again) that the clock hasn't reached,
-  // earliest first; Flush drops them.
   std::priority_queue<double, std::vector<double>, std::greater<double>> video_due_;
-  // Presentation times of the latest video samples since the renderer was
-  // last flushed, in decode order, and the most of them any one preceded in
-  // presentation order (EnqueueVideo).
   std::deque<CMTime> video_upcoming_;
   size_t video_reorder_depth_ = 0;
   uint64_t video_frames_passed_ = 0;
@@ -3592,7 +3172,7 @@ void FairPlayRenderer::LoadVideoMetrics(std::function<void(const VideoMetrics&)>
   impl_->LoadVideoMetrics(std::move(done));
 }
 
-}  // namespace parc::fairplay
+}
 
 @implementation PCFairPlayRendererObserver {
   std::function<void(NSString*)> _handler;
