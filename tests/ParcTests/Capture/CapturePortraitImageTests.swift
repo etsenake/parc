@@ -86,7 +86,7 @@ extension CapturePortraitTestsSupport {
             #expect(capture.pngData == fixture.original)
         }
 
-        @MainActor @Test func aTallSourceIsFramedAtTheCappedHeight() throws {
+        @MainActor @Test func aTallSourceIsFramedAtItsFullHeight() throws {
             let fixture = try PortraitFixture()
             let tall = PortraitFixture.context(width: 300, height: 4000)
             tall.setFillColor(NSColor.red.cgColor)
@@ -94,7 +94,7 @@ extension CapturePortraitTestsSupport {
             let tallPNG = try PortraitFixture.png(tall.makeImage()!)
             let capture = try CapturedImage(pngData: tallPNG)
             try capture.applyFrame(fixture.composition())
-            #expect(capture.pixels.height == 2254 && capture.unframedPixels.height == 4000)
+            #expect(capture.pixels.height == 4176 && capture.pixels.width == 476 && capture.unframedPixels.height == 4000)
         }
 
         @MainActor @Test func removingATallSourceFrameRestoresTheFullHeight() throws {

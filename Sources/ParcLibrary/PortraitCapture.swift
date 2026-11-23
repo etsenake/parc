@@ -1,5 +1,6 @@
 import AppKit
 import ParcCore
+import ParcEasels
 import ParcKit
 import ParcNotes
 
@@ -71,75 +72,114 @@ enum PortraitCaptureRenderer {
         let position = min(1, max(0, fraction)) * 8, lower = Int(position)
         return palette[lower].blended(withFraction: position - Double(lower), of: palette[min(8, lower + 1)])
     }
-    static func contentSize(source: CGSize) -> CGSize {
-        guard source.width.isFinite, source.height.isFinite, source.width > 0, source.height > 0 else { return .zero }
-        let ratio = min(1, 2160 / max(source.width, source.height))
-        return CGSize(width: ceil(source.width * ratio), height: ceil(source.height * ratio))
-    }
     static func margin(content: CGSize) -> CGFloat {
         guard content.width > 0, content.height > 0 else { return 0 }
         return min(160, max(40, (sqrt(content.width * content.height) * 0.08).rounded()))
     }
-    static func outputSize(source: CGSize) -> CGSize {
-        let content = contentSize(source: source)
-        guard content.width > 0 else { return .zero }
-        let margin = margin(content: content)
-        return CGSize(width: content.width + margin * 2, height: content.height + margin * 2)
-    }
-    static func contentRect(source: CGSize) -> CGRect {
-        let content = contentSize(source: source)
-        let margin = margin(content: content)
-        return CGRect(x: margin, y: margin, width: content.width, height: content.height)
+    static func geometry(pixels: CGSize, backingScale: CGFloat, fitting box: CGSize? = nil) -> PortraitCaptureGeometry? {
+        guard pixels.width.isFinite, pixels.height.isFinite, pixels.width >= 1, pixels.height >= 1,
+              backingScale.isFinite, backingScale > 0 else { return nil }
+        let width = pixels.width.rounded(), height = pixels.height.rounded()
+        let side = CGFloat(EaselImagePlacement.maximumSide), area = CGFloat(EaselImagePlacement.maximumPixels)
+        let wanted = (margin(content: CGSize(width: width / backingScale, height: height / backingScale)) * backingScale).rounded()
+        let smallest = (40 * backingScale).rounded()
+        let sideRoom = floor((side - max(width, height)) / 2)
+        let areaRoom = floor((sqrt((width - height) * (width - height) + 4 * area) - width - height) / 4)
+        let inset = min(wanted, sideRoom, areaRoom)
+        var result: PortraitCaptureGeometry
+        if inset >= smallest {
+            result = PortraitCaptureGeometry(canvas: CGSize(width: width + inset * 2, height: height + inset * 2),
+                content: CGRect(x: inset, y: inset, width: width, height: height), density: backingScale)
+        } else {
+            let full = PortraitCaptureGeometry(canvas: CGSize(width: width + smallest * 2, height: height + smallest * 2),
+                content: CGRect(x: smallest, y: smallest, width: width, height: height), density: backingScale)
+            var factor = min(side / full.canvas.width, side / full.canvas.height,
+                             sqrt(area / (full.canvas.width * full.canvas.height)))
+            result = full.scaled(by: factor)
+            while !result.fitsOutputLimits { factor *= 0.999; result = full.scaled(by: factor) }
+        }
+        if let box, box.width >= 1, box.height >= 1 {
+            result = result.scaled(by: min(box.width / result.canvas.width, box.height / result.canvas.height))
+        }
+        return result
     }
     static func render(source: CGImage, options: PortraitCaptureOptions, palette: [NSColor],
-                       pageColor: NSColor?, desktop: NSImage?, backingScale: CGFloat = 1, preview: Bool = false,
-                       previewSide: CGFloat = 440) throws -> CGImage {
-        guard backingScale.isFinite, backingScale >= 1, backingScale <= 4 else { throw PortraitCaptureError.encoding }
+                       pageColor: NSColor?, desktop: NSImage?, backingScale: CGFloat = 1,
+                       fitting box: CGSize? = nil) throws -> CGImage {
+        guard backingScale.isFinite, backingScale >= 1, backingScale <= 4,
+              let geometry = geometry(pixels: CGSize(width: source.width, height: source.height),
+                                      backingScale: backingScale, fitting: box) else { throw PortraitCaptureError.encoding }
+        return try render(source: source, options: options, palette: palette, pageColor: pageColor, desktop: desktop, geometry: geometry)
+    }
+    static func render(source: CGImage, options: PortraitCaptureOptions, palette: [NSColor],
+                       pageColor: NSColor?, desktop: NSImage?, geometry: PortraitCaptureGeometry) throws -> CGImage {
         guard options.background != .desktop || desktop != nil else { throw PortraitCaptureError.desktopUnavailable }
         guard let selected = blendedColor(options.fraction, palette: palette),
               let fallback = blendedColor(0.95, palette: palette) else { throw PortraitCaptureError.resources }
         let color = options.background == .page ? (pageColor?.usingColorSpace(.sRGB) ?? fallback) : selected
-        let logical = CGSize(width: CGFloat(source.width) / backingScale, height: CGFloat(source.height) / backingScale)
-        let size = outputSize(source: logical)
-        let scale = preview ? min(backingScale, previewSide / max(size.width, size.height)) : backingScale
-        let width = max(1, Int(ceil(size.width * scale))), height = max(1, Int(ceil(size.height * scale)))
-        let space = source.colorSpace?.model == .rgb ? source.colorSpace! : CGColorSpace(name: CGColorSpace.sRGB)!
-        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
-                                      space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw PortraitCaptureError.encoding }
-        context.scaleBy(x: scale, y: scale)
-        context.interpolationQuality = .high
+        let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!
+        let space = source.colorSpace.flatMap { $0.model == .rgb && $0.supportsOutput ? $0 : nil } ?? sRGB
+        guard let context = CGContext(data: nil, width: Int(geometry.canvas.width), height: Int(geometry.canvas.height),
+                                      bitsPerComponent: source.bitsPerComponent > 8 ? 16 : 8, bytesPerRow: 0, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { throw PortraitCaptureError.encoding }
+        let scale = geometry.density
+        let size = CGSize(width: geometry.canvas.width / scale, height: geometry.canvas.height / scale)
         let canvas = CGRect(origin: .zero, size: size)
-        let content = contentRect(source: logical)
+        let content = CGRect(x: geometry.content.minX / scale, y: geometry.content.minY / scale,
+                             width: geometry.content.width / scale, height: geometry.content.height / scale)
         let frame = content.insetBy(dx: -8, dy: -8)
         let priorContext = NSGraphicsContext.current
-        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+        let graphics = NSGraphicsContext(cgContext: context, flipped: false)
+        graphics.imageInterpolation = .high
+        NSGraphicsContext.current = graphics
         defer { NSGraphicsContext.current = priorContext }
+        context.saveGState()
+        context.scaleBy(x: scale, y: scale)
+        context.interpolationQuality = .high
         if options.background == .desktop, let desktop {
-            desktop.draw(in: canvas, from: .zero, operation: .copy, fraction: 1)
+            desktop.draw(in: canvas, from: coverRect(desktop.size, filling: size), operation: .copy, fraction: 1)
         } else {
             context.setFillColor(color.cgColor); context.fill(canvas)
             drawBackground(context, color: color, size: size)
         }
         context.setBlendMode(.normal)
-        let rounded = CGPath(roundedRect: frame, cornerWidth: 10, cornerHeight: 10, transform: nil)
+        let rounded = roundedPath(frame, radius: 10)
         context.addPath(rounded); context.setStrokeColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.6))
         context.setLineWidth(1); context.strokePath()
         context.saveGState()
-        context.setShadow(offset: CGSize(width: 0, height: -4), blur: 16, color: CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1))
+        context.setShadow(offset: CGSize(width: 0, height: -4 * scale), blur: 16 * scale,
+                          color: CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1))
         context.addPath(rounded); context.strokePath()
         context.restoreGState()
         context.addPath(rounded); context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.5)); context.fillPath()
+        context.restoreGState()
         context.saveGState()
-        context.addPath(CGPath(roundedRect: content, cornerWidth: 6, cornerHeight: 6, transform: nil)); context.clip()
-        context.draw(source, in: content)
+        context.addPath(roundedPath(geometry.content, radius: 6 * scale)); context.clip()
+        let exact = geometry.content.size == CGSize(width: source.width, height: source.height)
+        context.interpolationQuality = exact ? .none : .high
+        context.draw(source, in: geometry.content)
         context.restoreGState()
         if options.watermark {
+            context.saveGState()
+            context.scaleBy(x: scale, y: scale)
             let mark = Watermark(center: CGPoint(x: size.width / 2, y: content.minY / 2), margin: content.minY)
             let backdrop = options.background == .desktop ? sampledBackdrop(context, rect: mark.bounds, scale: scale) : nil
             mark.draw(in: context, ink: watermarkInk(on: backdrop ?? color))
+            context.restoreGState()
         }
         guard let result = context.makeImage() else { throw PortraitCaptureError.encoding }
         return result
+    }
+    private static func roundedPath(_ rect: CGRect, radius: CGFloat) -> CGPath {
+        let corner = max(0, min(radius, rect.width / 2, rect.height / 2))
+        return CGPath(roundedRect: rect, cornerWidth: corner, cornerHeight: corner, transform: nil)
+    }
+    private static func coverRect(_ image: CGSize, filling size: CGSize) -> CGRect {
+        guard image.width > 0, image.height > 0, size.width > 0, size.height > 0 else { return .zero }
+        let scale = max(size.width / image.width, size.height / image.height)
+        let visible = CGSize(width: size.width / scale, height: size.height / scale)
+        return CGRect(x: (image.width - visible.width) / 2, y: (image.height - visible.height) / 2,
+                      width: visible.width, height: visible.height)
     }
     private static func drawBackground(_ context: CGContext, color: NSColor, size: CGSize) {
         guard let rgb = color.usingColorSpace(.sRGB) else { return }
@@ -251,6 +291,26 @@ enum PortraitCaptureRenderer {
     }
 }
 
+struct PortraitCaptureGeometry: Equatable {
+    let canvas: CGSize
+    let content: CGRect
+    let density: CGFloat
+
+    var fitsOutputLimits: Bool {
+        canvas.width <= CGFloat(EaselImagePlacement.maximumSide) && canvas.height <= CGFloat(EaselImagePlacement.maximumSide)
+            && canvas.width * canvas.height <= CGFloat(EaselImagePlacement.maximumPixels)
+    }
+
+    func scaled(by factor: CGFloat) -> PortraitCaptureGeometry {
+        guard factor.isFinite, factor > 0, factor < 1 else { return self }
+        let width = max(1, floor(canvas.width * factor + 0.001)), height = max(1, floor(canvas.height * factor + 0.001))
+        let inset = max(0, min((content.minX * factor).rounded(), floor((min(width, height) - 1) / 2)))
+        return PortraitCaptureGeometry(canvas: CGSize(width: width, height: height),
+            content: CGRect(x: inset, y: inset, width: width - inset * 2, height: height - inset * 2),
+            density: density * factor)
+    }
+}
+
 @MainActor
 package struct PortraitCaptureComposition {
     var options: PortraitCaptureOptions
@@ -259,9 +319,15 @@ package struct PortraitCaptureComposition {
     let desktop: NSImage?
     var backingScale: CGFloat = 1
 
-    func render(_ source: CGImage) throws -> CGImage {
-        try PortraitCaptureRenderer.render(source: source, options: options, palette: palette,
-                                           pageColor: pageColor, desktop: desktop, backingScale: backingScale)
+    func render(_ source: CGImage, reduction: CGFloat = 1) throws -> (image: CGImage, density: CGFloat) {
+        guard backingScale.isFinite, backingScale >= 1, backingScale <= 4,
+              let geometry = PortraitCaptureRenderer.geometry(pixels: CGSize(width: source.width, height: source.height),
+                                                              backingScale: backingScale)?.scaled(by: reduction) else {
+            throw PortraitCaptureError.encoding
+        }
+        let image = try PortraitCaptureRenderer.render(source: source, options: options, palette: palette,
+                                                       pageColor: pageColor, desktop: desktop, geometry: geometry)
+        return (image, geometry.density)
     }
 }
 
@@ -276,7 +342,6 @@ enum PortraitCaptureLayout {
     static let sliderHeight: CGFloat = 24
     static let buttonHeight: CGFloat = 38
     static let buttonGap: CGFloat = 8
-    static let previewSide: CGFloat = 1600
     static var width: CGFloat { CapturePresentation.paletteWidth }
     static var contentWidth: CGFloat { width - padding * 2 }
     static var tileWidth: CGFloat { floor((contentWidth - tileGap * 2) / 3) }
@@ -316,13 +381,23 @@ package final class PortraitCaptureView: NSView {
     private var desktopError: String?
     private var renderable = true
     package private(set) var previewImage: CGImage?
+    package var previewPixels: CGSize {
+        didSet {
+            guard previewPixels.width >= 1, previewPixels.height >= 1,
+                  abs(previewPixels.width - renderedPixels.width) > 1 || abs(previewPixels.height - renderedPixels.height) > 1 else { return }
+            schedulePreview(after: 0)
+        }
+    }
+    private var renderedPixels = CGSize.zero
     private(set) var applyState = CaptureFrameApply.pending
     package override var isFlipped: Bool { true }
     package override var acceptsFirstResponder: Bool { true }
 
     package init(source: CGImage, pageColor: NSColor?, backingScale: CGFloat = 1,
-         composition: PortraitCaptureComposition? = nil, defaults: UserDefaults = .standard) {
+         composition: PortraitCaptureComposition? = nil, previewPixels: CGSize = CGSize(width: 4096, height: 4096),
+         defaults: UserDefaults = .standard) {
         self.source = source; self.pageColor = composition?.pageColor ?? pageColor
+        self.previewPixels = previewPixels
         self.palette = composition?.palette ?? PortraitCaptureRenderer.palette()
         self.options = composition?.options ?? PortraitCaptureOptions(defaults: defaults)
         self.committed = composition?.options.settings
@@ -496,9 +571,12 @@ package final class PortraitCaptureView: NSView {
         options.background = .color; options.fraction = slider.doubleValue
         options.saveColor(to: defaults); options.saveBackground(to: defaults)
         updateTiles(); updateApply()
+        schedulePreview(after: 50_000_000)
+    }
+    private func schedulePreview(after delay: UInt64) {
         guard previewTask == nil else { return }
         previewTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 50_000_000)
+            if delay > 0 { try? await Task.sleep(nanoseconds: delay) }
             guard !Task.isCancelled, let self else { return }
             self.previewTask = nil; self.refresh()
         }
@@ -524,9 +602,9 @@ package final class PortraitCaptureView: NSView {
         previewTask?.cancel(); previewTask = nil
         updateTiles()
         do {
+            renderedPixels = previewPixels
             let image = try PortraitCaptureRenderer.render(source: source, options: options, palette: palette,
-                pageColor: pageColor, desktop: desktop, backingScale: backingScale, preview: true,
-                previewSide: PortraitCaptureLayout.previewSide)
+                pageColor: pageColor, desktop: desktop, backingScale: backingScale, fitting: previewPixels)
             renderable = !wantsSavedDesktop
             previewImage = wantsSavedDesktop ? nil : image
             if wantsSavedDesktop, let desktopError { showError(desktopError) } else { clearError() }

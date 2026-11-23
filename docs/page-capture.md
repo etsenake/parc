@@ -100,8 +100,10 @@ same Library identity and its actual capture kind.
 Desktop framing uses the actual wallpaper/display and its permission owner.
 Page framing uses the actual webpage theme color, not the Space theme. An
 optional "Captured in" line with Parc's P is composited under the picture.
-Logical source sizing is bounded at 2160; an even margin of 8% of the picture's
-mean side (40–160 points) surrounds it, scaled to the selected density.
+The frame keeps every captured device pixel one to one at any size, inside an
+even margin of 8% of the picture's mean side (40–160 points) in whole device
+pixels. Only Easel's image limits ever thin that margin or, as a last resort,
+scale the frame.
 See [portrait fidelity](portrait-capture-fidelity.md).
 
 ## Gesture and private-window boundaries

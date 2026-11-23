@@ -97,12 +97,12 @@ package struct CaptureLiftMotion {
         animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
         layer.add(animation, forKey: "captureReveal")
     }
-    package static func blendPortrait(_ view: NSImageView, previous: NSImage?) {
+    package static func blendPortrait(_ view: CapturePictureView, previous: CGImage?) {
         settleImageBlend(view)
         guard let previous, view.image != nil, view.window != nil,
               !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-        let overlay = CaptureBlendImageView(frame: view.bounds)
-        overlay.image = previous; overlay.imageScaling = view.imageScaling
+        let overlay = CapturePictureView(frame: view.bounds)
+        overlay.keepsRendering = true; overlay.image = previous
         overlay.identifier = NSUserInterfaceItemIdentifier("captureImageBlend")
         overlay.autoresizingMask = [.width, .height]; overlay.wantsLayer = true
         overlay.setAccessibilityElement(false); overlay.setAccessibilityHidden(true)
@@ -117,7 +117,7 @@ package struct CaptureLiftMotion {
         CATransaction.setDisableActions(true); layer.opacity = 0
         layer.add(spring, forKey: "portraitBlend"); CATransaction.commit()
     }
-    static func settleImageBlend(_ view: NSImageView) {
+    static func settleImageBlend(_ view: NSView) {
         for subview in view.subviews where subview.identifier?.rawValue == "captureImageBlend" {
             subview.layer?.removeAllAnimations(); subview.removeFromSuperview()
         }
@@ -168,8 +168,4 @@ package struct CaptureLiftMotion {
     }
     func cancel() { consumed = true; if let observer { NotificationCenter.default.removeObserver(observer) }; observer = nil }
     deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
-}
-
-@MainActor private final class CaptureBlendImageView: NSImageView {
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

@@ -270,7 +270,8 @@ final class PageCaptureController: NSObject {
     private func configurePortrait() {
         guard state == .preview, let image, valid(), lease.isValid, let parent else { return }
         let view = PortraitCaptureView(source: image.unframedPixels, pageColor: capturedPageColor,
-                                       backingScale: image.backingScale, composition: image.frame)
+                                       backingScale: image.backingScale, composition: image.frame,
+                                       previewPixels: overlay.convertToBacking(overlay.bounds).size)
         view.onCapture = { [weak self, weak view] in
             guard let self, self.state == .configuringPortrait, let view, self.portrait === view else { return }
             self.reconcile()
@@ -285,6 +286,10 @@ final class PageCaptureController: NSObject {
         }
         view.onResize = { [weak self] in self?.overlay.palette.view.frameContentSizeChanged() }
         portrait = view; state = .configuringPortrait
+        overlay.onPicturePixels = { [weak self, weak view] pixels in
+            guard let self, let view, self.state == .configuringPortrait, self.portrait === view else { return }
+            view.previewPixels = pixels
+        }
         overlay.showFramePage(view, preview: view.previewImage)
         view.loadDesktop(screen: parent.screen)
         parent.makeFirstResponder(view)
@@ -559,7 +564,7 @@ final class PageCaptureOverlay: NSView {
     var onAction: ((Action) -> Void)?
     var pageSize = CGSize.zero
     let palette = CapturePalette()
-    private let picture = CapturePreviewImageView()
+    private let picture = CapturePictureView()
     private let pictureFrame = CaptureFlippedView()
     private let selectionShade = CaptureSelectionShade()
     private let elementLens = CaptureElementLens()
@@ -597,6 +602,10 @@ final class PageCaptureOverlay: NSView {
     private let reduceMotion: () -> Bool
     private let scheduleFrames: (Timer) -> Void
     var presentedImageRect: NSRect { picture.frame }
+    var onPicturePixels: ((CGSize) -> Void)? {
+        get { picture.onPixelSizeChange }
+        set { picture.onPixelSizeChange = newValue }
+    }
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
 
@@ -615,8 +624,8 @@ final class PageCaptureOverlay: NSView {
         wantsLayer = true
         setAccessibilityElement(true); setAccessibilityRole(.group)
         setAccessibilityLabel("Page capture")
-        picture.imageScaling = .scaleProportionallyUpOrDown; picture.setAccessibilityLabel("Captured image preview")
-        picture.wantsLayer = true; picture.layer?.cornerRadius = 3.5; picture.layer?.masksToBounds = true
+        picture.setAccessibilityLabel("Captured image preview")
+        picture.layer?.cornerRadius = 3.5; picture.layer?.masksToBounds = true
         pictureFrame.wantsLayer = true; pictureFrame.layer?.cornerRadius = CapturePresentation.cornerRadius
         pictureFrame.layer?.shadowColor = NSColor.black.cgColor
         pictureFrame.layer?.shadowOpacity = 0.25; pictureFrame.layer?.shadowRadius = 12
@@ -681,7 +690,7 @@ final class PageCaptureOverlay: NSView {
         editing = false; selecting = false; busy = false; selection = nil
         committedPixels = image
         let previous = drafting ? picture.image : nil
-        picture.image = NSImage(cgImage: image, size: .zero); imageSize = NSSize(width: image.width, height: image.height)
+        picture.image = image; imageSize = NSSize(width: image.width, height: image.height)
         if drafting { drafting = false; CaptureMotion.blendPortrait(picture, previous: previous) }
         picture.isHidden = false; pictureFrame.isHidden = false; hint.isHidden = true
         modeChrome.hide(animated: true); cancel.isHidden = true; spinner.stopAnimation(nil); spinner.isHidden = true
@@ -701,7 +710,7 @@ final class PageCaptureOverlay: NSView {
     func showDraft(_ image: CGImage?) {
         guard let shown = image ?? committedPixels else { return }
         let previous = picture.image
-        picture.image = NSImage(cgImage: shown, size: .zero); imageSize = NSSize(width: shown.width, height: shown.height)
+        picture.image = shown; imageSize = NSSize(width: shown.width, height: shown.height)
         drafting = image != nil
         needsLayout = true
         CaptureMotion.blendPortrait(picture, previous: previous)
@@ -732,7 +741,7 @@ final class PageCaptureOverlay: NSView {
         let geometry = CapturePresentation.layout(bounds: bounds, pixels: imageSize, source: previewSourceRect,
             paletteHeight: palette.view.naturalHeight, editing: editing, editingFooterHeight: hintHeight + 60,
             fullPalette: palette.view.showsFramePage)
-        imageRect = geometry.image; capturedRect = geometry.captured
+        imageRect = backingAlignedRect(geometry.image, options: .alignAllEdgesNearest); capturedRect = geometry.captured
         lift?.retarget(imageRect)
         placePicture()
         elementLens.frame = bounds; selectionShade.frame = bounds
@@ -1006,6 +1015,7 @@ final class PageCaptureOverlay: NSView {
     }
     private func placePicture() {
         let shown = lift?.rect ?? imageRect
+        picture.keepsRendering = lift != nil
         picture.frame = shown
         pictureFrame.frame = shown.insetBy(dx: -CapturePresentation.imageBorder, dy: -CapturePresentation.imageBorder)
     }
@@ -1044,11 +1054,6 @@ final class PageCaptureOverlay: NSView {
 
 @MainActor
 class CaptureFlippedView: NSView { override var isFlipped: Bool { true } }
-
-@MainActor
-private final class CapturePreviewImageView: NSImageView {
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-}
 
 @MainActor
 final class CaptureElementLens: CaptureFlippedView {
@@ -1198,7 +1203,7 @@ private final class CaptureSelectionShade: CaptureFlippedView {
 }
 
 extension PageCaptureOverlay {
-    var harnessPicture: NSImageView { picture }
+    var harnessPicture: CapturePictureView { picture }
     var harnessSelection: NSRect? { selection }
     var harnessLensShown: Bool { !elementLens.isHidden && selecting }
     func harnessGrayscale(_ shown: Bool) { elementLens.harnessGrayscale(shown) }

@@ -11,6 +11,10 @@ captures map the native rectangle; element captures include its two-point
 expansion and clipping. Viewport/full-page requests retain their original
 viewport. Pixels fit without distortion. Crop and Portrait changes fit the new
 aspect ratio in that same context without resampling the retained source PNG.
+`CapturePictureView` sits on whole screen pixels and draws at the screen's own
+resolution: pixel for pixel when the sizes match within two pixels, otherwise
+through one high-quality resample. While the card lifts it stretches its current
+rendering and redraws once it settles.
 
 Small captures stay where they were taken. A capture whose source covers more
 than half the page, such as Visible Area and Full Page, or that the palette

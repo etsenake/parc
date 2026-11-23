@@ -32,14 +32,17 @@ package enum EaselImagePlacement {
         package var id: UUID { session.document.id }
         package var title: String { session.document.title }
     }
+    package nonisolated static let maximumSide = 16_384
+    package nonisolated static let maximumPixels = 80_000_000
+
     static func pixelSize(_ data: Data) throws -> NSSize {
         guard data.count <= EaselStore.maximumAssetBytes,
               let source = CGImageSourceCreateWithData(data as CFData, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = properties[kCGImagePropertyPixelWidth] as? Int,
               let height = properties[kCGImagePropertyPixelHeight] as? Int,
-              width > 0, height > 0, width <= 16_384, height <= 16_384,
-              Int64(width) * Int64(height) <= 80_000_000,
+              width > 0, height > 0, width <= maximumSide, height <= maximumSide,
+              Int64(width) * Int64(height) <= Int64(maximumPixels),
               CGImageSourceCreateImageAtIndex(source, 0, nil) != nil else { throw EaselStoreError.invalidImage }
         return NSSize(width: width, height: height)
     }

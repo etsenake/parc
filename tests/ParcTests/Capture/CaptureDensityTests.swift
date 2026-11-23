@@ -67,10 +67,9 @@ extension CapturePortraitTestsSupport {
         @MainActor @Test func aRetinaFrameRendersEveryDevicePixelOfTheCapture() throws {
             let fixture = try PortraitFixture()
             let (capture, _) = try fixture.framed(.page, backingScale: 2)
-            let size = PortraitCaptureRenderer.outputSize(source: CGSize(width: 160, height: 80))
-            let content = PortraitCaptureRenderer.contentRect(source: CGSize(width: 160, height: 80))
-            #expect(capture.pixels.width == Int(size.width * 2) && capture.pixels.height == Int(size.height * 2))
-            #expect(content.width * 2 == 320 && content.height * 2 == 160)
+            let geometry = try #require(PortraitCaptureRenderer.geometry(pixels: CGSize(width: 320, height: 160), backingScale: 2))
+            #expect(capture.pixels.width == Int(geometry.canvas.width) && capture.pixels.height == Int(geometry.canvas.height))
+            #expect(geometry.content.size == CGSize(width: 320, height: 160) && geometry.content.minX == 80)
         }
 
         @MainActor @Test func reopeningACaptureAfterRemovingItsFrameGivesTheDensityTaggedOriginal() throws {
@@ -99,26 +98,25 @@ extension CapturePortraitTestsSupport {
         }
 
         @MainActor @Test(arguments: Source.cases)
-        func theCaptureFillsMostOfTheFrameAndKeepsItsShape(_ sample: Source) {
-            let canvas = PortraitCaptureRenderer.outputSize(source: sample.size)
-            let content = PortraitCaptureRenderer.contentRect(source: sample.size)
+        func theCaptureFillsMostOfTheFrameAndKeepsItsShape(_ sample: Source) throws {
+            let geometry = try #require(PortraitCaptureRenderer.geometry(pixels: sample.size, backingScale: 1))
+            let canvas = geometry.canvas, content = geometry.content
             let coverage = (content.width * content.height) / (canvas.width * canvas.height)
             #expect(coverage >= 0.6)
-            #expect(abs(content.width / content.height - sample.size.width / sample.size.height) < 0.01)
+            #expect(content.size == sample.size)
         }
 
         @MainActor @Test(arguments: Source.cases)
-        func theBackgroundShowsEvenlyOnEverySide(_ sample: Source) {
-            let canvas = PortraitCaptureRenderer.outputSize(source: sample.size)
-            let content = PortraitCaptureRenderer.contentRect(source: sample.size)
+        func theBackgroundShowsEvenlyOnEverySide(_ sample: Source) throws {
+            let geometry = try #require(PortraitCaptureRenderer.geometry(pixels: sample.size, backingScale: 1))
+            let canvas = geometry.canvas, content = geometry.content
             let sides = [content.minX, content.minY, canvas.width - content.maxX, canvas.height - content.maxY]
             #expect(sides.allSatisfy { $0 == sides[0] } && sides[0] >= 40)
         }
 
-        @MainActor @Test func aLaptopCaptureCoversNoticeablyMoreThanTheOldFixedMargin() {
-            let source = CGSize(width: 1440, height: 900)
-            let canvas = PortraitCaptureRenderer.outputSize(source: source)
-            #expect(1440 / canvas.width > 0.85 && 900 / canvas.height > 0.8)
+        @MainActor @Test func aLaptopCaptureCoversNoticeablyMoreThanTheOldFixedMargin() throws {
+            let canvas = try #require(PortraitCaptureRenderer.geometry(pixels: CGSize(width: 2880, height: 1800), backingScale: 2)).canvas
+            #expect(2880 / canvas.width > 0.85 && 1800 / canvas.height > 0.8)
         }
 
         @MainActor @Test func framesOfTheSameAreaShareOneMarginWhateverTheirShape() {

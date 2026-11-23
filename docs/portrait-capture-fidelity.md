@@ -8,8 +8,10 @@ recaptures the page; removing it restores the original PNG byte for byte.
 
 Frame in Portrait Mode pushes a Portrait Frame page inside the capture
 palette's card, with a back button, and the captured image beside it becomes the
-live preview of the framed result at page size, rendered up to 1,600 pixels on
-its longest side and blended on each change. The page offers Color, Website and
+live preview of the framed result at page size, rendered at exactly the screen
+pixels it occupies (the final image itself when that fits) and blended on each
+change. The picture reports its pixel size, so a resized window re-renders it.
+The page offers Color, Website and
 Wallpaper as picture tiles, the chosen one ringed in the Notes accent; the
 12-point color track with its 24-point white knob sits under them, and moving it
 picks Color. The header's trailing toolbar toggle draws Parc's P: filled in the
@@ -23,14 +25,21 @@ nothing changed; Escape, Left on the page, Cancel and the back button return to
 the palette. Latest color changes are throttled at 50 ms. `CaptureFrameApply`
 holds the Apply rule.
 
-Composition uses logical points: the source is bounded by
-`min(1, 2160 / width, 2160 / height)`, rounded upward, and an even margin of
-`round(0.08 × √(width × height))`, clamped to 40–160 points, surrounds it, so
+Composition works in device pixels. The captured pixels land in the frame one
+to one at whole-pixel positions, whatever the capture's size, so nothing is
+resampled. An even margin of `round(0.08 × √(width × height))` logical points,
+clamped to 40–160 points and rounded to whole device pixels, surrounds it, so
 frames of any shape keep the same share of background and a 1440 × 900 capture
-fills about 89% of the frame's width. Export retains the capture window's backing factor: a 2× capture
-has 2× radii/shadow/frame pixels and 144-DPI PNG metadata. Source content is
-not enlarged before integral rounding. Preview and every destination use the
-same result and source RGB profile; unsupported non-RGB sources use sRGB.
+fills about 89% of the frame's width. Easel's image limits bound every frame:
+16,384 pixels a side, 80 million pixels and 30 MB. A capture that only fits
+with a thinner margin keeps every pixel and gives up margin down to 40 points;
+only one too big even for that is scaled, just enough to fit, and a PNG over
+30 MB is re-rendered smaller until it fits. Radii, shadow and frame lines follow
+the density, and the PNG declares it (144 DPI at 2×, proportionally less for a
+scaled frame, so it still opens at screen size). The output is opaque RGB in the
+source's RGB profile, or sRGB for anything else, and keeps 16-bit depth for
+deeper sources. The wallpaper fills the frame without stretching. Preview and
+every destination use the same composition.
 
 The watermark reads "Captured in" followed by Parc's P, centred in the bottom
 margin. The text is the system semibold face at 30% of the margin (10–28
@@ -73,11 +82,15 @@ missing desktop pixels never silently render a different background.
 
 The compositor/CapturedImage checks cover original/cropped PNG preservation,
 reversible framing, tall images, 2× and 3× density declared in every PNG,
+captured pixels kept exactly at odd sizes, 2×, 3×, wide gamut and sizes beyond
+any screen, Easel's pixel and byte limits, previews sized to their screen
+pixels and the picture's one-to-one display,
 margin geometry across shapes, Display P3 conversion, the watermark toggle's
 output and remembered choice, caption and mark placement, watermark thresholds,
 desktop candidate filtering, async cancellation and failure controls with
 isolated preferences (`CapturePortrait*`, `CaptureDensityTests`,
-`CaptureFrameGeometryTests`). A missing desktop image remains a visible error;
+`CaptureFrameGeometryTests`, `CaptureSharpnessTests`). A missing desktop image
+remains a visible error;
 tests must not simulate permission success to bypass that path.
 
 [Capture motion](capture-motion.md) owns preview transitions and focus return;

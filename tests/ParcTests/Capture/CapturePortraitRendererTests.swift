@@ -12,14 +12,14 @@ extension CapturePortraitTestsSupport {
             let expected: CGSize
 
             static let cases: [Self] = [
-                .init(testDescription: "Large source scaled down", source: .init(width: 4000, height: 2000), expected: .init(width: 2404, height: 1324)),
+                .init(testDescription: "Large source kept at full size", source: .init(width: 4000, height: 2000), expected: .init(width: 4320, height: 2320)),
                 .init(testDescription: "Small source kept at size", source: .init(width: 320, height: 160), expected: .init(width: 400, height: 240)),
             ]
         }
 
         @MainActor @Test(arguments: OutputSize.cases)
         func outputSizeFitsTheSourceInsideTheFrame(_ sample: OutputSize) {
-            #expect(PortraitCaptureRenderer.outputSize(source: sample.source) == sample.expected)
+            #expect(PortraitCaptureRenderer.geometry(pixels: sample.source, backingScale: 1)?.canvas == sample.expected)
         }
 
         @MainActor @Test func theBundledPaletteHasNineColors() {
@@ -130,8 +130,9 @@ extension CapturePortraitTestsSupport {
             let fixture = try PortraitFixture()
             fixture.options.background = .desktop
             let preview = try PortraitCaptureRenderer.render(source: fixture.source, options: fixture.options, palette: fixture.palette,
-                                                             pageColor: .green, desktop: fixture.wallpaper, preview: true)
-            #expect(max(preview.width, preview.height) <= 440)
+                                                             pageColor: .green, desktop: fixture.wallpaper,
+                                                             fitting: CGSize(width: 220, height: 220))
+            #expect(preview.width == 220 && preview.height == 132)
         }
 
         @MainActor @Test func aRetinaRenderDoublesTheOutputPixels() throws {

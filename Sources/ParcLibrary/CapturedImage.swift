@@ -1,5 +1,6 @@
 import AppKit
 import ImageIO
+import ParcCore
 import UniformTypeIdentifiers
 
 @MainActor
@@ -29,9 +30,21 @@ package final class CapturedImage {
     }
 
     package func applyFrame(_ composition: PortraitCaptureComposition) throws {
-        let rendered = try composition.render(unframedPixels)
-        let encoded = try Self.png(rendered, backingScale: composition.backingScale)
+        let (rendered, encoded) = try Self.framed(unframedPixels, composition)
         frame = composition; pixels = rendered; pngData = encoded
+    }
+
+    static func framed(_ source: CGImage, _ composition: PortraitCaptureComposition,
+                       maximumBytes: Int = EaselStore.maximumAssetBytes) throws -> (CGImage, Data) {
+        var reduction: CGFloat = 1
+        var attempt = 0
+        while true {
+            let (image, density) = try composition.render(source, reduction: reduction)
+            let data = try png(image, backingScale: density)
+            attempt += 1
+            guard data.count > maximumBytes, attempt < 8, image.width > 1 || image.height > 1 else { return (image, data) }
+            reduction *= min(0.95, sqrt(CGFloat(maximumBytes) / CGFloat(data.count)) * 0.97)
+        }
     }
 
     package func removeFrame() {
@@ -47,8 +60,7 @@ package final class CapturedImage {
             cropped = value
         } else { cropped = edited }
         let data = cropRect == nil ? sourceData : try Self.png(cropped, backingScale: backingScale)
-        let rendered = try frame?.render(cropped) ?? cropped
-        let encoded = frame == nil ? data : try Self.png(rendered, backingScale: frame?.backingScale ?? backingScale)
+        let (rendered, encoded) = try frame.map { try Self.framed(cropped, $0) } ?? (cropped, data)
         sourcePixels = edited; sourcePNG = sourceData
         unframedPixels = cropped; unframedPNG = data; pixels = rendered; pngData = encoded
     }
@@ -61,8 +73,7 @@ package final class CapturedImage {
         guard !crop.isEmpty, !crop.isNull,
               let image = sourcePixels.cropping(to: crop) else { throw PortraitCaptureError.encoding }
         let data = crop == bounds ? sourcePNG : try Self.png(image, backingScale: backingScale)
-        let rendered = try frame?.render(image) ?? image
-        let encoded = frame == nil ? data : try Self.png(rendered, backingScale: frame?.backingScale ?? backingScale)
+        let (rendered, encoded) = try frame.map { try Self.framed(image, $0) } ?? (image, data)
         cropRect = crop == bounds ? nil : crop
         unframedPixels = image; unframedPNG = data; pixels = rendered; pngData = encoded
     }
