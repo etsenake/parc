@@ -35,8 +35,17 @@ struct SplitAppearanceEmojiCatalogTests {
         #expect(Self.emoji.filtered("GRIN face").emojis.contains { $0.emoji == "😀" })
     }
 
-    @Test func anInvalidPatternMatchesOnlyByEmoji() {
-        #expect(Self.emoji.filtered("(").emojis.isEmpty)
+    @Test func typedPunctuationMatchesItself() {
+        #expect(Self.emoji.filtered("(blood type)").emojis.contains { $0.description == "A button (blood type)" })
+        #expect(Self.emoji.filtered("g.inning").emojis.isEmpty)
+    }
+
+    @Test func manyWordsMatchInOrder() {
+        #expect(Self.emoji.filtered("face with tears of joy").emojis.contains { $0.emoji == "😂" })
+        #expect(Self.emoji.filtered(String(repeating: "a ", count: 40)).emojis.isEmpty)
+    }
+
+    @Test func anEmojiMatchesItself() {
         #expect(Self.emoji.filtered("😀").emojis.contains { $0.emoji == "😀" })
     }
 

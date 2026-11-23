@@ -50,12 +50,15 @@ struct SidebarEmojiModel {
     }
 
     func filtered(_ query: String) -> SidebarEmojiModel {
-        guard !query.isEmpty else { return self }
-        let pattern = ".*" + query.replacingOccurrences(of: " ", with: ".*") + ".*"
-        let expression = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+        let words = query.split(whereSeparator: \.isWhitespace)
+        guard !words.isEmpty else { return self }
         func matches(_ text: String) -> Bool {
-            guard let expression else { return false }
-            return expression.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+            var rest = text.startIndex..<text.endIndex
+            for word in words {
+                guard let found = text.range(of: word, options: .caseInsensitive, range: rest) else { return false }
+                rest = found.upperBound..<text.endIndex
+            }
+            return true
         }
         return SidebarEmojiModel(emojis.filter { matches($0.description) || $0.keywords.contains(where: matches) || query.contains($0.emoji) })
     }
