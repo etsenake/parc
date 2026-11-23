@@ -498,6 +498,18 @@ final class NoteTableBlockView: NoteBlockView {
             NoteAnimation.withoutAnimation { grip.alphaValue = 0 }
             grip.isHidden = true
         }
+        if let drag, max(drag.source, drag.target) >= (drag.axis == .row ? geometry.rowCount : geometry.columnCount) { abandonDrag() }
+    }
+
+    private func abandonDrag() {
+        guard let abandoned = drag else { return }
+        drag = nil
+        for host in hosts.values {
+            NoteTableMotion.settle(host.cellView)
+            NoteTableMotion.settle(host.cellView.backdrop)
+        }
+        for rule in rowRules + columnRules { NoteTableMotion.settle(rule) }
+        NoteTableMotion.fadeOutAndRemove(abandoned.ghost)
     }
 
     private func commitComposition() {
