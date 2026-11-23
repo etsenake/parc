@@ -291,28 +291,28 @@ extension NSView {
 }
 
 @MainActor
-struct NoteZoneCursor {
+final class NoteZoneCursor {
     private var active = false
     private let includesDescendants: Bool
 
     init(includesDescendants: Bool = false) { self.includesDescendants = includesDescendants }
 
-    mutating func cursorUpdate(_ cursor: NSCursor?, in view: NSView, event: NSEvent) -> Bool {
+    func cursorUpdate(_ cursor: NSCursor?, in view: NSView, event: NSEvent) -> Bool {
         let applied = apply(cursor, in: view, event: event)
         active = applied
         return applied
     }
 
-    mutating func moved(_ cursor: NSCursor?, in view: NSView, event: NSEvent) {
+    func moved(_ cursor: NSCursor?, in view: NSView, event: NSEvent) {
         if apply(cursor, in: view, event: event) { return }
         guard active else { return }
         active = false
         view.window?.refreshCursorUnderPointer()
     }
 
-    mutating func exited() { active = false }
+    func exited() { active = false }
 
-    private mutating func apply(_ cursor: NSCursor?, in view: NSView, event: NSEvent) -> Bool {
+    private func apply(_ cursor: NSCursor?, in view: NSView, event: NSEvent) -> Bool {
         let point = event.locationInWindow
         guard let cursor, includesDescendants ? view.ownsPointer(atWindowPoint: point) : view.isPointerTarget(atWindowPoint: point) else { return false }
         cursor.set()

@@ -16,7 +16,7 @@ final class NoteMediaBlockView: NoteCaptionedBlockView, NotePageHostObserving {
     private var mode: Mode?
     private var content: NoteMediaContentView?
     private var tracking: NSTrackingArea?
-    private var pageZone = NoteZoneCursor()
+    private let pageZone = NoteZoneCursor()
     private var observers: [NSObjectProtocol] = []
     private var failure: (source: String, problem: NoteMediaProblem)?
     private var importWatch: AnyCancellable?

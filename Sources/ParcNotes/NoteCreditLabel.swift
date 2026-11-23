@@ -12,7 +12,7 @@ final class NoteCreditLabel: NSView {
     private var hovered: Int? { didSet { if hovered != oldValue { needsDisplay = true } } }
     private var pressed: Int?
     private var tracking: NSTrackingArea?
-    private var linkZone = NoteZoneCursor()
+    private let linkZone = NoteZoneCursor()
     private var linkElements: [NoteCreditLinkElement]?
 
     override init(frame: NSRect) {

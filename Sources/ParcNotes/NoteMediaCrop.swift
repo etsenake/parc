@@ -21,7 +21,7 @@ final class NoteImageCropEditor: NSView {
     private var drag: Drag?
     private var popover: NotePagePopover?
     private var dismissing = false
-    private var pointerZone = NoteZoneCursor()
+    private let pointerZone = NoteZoneCursor()
     var imageRect: NSRect = .zero { didSet { if oldValue != imageRect { needsLayout = true } } }
 
     private let dim = CAShapeLayer()

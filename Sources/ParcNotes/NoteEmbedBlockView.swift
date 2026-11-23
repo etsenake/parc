@@ -12,7 +12,7 @@ final class NoteEmbedBlockView: NoteCaptionedBlockView, NotePageHostObserving {
     private var dragStart: Double?
     private var liveHeight: Double?
     private var tracking: NSTrackingArea?
-    private var pageZone = NoteZoneCursor()
+    private let pageZone = NoteZoneCursor()
 
     override init(block: NoteBlock, editor: NotePageEditor?) {
         super.init(block: block, editor: editor)

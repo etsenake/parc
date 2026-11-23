@@ -42,7 +42,7 @@ package final class NoteImageContentView: NoteMediaContentView, NoteMediaResizin
     private var framingPopover: NotePagePopover?
     private(set) var cropEditor: NoteImageCropEditor?
     private var animatesNextLayout = false
-    private var imageZone = NoteZoneCursor()
+    private let imageZone = NoteZoneCursor()
     private var clickAwayMonitor: Any?
     private weak var responderBeforeCrop: NSResponder?
     static let cropMaximumHeight: CGFloat = 560

@@ -237,7 +237,7 @@ final class NotePageLinkBlockView: NoteBlockView {
     private var target: URL?
     private var broken = false
     private var tracking: NSTrackingArea?
-    private var linkZone = NoteZoneCursor(includesDescendants: true)
+    private let linkZone = NoteZoneCursor(includesDescendants: true)
     private var hovered = false
     private var pressed = false
     private static let height: CGFloat = 34
