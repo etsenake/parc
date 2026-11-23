@@ -357,7 +357,7 @@ bool ParcPageCaptions::Update() {
          above && above != player && depth < kMaxPathDepth;
          above = FlatTreeTraversal::ParentElement(*above), ++depth) {
       path.Append(above->localName());
-      if (above->HasClass()) {
+      if (above->HasClass() && above->ClassNames().size()) {
         path.Append('.');
         path.Append(above->ClassNames()[0]);
       }
