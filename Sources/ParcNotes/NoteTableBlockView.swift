@@ -401,9 +401,11 @@ final class NoteTableBlockView: NoteBlockView {
 
     private func reloadContent() {
         let previous = geometry
+        let previousSource = geometrySource
         geometry = makeGeometry(width: bounds.width)
         geometryWidth = bounds.width
         geometrySource = table
+        if drag != nil, previousSource != table { abandonDrag() }
         revalidateGrips()
         layoutChrome()
         layoutCells()
@@ -498,7 +500,6 @@ final class NoteTableBlockView: NoteBlockView {
             NoteAnimation.withoutAnimation { grip.alphaValue = 0 }
             grip.isHidden = true
         }
-        if let drag, max(drag.source, drag.target) >= (drag.axis == .row ? geometry.rowCount : geometry.columnCount) { abandonDrag() }
     }
 
     private func abandonDrag() {
