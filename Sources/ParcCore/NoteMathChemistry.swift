@@ -8,22 +8,32 @@ enum NoteMathChemistry {
         ("\u{2194}", "xleftrightarrow"), ("\u{21CC}", "xrightleftharpoons"), ("\u{21C4}", "xrightleftarrows"),
     ]
 
+    private static let maximumDepth = 24
+
     static func formula(_ text: String) throws(NoteMathParseError) -> String {
-        var scanner = Scanner(Array(text))
+        var scanner = Scanner(Array(text), depth: 0)
         return try scanner.formula()
     }
 
     static func units(_ text: String) throws(NoteMathParseError) -> String {
-        var scanner = Scanner(Array(text))
+        var scanner = Scanner(Array(text), depth: 0)
         return try scanner.physicalUnits()
     }
 
     private struct Scanner {
         let characters: [Character]
+        let depth: Int
         var index = 0
 
-        init(_ characters: [Character]) {
+        init(_ characters: [Character], depth: Int) {
             self.characters = characters
+            self.depth = depth
+        }
+
+        func nested(_ text: String) throws(NoteMathParseError) -> String {
+            guard depth < NoteMathChemistry.maximumDepth else { throw failure("This formula nests too deep to draw") }
+            var inner = Scanner(Array(text), depth: depth + 1)
+            return try inner.formula()
         }
 
         var atEnd: Bool { index >= characters.count }
@@ -117,7 +127,7 @@ enum NoteMathChemistry {
             var result = String(characters[start..<index])
             while peek() == "{" {
                 let argument = try balanced(open: "{", close: "}")
-                result += "{" + (Self.ceArguments.contains(name) ? try NoteMathChemistry.formula(argument) : argument) + "}"
+                result += "{" + (Self.ceArguments.contains(name) ? try nested(argument) : argument) + "}"
             }
             if isWord, peek() != "{" {
                 while let character = peek(), character.isWhitespace, peek(1).map({ "+-^_".contains($0) }) == true { index += 1 }
@@ -186,8 +196,8 @@ enum NoteMathChemistry {
             var above = ""
             var below: String?
             if peek() == "[" {
-                above = try NoteMathChemistry.formula(try balanced(open: "[", close: "]"))
-                if peek() == "[" { below = try NoteMathChemistry.formula(try balanced(open: "[", close: "]")) }
+                above = try nested(try balanced(open: "[", close: "]"))
+                if peek() == "[" { below = try nested(try balanced(open: "[", close: "]")) }
             }
             let under = below.map { "[{" + $0 + "}]" } ?? ""
             return "\\" + command + under + "{" + above + "}"

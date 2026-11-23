@@ -256,6 +256,9 @@ package struct NoteMathParser {
     }
 
     private static let maximumDepth = 120
+    private static let maximumCommandDepth = 48
+    private static let maximumColumnPairs = 50
+    private static let maximumDimension = 100.0
 
     private let characters: [Character]
     private let origins: [Range<Int>]
@@ -263,6 +266,7 @@ package struct NoteMathParser {
     private let display: Bool
     private var index = 0
     private var depth = 0
+    private var nesting = 0
     private var pendingTag: (nodes: [NoteMathNode], label: [NoteMathNode], lexeme: Lexeme)?
     private var pendingLabel: (key: String, lexeme: Lexeme)?
     private var suppressesNumber = false
@@ -425,6 +429,11 @@ package struct NoteMathParser {
         if depth > Self.maximumDepth { throw failure("This formula nests too deep to draw", lexeme) }
     }
 
+    private mutating func descend(_ lexeme: Lexeme) throws(NoteMathParseError) {
+        nesting += 1
+        if nesting > Self.maximumCommandDepth { throw failure("This formula nests too deep to draw", lexeme) }
+    }
+
     private mutating func parseList(_ scope: Scope) throws(NoteMathParseError) -> [NoteMathNode] {
         var nodes: [NoteMathNode] = []
         var infix: (name: String, numerator: [NoteMathNode], lexeme: Lexeme)?
@@ -525,21 +534,29 @@ package struct NoteMathParser {
             case .command("color"):
                 advance(past: lexeme)
                 let color = try parseColor(after: "color")
+                try descend(lexeme)
+                defer { nesting -= 1 }
                 let rest = try parseList(scope)
                 nodes.append(.colored(color, rest))
                 return finish(nodes)
             case .command(let name) where Self.styleSwitches[name] != nil:
                 advance(past: lexeme)
+                try descend(lexeme)
+                defer { nesting -= 1 }
                 let rest = try parseList(scope)
                 nodes.append(.mathStyle(Self.styleSwitches[name]!, rest))
                 return finish(nodes)
             case .command(let name) where Self.fontSwitches[name] != nil:
                 advance(past: lexeme)
+                try descend(lexeme)
+                defer { nesting -= 1 }
                 let rest = try parseList(scope)
                 nodes.append(.styled(Self.fontSwitches[name]!, rest))
                 return finish(nodes)
             case .command(let name) where Self.sizeSwitches[name] != nil:
                 advance(past: lexeme)
+                try descend(lexeme)
+                defer { nesting -= 1 }
                 let rest = try parseList(scope)
                 nodes.append(.sized(Self.sizeSwitches[name]!, rest))
                 return finish(nodes)
@@ -674,6 +691,8 @@ package struct NoteMathParser {
             default: return Self.characterNode(character)
             }
         case .command(let name):
+            try descend(lexeme)
+            defer { nesting -= 1 }
             return try parseCommand(name, lexeme)
         }
     }
@@ -1232,6 +1251,11 @@ package struct NoteMathParser {
     }
 
     static func dimension(_ text: String) -> Double? {
+        guard let value = unboundedDimension(text), value.isFinite, abs(value) <= maximumDimension else { return nil }
+        return value
+    }
+
+    private static func unboundedDimension(_ text: String) -> Double? {
         let trimmed = text.replacingOccurrences(of: " ", with: "")
         var numberEnd = trimmed.startIndex
         while numberEnd < trimmed.endIndex, "+-.0123456789".contains(trimmed[numberEnd]) {
@@ -1294,6 +1318,8 @@ package struct NoteMathParser {
     }
 
     private mutating func parseTextBody(_ style: NoteMathTextStyle, command: Lexeme, name: String) throws(NoteMathParseError) -> [NoteMathNode] {
+        try descend(command)
+        defer { nesting -= 1 }
         var segments: [NoteMathNode] = []
         var buffer = ""
         func flush() {
@@ -1535,8 +1561,8 @@ package struct NoteMathParser {
             }
         case .alignedAt:
             let spec = try parseRawGroup(for: "begin{\(name.text)}", what: "how many column pairs, like {2}")
-            guard let pairs = Int(spec.text.filter { !$0.isWhitespace }), pairs > 0 else {
-                throw failure("\(name.text) needs how many column pairs it has, like {2}", from: spec.start, to: spec.end)
+            guard let pairs = Int(spec.text.filter { !$0.isWhitespace }), (1...Self.maximumColumnPairs).contains(pairs) else {
+                throw failure("\(name.text) needs how many column pairs it has, from 1 to \(Self.maximumColumnPairs), like {2}", from: spec.start, to: spec.end)
             }
             specified = (0..<(pairs * 2)).map { $0.isMultiple(of: 2) ? .right : .left }
         case .matrix where name.text.hasSuffix("*"):

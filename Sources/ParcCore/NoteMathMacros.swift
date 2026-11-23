@@ -81,6 +81,7 @@ struct NoteMathExpander {
 
     static let maximumExpansions = 1000
     static let maximumLength = 100_000
+    static let maximumCaptureDepth = 24
     private static let triggers: Set<String> = [
         "newcommand", "renewcommand", "providecommand", "def", "gdef", "edef", "xdef", "let", "global", "ce", "pu",
         "expandafter", "noexpand", "csname",
@@ -98,6 +99,7 @@ struct NoteMathExpander {
     private var characters: [Character] = []
     private var origins: [Range<Int>] = []
     private var capture: [Token]?
+    private var captureDepth = 0
     private var afterControlWord = false
     private var globalPrefix = false
 
@@ -551,6 +553,11 @@ struct NoteMathExpander {
     }
 
     private mutating func expandFully(_ body: [Token]) throws(NoteMathParseError) -> [Token] {
+        captureDepth += 1
+        defer { captureDepth -= 1 }
+        if captureDepth > Self.maximumCaptureDepth {
+            throw failure("Macro definitions nest too deep to expand", 0..<1)
+        }
         let saved = capture
         capture = []
         pending.append(Token(kind: .marker, raw: "", start: 0))
@@ -629,6 +636,9 @@ struct NoteMathExpander {
                     for var token in arguments[value - 1] {
                         token.invocation = token.invocation ?? invocation
                         result.append(token)
+                    }
+                    if result.count + characters.count + pending.count > Self.maximumLength {
+                        throw failure("\\\(name) grows this equation too big to draw", call.origin)
                     }
                     index += 2
                     continue
