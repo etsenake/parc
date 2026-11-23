@@ -54,7 +54,9 @@ each rule still matches the rebuilt Chromium is checked against the built pages
 macOS Now Playing never shows Chromium's logo. When a page gives no artwork, the
 content client's product logo is the app icon the person chose, read at the
 moment it's shown. A private window hides the page's artwork and title there, and
-its placeholder picture is Parc's, from the browser's resource-bundle delegate.
+its placeholder picture is Parc's private mark, Boo (a sheet ghost with the P's
+foot showing), which the browser's resource-bundle delegate loads from
+[Resources/PrivateMark](../Resources/PrivateMark/README.md).
 
 The task manager's Browser row still shows Chromium's small colour logo: a
 one-colour P would disappear on its dark table, so it waits for a colour vector.

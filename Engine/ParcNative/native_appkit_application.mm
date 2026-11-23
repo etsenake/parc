@@ -598,9 +598,15 @@ void InitializeNativeProfile(Profile& profile) {
           }, profile.GetWeakPtr()));
 }
 gfx::Image PrivateMediaArtwork() {
-  NSImage* icon = NSApp.applicationIconImage;
-  return icon ? gfx::Image(gfx::ImageSkiaFromResizedNSImage(
-                    icon, NSMakeSize(512, 512)))
+  NSURL* url = [NSBundle.mainBundle URLForResource:@"PrivateMark"
+                                     withExtension:@"png"
+                                      subdirectory:@"PrivateMark"];
+  NSImage* mark = url ? [[NSImage alloc] initWithContentsOfURL:url] : nil;
+  if (!mark.isValid) {
+    mark = NSApp.applicationIconImage;
+  }
+  return mark ? gfx::Image(gfx::ImageSkiaFromResizedNSImage(
+                    mark, NSMakeSize(512, 512)))
               : gfx::Image();
 }
 class ProductBrandingDelegate final : public ui::ResourceBundle::Delegate {
