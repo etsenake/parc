@@ -267,7 +267,9 @@ double ParcInbandTextTrack::GenericCueEnd(double end) const {
 void ParcInbandTextTrack::UpdateCueFromCueData(
     VTTCue& cue,
     const media::ParcInbandTextCue& data) {
-  cue.setStartTime(data.start);
+  if (!std::isnan(data.start)) {
+    cue.setStartTime(data.start);
+  }
   cue.setEndTime(GenericCueEnd(data.end), IGNORE_EXCEPTION);
   cue.setText(String::FromUtf8(data.text));
 
@@ -481,7 +483,6 @@ void ParcInbandTextTrack::UpdateDataCue(const media::ParcInbandDataCue& data) {
   }
   double end = data.end;
   if (std::isinf(end) && end > 0) {
-
     const double duration = element_->duration();
     if (!std::isnan(duration)) {
       end = duration;
@@ -490,7 +491,9 @@ void ParcInbandTextTrack::UpdateDataCue(const media::ParcInbandDataCue& data) {
     incomplete_data_cues_.erase(std::find(incomplete_data_cues_.begin(),
                                           incomplete_data_cues_.end(), cue));
   }
-  cue->setStartTime(data.start);
+  if (!std::isnan(data.start)) {
+    cue->setStartTime(data.start);
+  }
   cue->setEndTime(end, IGNORE_EXCEPTION);
 }
 
