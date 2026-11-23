@@ -218,7 +218,7 @@ enum NoteHTMLColor {
                       let blue = component(parts[2], scale: 255) else { return nil }
                 return RGBA(red: red, green: green, blue: blue, alpha: alpha)
             }
-            guard let hue = Double(parts[0].replacingOccurrences(of: "deg", with: "")),
+            guard let hue = Double(parts[0].replacingOccurrences(of: "deg", with: "")), hue.isFinite,
                   let saturation = component(parts[1], scale: 100), let lightness = component(parts[2], scale: 100) else { return nil }
             return hsl(hue, saturation, lightness, alpha)
         }

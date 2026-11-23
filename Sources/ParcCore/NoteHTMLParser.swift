@@ -346,6 +346,7 @@ struct NoteHTMLTreeBuilder {
                                                              "caption", "colgroup", "iframe", "img", "br", "frameset",
                                                              "select", "textarea", "#document", "#mso-marker"])
     static let headings: Set<String> = ["h1", "h2", "h3", "h4", "h5", "h6"]
+    static let maximumDepth = 96
 
     mutating func handle(_ token: NoteHTMLToken) {
         switch token {
@@ -370,7 +371,7 @@ struct NoteHTMLTreeBuilder {
         if trimmed.hasPrefix("[if"), trimmed.contains("supportLists") {
             let marker = NoteHTMLNode(element: NoteHTMLNode.markerName)
             current.append(marker)
-            stack.append(marker)
+            if stack.count < Self.maximumDepth { stack.append(marker) }
         } else if trimmed == "[endif]", let index = stack.lastIndex(where: { $0.name == NoteHTMLNode.markerName }) {
             stack.removeSubrange(index...)
         }
@@ -381,7 +382,7 @@ struct NoteHTMLTreeBuilder {
         closeImplied(before: name)
         let node = NoteHTMLNode(element: name, attributes: attributes)
         current.append(node)
-        if !selfClosing && !Self.void.contains(name) { stack.append(node) }
+        if !selfClosing && !Self.void.contains(name) && stack.count < Self.maximumDepth { stack.append(node) }
     }
 
     private func openIndex(_ names: Set<String>, stoppingAt boundary: Set<String>) -> Int? {

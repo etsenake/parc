@@ -521,7 +521,7 @@ final class NoteHTMLConversion {
            let first = items.firstIndex(where: { $0.kind == .numberedItem }) {
             items[first].props.listStart = start
         }
-        if let indent = Int(node["data-indent"] ?? "") {
+        if let indent = Int(node["data-indent"] ?? ""), (0...NoteHTMLTreeBuilder.maximumDepth).contains(indent) {
             for item in items { levels[item.id] = indent + 1 }
         }
         return items
@@ -1016,7 +1016,7 @@ final class NoteHTMLConversion {
                 block.props.source = source
                 block.props.alt = node["data-name"]
                 if block.kind == .pdf {
-                    block.props.width = node["data-width"].flatMap(Double.init)
+                    block.props.width = node["data-width"].flatMap(Double.init).flatMap(Self.finite)
                     if let align = node["data-align"].flatMap({ NoteAlignment(rawValue: $0.lowercased()) }) { block.props.alignment = align }
                 }
             }
@@ -1024,8 +1024,8 @@ final class NoteHTMLConversion {
         case "easel":
             guard let id = node["data-source"].flatMap(NoteEaselAddress.id(from:)) else { return [] }
             var block = NoteEaselAddress.block(id: id, title: node["data-title"])
-            block.props.width = node["data-width"].flatMap(Double.init)
-            block.props.height = node["data-height"].flatMap(Double.init)
+            block.props.width = node["data-width"].flatMap(Double.init).flatMap(Self.finite)
+            block.props.height = node["data-height"].flatMap(Double.init).flatMap(Self.finite)
             if let align = node["data-align"].flatMap({ NoteAlignment(rawValue: $0.lowercased()) }) { block.props.alignment = align }
             return [block]
         case "html", "raw":
@@ -1036,6 +1036,8 @@ final class NoteHTMLConversion {
             return flow(node.children, inner)
         }
     }
+
+    private static func finite(_ value: Double) -> Double? { value.isFinite ? value : nil }
 
     private func button(_ node: NoteHTMLNode, _ style: NoteHTMLInline) -> NoteBlock {
         let icon = node["data-icon"].flatMap { $0.isEmpty ? nil : $0 }
