@@ -557,6 +557,8 @@ class Session final : public ProfileObserver,
             row->last_visit <= 0 || row->typed < 0)
           continue;
         NSString* key = base::SysUTF8ToNSString(row->url);
+        if (!key)
+          continue;
         NSNumber* existing = history_visit_counts_[key];
         if (!existing || existing.intValue < row->visits)
           history_visit_counts_[key] = @(row->visits);
