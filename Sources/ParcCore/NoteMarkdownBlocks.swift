@@ -408,6 +408,7 @@ final class NoteMDBlockParser {
     private enum StartResult { case none, container, leaf }
 
     static let maximumDepth = 64
+    static let maximumListStart = 999_999_999
 
     private func tryBlockStart(_ container: NoteMDBlock) -> StartResult {
         let first = peek(nextNonspace)

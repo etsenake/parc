@@ -192,6 +192,30 @@ package struct NoteText: Hashable, Codable, ExpressibleByStringLiteral {
 
     package init(stringLiteral value: String) { self.init(value) }
 
+    private enum CodingKeys: String, CodingKey { case string, spans }
+
+    package init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let decoded = try container.decode(String.self, forKey: .string)
+        let stored = try container.decode([NoteSpan].self, forKey: .spans)
+        let characters = decoded as NSString
+        var offset = 0
+        for span in stored {
+            guard span.length > 0, span.length <= characters.length - offset else {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Text spans don't fit the text"))
+            }
+            if span.marks.atom != nil, span.length != 1 || characters.character(at: offset) != 0xFFFC {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "An atom span isn't a single object character"))
+            }
+            offset += span.length
+        }
+        guard offset == characters.length else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Text spans don't cover the text"))
+        }
+        string = decoded
+        spans = stored
+    }
+
     init(pieces: [(String, NoteMarks)]) {
         var value = NoteText()
         for (text, marks) in pieces { value.append(NoteText(text, marks: marks)) }
@@ -498,6 +522,7 @@ package struct NoteTable: Hashable, Codable {
         if alignments.count > columns { alignments.removeLast(alignments.count - columns) }
         if columnWidths.count < columns { columnWidths += Array(repeating: nil, count: columns - columnWidths.count) }
         if columnWidths.count > columns { columnWidths.removeLast(columnWidths.count - columns) }
+        for index in columnWidths.indices where columnWidths[index].map({ !$0.isFinite }) == true { columnWidths[index] = nil }
         normalizeSpans()
     }
 
@@ -684,7 +709,12 @@ public struct NoteBlock: Hashable, Identifiable, Codable {
         id = try container.decodeIfPresent(NoteBlockID.self, forKey: .id) ?? NoteBlockID()
         kind = try container.decode(NoteBlockKind.self, forKey: .kind)
         text = try container.decodeIfPresent(NoteText.self, forKey: .text) ?? NoteText()
-        propsStorage = NoteBlockPropsStorage(try container.decodeIfPresent(NoteBlockProps.self, forKey: .props) ?? NoteBlockProps())
+        var decodedProps = try container.decodeIfPresent(NoteBlockProps.self, forKey: .props) ?? NoteBlockProps()
+        guard (1...6).contains(decodedProps.level), (0...NoteMDBlockParser.maximumListStart).contains(decodedProps.listStart ?? 1) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Block settings are out of range"))
+        }
+        decodedProps.crop = decodedProps.crop?.normalized
+        propsStorage = NoteBlockPropsStorage(decodedProps)
         color = try container.decodeIfPresent(NoteColorStyle.self, forKey: .color)
         children = try container.decodeIfPresent([NoteBlock].self, forKey: .children) ?? []
     }
