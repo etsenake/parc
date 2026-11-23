@@ -22,6 +22,38 @@ struct NoteMediaLayoutTests {
         #expect(NoteMediaLayout.pointSize(pixelWidth: 100, pixelHeight: 50, dpiWidth: 0, dpiHeight: 0) == CGSize(width: 100, height: 50))
     }
 
+    @Test func unevenFaxResolutionsKeepTheirShape() {
+        let size = NoteMediaLayout.pointSize(pixelWidth: 1632, pixelHeight: 784, dpiWidth: 204, dpiHeight: 98)
+        #expect(size == CGSize(width: 576, height: 576))
+    }
+
+    @Test(arguments: [
+        (4_294_967_295, 1 / 4_294_967_295), (.nan, .nan), (.infinity, 72), (0.0001, 0.0001), (1e300, 1e-300), (72, 9000),
+    ] as [(Double, Double)])
+    func impossibleResolutionsReadAs72(dpiWidth: Double, dpiHeight: Double) {
+        let size = NoteMediaLayout.pointSize(pixelWidth: 300, pixelHeight: 200, dpiWidth: dpiWidth, dpiHeight: dpiHeight)
+        #expect(size == plain)
+    }
+
+    @Test func aPictureWithAMangledResolutionStillLaysOutAndLoads() {
+        let natural = NoteMediaLayout.pointSize(pixelWidth: 4000, pixelHeight: 3000, dpiWidth: 4_294_967_295, dpiHeight: 1 / 4_294_967_295)
+        let height = NoteMediaLayout.displayHeight(width: 640, natural: natural)
+        #expect(height == 480)
+        #expect(NoteMediaImageLoader.pixels(for: CGSize(width: 640, height: height), scale: 2) == 1280)
+    }
+
+    @Test func anSVGClaimingAnEnormousWidthDecodesAtAUsableSize() throws {
+        let svg = "<svg xmlns='http://www.w3.org/2000/svg' width='1e30' height='10'><rect width='10' height='10'/></svg>"
+        let image = try #require(NoteMediaImageDecoder.decode(data: Data(svg.utf8), maxPixel: 512))
+        #expect(abs(image.pointSize.width - NoteMediaLayout.largestNaturalSide) < 1)
+        #expect(image.pointSize.height > 0)
+    }
+
+    @Test(arguments: [CGSize(width: CGFloat.infinity, height: 10), CGSize(width: CGFloat.nan, height: 10), CGSize(width: 0, height: 10)])
+    func sizesThatCannotBeDrawnAreRefused(size: CGSize) {
+        #expect(NoteMediaLayout.plausibleSize(size) == nil)
+    }
+
     @Test(arguments: [
         (nil, 1200.0, 700.0, 700.0), (nil, 64, 700, 72), (nil, 300, 700, 300), (0.5, 1200, 700, 350), (1.4, 0, 700, 700),
         (0.01, 0, 700, 72), (.nan, 0, 640, 640), (0.5, 0, 40, 40),

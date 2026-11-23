@@ -13,11 +13,31 @@ enum NoteMediaLayout {
     static let rubberBandDimension: CGFloat = 90
     static let fallbackAspect: CGFloat = 9.0 / 16.0
     static let snapTolerance: CGFloat = 6
+    static let plausibleDPI: ClosedRange<Double> = 1...1_000_000
+    static let maximumDPIRatio = 100.0
 
     static func pointSize(pixelWidth: Int, pixelHeight: Int, dpiWidth: Double?, dpiHeight: Double?) -> CGSize {
-        let horizontal = (dpiWidth ?? 72) > 0 ? (dpiWidth ?? 72) : 72
-        let vertical = (dpiHeight ?? horizontal) > 0 ? (dpiHeight ?? horizontal) : horizontal
-        return CGSize(width: CGFloat(Double(pixelWidth) * 72 / horizontal), height: CGFloat(Double(pixelHeight) * 72 / vertical))
+        let resolution = resolution(dpiWidth: dpiWidth, dpiHeight: dpiHeight)
+        return CGSize(width: CGFloat(Double(pixelWidth) * 72 / resolution.horizontal),
+                      height: CGFloat(Double(pixelHeight) * 72 / resolution.vertical))
+    }
+
+    static func resolution(dpiWidth: Double?, dpiHeight: Double?) -> (horizontal: Double, vertical: Double) {
+        func plausible(_ dpi: Double?) -> Double? { dpi.flatMap { plausibleDPI.contains($0) ? $0 : nil } }
+        let horizontal = plausible(dpiWidth) ?? 72
+        let vertical = plausible(dpiHeight) ?? horizontal
+        guard max(horizontal, vertical) / min(horizontal, vertical) <= maximumDPIRatio else { return (72, 72) }
+        return (horizontal, vertical)
+    }
+
+    static let largestNaturalSide: CGFloat = 1_000_000
+
+    static func plausibleSize(_ size: CGSize) -> CGSize? {
+        guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else { return nil }
+        let longest = max(size.width, size.height)
+        guard longest > largestNaturalSide else { return size }
+        let scale = largestNaturalSide / longest
+        return CGSize(width: size.width * scale, height: size.height * scale)
     }
 
     static func aspect(of size: CGSize?) -> CGFloat {

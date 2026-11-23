@@ -37,12 +37,12 @@ enum NoteMediaImageDecoder {
         let size = NoteMediaLayout.pointSize(pixelWidth: width, pixelHeight: height,
                                              dpiWidth: (properties[kCGImagePropertyDPIWidth] as? NSNumber)?.doubleValue,
                                              dpiHeight: (properties[kCGImagePropertyDPIHeight] as? NSNumber)?.doubleValue)
-        return orientation >= 5 && orientation <= 8 ? CGSize(width: size.height, height: size.width) : size
+        return NoteMediaLayout.plausibleSize(orientation >= 5 && orientation <= 8 ? CGSize(width: size.height, height: size.width) : size)
     }
 
     static func naturalSize(of url: URL) -> CGSize? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) else {
-            return NSImage(contentsOf: url).map(\.size).flatMap { $0.width > 0 && $0.height > 0 ? $0 : nil }
+            return NSImage(contentsOf: url).flatMap { NoteMediaLayout.plausibleSize($0.size) }
         }
         return naturalSize(of: source)
     }
@@ -105,8 +105,7 @@ enum NoteMediaImageDecoder {
     }
 
     static func rasterize(_ image: NSImage?, maxPixel: Int) -> NoteMediaImage? {
-        guard let image, image.size.width > 0, image.size.height > 0 else { return nil }
-        let size = image.size
+        guard let image, let size = NoteMediaLayout.plausibleSize(image.size) else { return nil }
         let scale = min(1, CGFloat(maxPixel) / max(size.width * 2, size.height * 2)) * 2
         let width = max(1, Int((size.width * scale).rounded())), height = max(1, Int((size.height * scale).rounded()))
         guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
