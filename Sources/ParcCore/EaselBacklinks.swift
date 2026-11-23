@@ -10,8 +10,14 @@ enum EaselBacklinkScanner {
 
     static func read(fileAt url: URL) -> (title: String, links: [NoteOutgoingLink])? {
         guard let data = try? Data(contentsOf: url, options: .mappedIfSafe), data.count <= readLimit,
-              let document = try? JSONDecoder().decode(EaselDocument.self, from: data) else { return nil }
+              let document = try? JSONDecoder().decode(EaselDocument.self, from: data),
+              document.items.allSatisfy(hasValidText) else { return nil }
         return (document.title, mayLink(data) ? outgoing(in: document) : [])
+    }
+
+    private static func hasValidText(_ item: EaselItem) -> Bool {
+        guard let rich = item.richText else { return true }
+        do { try rich.validate(text: item.text); return true } catch { return false }
     }
 
     static func outgoing(in document: EaselDocument) -> [NoteOutgoingLink] {
