@@ -279,8 +279,11 @@ link opens it in a [Peek](peek.md#presentation-and-remaining-scope) over the
 note when Settings → Links allows it.
 
 Selections cross blocks like one page. Dragging from the margin, or pressing
-Escape, selects whole blocks, which can then be moved, coloured, duplicated,
-deleted or copied together. With several sibling blocks selected, Turn into also
+Escape while editing, selects whole blocks. Use ⇧↑ or ⇧↓ to extend the selection.
+Click ••• on the floating toolbar for Block Options, including Duplicate and Delete.
+Drag a selected block’s grip to move the group. Home and End move to the start
+and end of the current text block. Hold Shift with either key to extend a text
+selection. With several sibling blocks selected, Turn into also
 offers 2 to 5 columns and lays them out side by side in order. Hovering a block reveals `+` (add below, ⌥ for
 above) and a grip; clicking the grip opens a searchable action menu (Delete,
 Duplicate, Turn into, Colour, Copy link to block, Move to another note, which

@@ -2,6 +2,35 @@ import AppKit
 import ParcCore
 
 extension NoteSelectionController {
+    func handleBlockEdgeKey(_ event: NSEvent) -> Bool {
+        guard event.type == .keyDown, event.keyCode == 115 || event.keyCode == 119 else { return false }
+        let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        guard flags.isEmpty || flags == .shift else { return false }
+        let selection = currentSelection()
+        let anchor: NotePosition
+        let head: NotePosition
+        switch selection {
+        case .text(let start, let end):
+            anchor = start
+            head = end
+        case .blocks(let ids):
+            guard flags.isEmpty, let id = blockRange?.head ?? ids.last,
+                  navigator().role(of: id) == .text else { return false }
+            head = NotePosition(id, 0)
+            anchor = head
+        case .none, .cells:
+            return false
+        }
+        let target = NotePosition(head.block, event.keyCode == 115 ? 0 : layout.length(of: head), field: head.field)
+        goal.reset()
+        if flags.contains(.shift) {
+            select(.text(anchor: anchor, head: target))
+        } else {
+            select(.caret(target))
+        }
+        return true
+    }
+
     func handleTextCommand(_ selector: Selector, in host: NoteTextHost) -> Bool {
         guard !isTracking, !host.textView.hasMarkedText() else { return false }
         if case .cell = host.field { return false }

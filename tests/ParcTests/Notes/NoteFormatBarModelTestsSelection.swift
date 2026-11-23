@@ -136,10 +136,22 @@ struct NoteFormatBarModelTestsSelection {
         #expect(NoteFormatState.resolve(session: page.session, isPlainText: false, isReadOnly: true) == nil)
     }
 
-    @Test func blockSelectionShowsNoBar() {
+    @Test func blockSelectionShowsSharedActions() {
         let page = Page()
-        page.session.setSelection(.blocks([page.first.id]))
-        #expect(NoteFormatState.resolve(session: page.session, isPlainText: false, isReadOnly: false) == nil)
+        page.session.setSelection(.blocks([page.first.id, page.second.id]))
+        let state = NoteFormatState.resolve(session: page.session, isPlainText: false, isReadOnly: false)
+        #expect(state?.items.contains(.actions) == true)
+        #expect(state?.bodyBlocks == [page.first.id, page.second.id])
+        page.session.toggleMark(.bold, in: state?.selection)
+        #expect(page.session.hasMark(.bold))
+    }
+
+    @Test func emptyBlockSelectionStillOffersActions() {
+        let block = NoteBlock.paragraph(NoteText(""))
+        let session = NotePageSession(page: NotePage(blocks: [block]))
+        session.setSelection(.blocks([block.id]))
+        let state = NoteFormatState.resolve(session: session, isPlainText: false, isReadOnly: false)
+        #expect(state?.items == [.actions])
     }
 
     @Test func togglingAMarkIsReflectedRightAway() {

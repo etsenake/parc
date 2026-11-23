@@ -2,10 +2,11 @@ import AppKit
 import ParcCore
 
 enum NoteFormatItem: String, CaseIterable, Hashable {
-    case turnInto, link, bold, italic, underline, strikethrough, code, equation, color, mention
+    case actions, turnInto, link, bold, italic, underline, strikethrough, code, equation, color, mention
 
     var title: String {
         switch self {
+        case .actions: return "Block Options"
         case .turnInto: return "Turn Into"
         case .link: return "Link"
         case .bold: return "Bold"
@@ -28,7 +29,7 @@ enum NoteFormatItem: String, CaseIterable, Hashable {
         case .strikethrough: return .strikethrough
         case .code: return .code
         case .equation: return .equation
-        case .turnInto, .color, .mention: return nil
+        case .actions, .turnInto, .color, .mention: return nil
         }
     }
 
@@ -45,7 +46,7 @@ enum NoteFormatItem: String, CaseIterable, Hashable {
 
     var group: Int {
         switch self {
-        case .turnInto: return 0
+        case .actions, .turnInto: return 0
         case .link: return 1
         case .bold, .italic, .underline, .strikethrough, .code, .equation: return 2
         case .color, .mention: return 3
@@ -55,7 +56,7 @@ enum NoteFormatItem: String, CaseIterable, Hashable {
     var opensMenu: Bool { self == .turnInto || self == .color || self == .link }
 
     static func items(for context: NoteFormatContext) -> [NoteFormatItem] {
-        context == .body ? allCases : allCases.filter { $0 != .turnInto }
+        allCases.filter { $0 != .actions && ($0 != .turnInto || context == .body) }
     }
 
     static func shortcutItem(for event: (characters: String?, flags: NSEvent.ModifierFlags)) -> NoteFormatItem? {
@@ -235,7 +236,12 @@ struct NoteFormatState: Hashable {
     var selectedText: String
 
     var spansBlocks: Bool { segments.count > 1 }
-    var items: [NoteFormatItem] { NoteFormatItem.items(for: context) }
+    var items: [NoteFormatItem] {
+        if case .blocks = selection {
+            return segments.isEmpty ? [.actions] : [.actions, .bold, .italic, .underline, .strikethrough, .code]
+        }
+        return NoteFormatItem.items(for: context)
+    }
 
     func isActive(_ item: NoteFormatItem) -> Bool {
         if let key = item.markKey { return marks.contains(key) }
@@ -260,14 +266,23 @@ struct NoteFormatState: Hashable {
     static func resolve(session: NotePageSession, selection: NotePageSelection? = nil,
                         isPlainText: Bool, isReadOnly: Bool) -> NoteFormatState? {
         let target = selection ?? session.selection
-        guard case .text = target else { return nil }
+        guard !isPlainText, !isReadOnly else { return nil }
+        switch target {
+        case .blocks, .text: break
+        default: return nil
+        }
         let segments = session.textSegments(of: target).map { NoteFormatSegment(position: $0.position, range: $0.range) }
         return resolve(page: session.page, selection: target, segments: segments, isPlainText: isPlainText, isReadOnly: isReadOnly)
     }
 
     static func resolve(page: NotePage, selection: NotePageSelection, segments: [NoteFormatSegment],
                         isPlainText: Bool, isReadOnly: Bool) -> NoteFormatState? {
-        guard !isPlainText, !isReadOnly, case .text(let anchor, let head) = selection, anchor != head else { return nil }
+        guard !isPlainText, !isReadOnly else { return nil }
+        switch selection {
+        case .text(let anchor, let head) where anchor != head: break
+        case .blocks(let ids) where !ids.isEmpty: break
+        default: return nil
+        }
         var rich: [(segment: NoteFormatSegment, block: NoteBlock, text: NoteText)] = []
         for segment in segments where !segment.range.isEmpty {
             guard let block = page.block(segment.position.block), isRichField(segment.position.field, of: block),
@@ -277,9 +292,9 @@ struct NoteFormatState: Hashable {
             guard lower < upper else { continue }
             rich.append((NoteFormatSegment(position: segment.position, range: lower..<upper), block, text))
         }
-        guard let first = rich.first else { return nil }
+        if rich.isEmpty, selection.selectedBlocks == nil { return nil }
         let context: NoteFormatContext
-        switch first.segment.position.field {
+        switch rich.first?.segment.position.field ?? .body {
         case .body: context = .body
         case .caption: context = .caption
         case .cell: context = .cell
@@ -301,7 +316,7 @@ struct NoteFormatState: Hashable {
             turnIntoLabel: bodyEntries.first.map { NoteTurnIntoOption.label(for: $0.block) } ?? NoteTurnIntoOption.text.title,
             isTurnIntoUniform: !options.isEmpty && options.allSatisfy { $0 == firstOption && $0 != nil },
             marks: marks,
-            isEquation: runs.allSatisfy { if case .equation = $0.atom { return true } else { return false } },
+            isEquation: !runs.isEmpty && runs.allSatisfy { if case .equation = $0.atom { return true } else { return false } },
             link: commonLink, firstLink: links.compactMap { $0 }.first,
             color: NoteColorSummary(styles: runs.map(\.color)),
             selectedText: selectedText)

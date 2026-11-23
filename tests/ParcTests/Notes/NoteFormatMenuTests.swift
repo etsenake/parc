@@ -113,6 +113,7 @@ struct NoteFormatMenuTests {
     }
 
     func makeMenu() -> Menu {
+        _ = NSApplication.shared
         let defaults = parcDefaults
         let edit = NSMenu(title: "Edit")
         var items: [TextFormatCommand: NSMenuItem] = [:]

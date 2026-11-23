@@ -129,6 +129,9 @@ package final class NoteFormatBarView: NSView, NoteFloatingPanelContent {
     static func makeButton(for item: NoteFormatItem) -> NoteToolbarButton {
         let button: NoteToolbarButton
         switch item {
+        case .actions:
+            button = NoteToolbarButton(icon: .symbol("ellipsis"), label: item.title)
+            button.setAccessibilityRole(.menuButton)
         case .turnInto:
             button = NoteToolbarButton(.text(NoteTurnIntoOption.text.title), label: item.title)
             button.showsDisclosure = true
@@ -200,6 +203,7 @@ package final class NoteFormatBarView: NSView, NoteFloatingPanelContent {
 
     static func tooltip(for item: NoteFormatItem) -> String {
         switch item {
+        case .actions: return "Block options"
         case .turnInto: return "Turn into"
         case .link: return "Add a link"
         case .code: return "Inline code"

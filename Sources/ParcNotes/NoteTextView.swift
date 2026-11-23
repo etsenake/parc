@@ -416,7 +416,10 @@ public class NoteTextView: NoteCursorTextView {
     }
 
     public override func keyDown(with event: NSEvent) {
-        if !hasMarkedText(), let editor, editor.handleKeyDown(event, in: host) { return }
+        if !hasMarkedText(), let editor {
+            if editor.handleKeyDown(event, in: host) { return }
+            if editor.selection.handleBlockEdgeKey(event) { return }
+        }
         if handleTypingMarkChord(event) { return }
         super.keyDown(with: event)
     }

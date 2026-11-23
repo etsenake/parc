@@ -144,7 +144,7 @@ package final class NoteFormatBarController {
 
     @discardableResult
     func toggleEquation() -> Bool {
-        guard let state = eligibleState(), state.segments.count == 1, let segment = state.segments.first else { return false }
+        guard let state = eligibleState(), case .text = state.selection, state.segments.count == 1, let segment = state.segments.first else { return false }
         let position = segment.position
         guard let text = editor.session.page.block(position.block)?.text(in: position.field) else { return false }
         let changed: (text: NoteText, range: Range<Int>)
@@ -199,7 +199,7 @@ package final class NoteFormatBarController {
     }
 
     private func resolveState() -> NoteFormatState? {
-        guard !editor.slashMenu.isOpen, editorHasFocus else { return nil }
+        guard !editor.slashMenu.isOpen, editor.handles?.menu.isOpen != true, editorHasFocus else { return nil }
         return NoteFormatState.resolve(session: editor.session, isPlainText: editor.environment.isPlainText, isReadOnly: editor.isReadOnly)
     }
 
@@ -303,6 +303,9 @@ package final class NoteFormatBarController {
     private func selectionRects(for state: NoteFormatState) -> [NSRect] {
         guard let canvas = editor.canvas, let selection = editor.selection else { return [] }
         let overlay = canvas.overlayView
+        if case .blocks = state.selection, let bounds = selection.selectionBounds {
+            return [NoteFloatingPanel.topDown(overlay.convert(bounds, from: canvas), in: overlay)]
+        }
         var rects: [NSRect] = []
         for segment in state.segments where !segment.range.isEmpty {
             rects += selection.layout.selectionRects(for: segment.position, range: segment.range)
@@ -396,6 +399,9 @@ package final class NoteFormatBarController {
             return
         }
         switch item {
+        case .actions:
+            hideBar(animated: false)
+            _ = editor.handles.openBlockActions()
         case .turnInto: openTurnInto(from: button, state: state, origin: origin)
         case .link: openLinkEditor(origin: origin)
         case .equation: toggleEquation()
@@ -491,6 +497,11 @@ package final class NoteFormatBarController {
     }
 
     private func focusText(_ selection: NotePageSelection, preferred: NoteTextView?) {
+        if case .blocks = selection {
+            guard editor.session.selection == selection else { return }
+            editor.selection.focusSelection()
+            return
+        }
         guard case .text(_, let head) = selection, let canvas = editor.canvas, canvas.window != nil else { return }
         if editor.session.page.block(head.block) == nil {
             if let preferred, let window = preferred.window { window.makeFirstResponder(preferred) }
@@ -541,7 +552,7 @@ package final class NoteFormatBarController {
 
     @discardableResult
     private func openLinkEditor(origin: NoteMenuList.Origin) -> Bool {
-        guard let state = eligibleState() else { return false }
+        guard let state = eligibleState(), case .text = state.selection else { return false }
         closeMenu(restoreFocus: false, animated: false)
         let returnView = focusedTextView() ?? keyboardReturn
         let rects = selectionRects(for: state)

@@ -131,6 +131,7 @@ final class NoteSelectionController {
     func preview(_ selection: NotePageSelection) {
         isApplying = true
         focusResponder()
+        clearPreviousNativeRange(replacedBy: .none)
         switch selection {
         case .text(let anchor, let head):
             let marks = navigator().marks(from: anchor, to: head) { [layout] in layout.length(of: NotePosition($0, 0)) }
@@ -183,6 +184,7 @@ final class NoteSelectionController {
             setHighlights([:])
             setLooks([])
         }
+        if changed { clearPreviousNativeRange(replacedBy: selection) }
         if selection.selectedBlocks == nil { announced = [] }
         if let transitBlock, selection.selectedBlocks != [transitBlock] { self.transitBlock = nil }
         displayed = selection
@@ -226,6 +228,15 @@ final class NoteSelectionController {
             view.crossBlockHighlight = entry.range
         }
         highlighted = next
+    }
+
+    private func clearPreviousNativeRange(replacedBy next: NotePageSelection) {
+        guard case .text(let anchor, let head) = displayed, anchor != head,
+              anchor.block == head.block, anchor.field == head.field else { return }
+        if case .text(let start, let end) = next,
+           start.block == anchor.block, end.block == anchor.block,
+           start.field == anchor.field, end.field == anchor.field { return }
+        if let previous = layout.textView(for: anchor) { collapseNativeSelection(previous) }
     }
 
     private func collapseNativeSelection(_ view: NoteTextView) {

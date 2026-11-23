@@ -719,8 +719,8 @@ final class NoteTableBlockView: NoteBlockView {
         guard let editor else { return }
         let current = table
         let clampedHead = NoteTableCell(row: min(max(0, head.row), current.rowCount - 1), column: min(max(0, head.column), current.columnCount - 1))
-        editor.session.setSelection(.cells(table: blockID, anchor: anchor, head: clampedHead))
         if let window, window.firstResponder !== surface { _ = window.makeFirstResponder(surface) }
+        editor.session.setSelection(.cells(table: blockID, anchor: anchor, head: clampedHead))
         revealCell(clampedHead)
         syncSelection()
     }

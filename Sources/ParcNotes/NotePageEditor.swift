@@ -643,11 +643,11 @@ public final class NotePageEditor: Sendable {
         let page = session.page
         switch command {
         case .mark:
-            return !isPlainText && (hasTextRange || typingTextView != nil)
+            return !isPlainText && (hasTextRange || session.selection.isBlockSelection || typingTextView != nil)
         case .inlineEquation:
             return !isPlainText && hasTextRange && !isCrossBlockSelection
         case .focusToolbar:
-            return !isPlainText && hasTextRange
+            return !isPlainText && (hasTextRange || session.selection.isBlockSelection)
         case .lastColor:
             return !isPlainText && NoteColorRecents.load().first != nil && (hasTextRange || session.selection.isBlockSelection)
         case .link:
@@ -686,7 +686,7 @@ public final class NotePageEditor: Sendable {
         if command.isEdit && isReadOnly { NSSound.beep(); return true }
         switch command {
         case .mark(let key):
-            if hasTextRange {
+            if hasTextRange || session.selection.isBlockSelection {
                 session.toggleMark(key)
                 return true
             }

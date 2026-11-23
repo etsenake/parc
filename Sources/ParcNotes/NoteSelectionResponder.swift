@@ -25,6 +25,7 @@ final class NoteSelectionResponder: NSView, @preconcurrency NSTextInputClient, N
 
     override func keyDown(with event: NSEvent) {
         if editor.handleKeyDown(event, in: nil) { return }
+        if controller.handleBlockEdgeKey(event) { return }
         pendingEvent = event
         interpretKeyEvents([event])
         pendingEvent = nil
