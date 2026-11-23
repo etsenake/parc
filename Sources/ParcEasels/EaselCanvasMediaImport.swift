@@ -18,6 +18,7 @@ struct EaselPreparedMedia {
     var mask: EaselImageMask?
     var credit: EaselMediaCredit?
     var captured: EaselItem?
+    var snapshotPDF: Data?
 }
 
 extension EaselCanvasView {
@@ -185,6 +186,10 @@ extension EaselCanvasView {
                     item.crop = nil
                     item.mask = nil
                     item.altText = nil
+                    if let pdf = entry.snapshotPDF, let snapshotID = try? session.importAsset(pdf, type: .pdf) {
+                        imported.append(snapshotID)
+                        item.snapshot = snapshotID
+                    }
                 }
                 if let poster = entry.poster, let png = NSBitmapImageRep(cgImage: poster).representation(using: .png, properties: [:]),
                    let posterID = try? session.importAsset(png, type: .png) {

@@ -41,7 +41,7 @@ private struct CaptureDesktopUnavailable: Error {}
 @MainActor
 private final class CaptureControllerFixture {
     struct EaselSend { let png: Data; let id: UUID?; let input: EaselImageInput }
-    struct NoteSend { let png: Data; let target: CaptureNoteTarget }
+    struct NoteSend { let png: Data; let target: CaptureNoteTarget; var snapshot: Data? = nil }
 
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("ParcCaptureController-" + UUID().uuidString)
     let engine = PageCaptureTestLease()
@@ -105,7 +105,7 @@ private final class CaptureControllerFixture {
                 if let failure = self?.noteFailure { throw failure }
                 return [note]
             } : nil, addToNote: notes ? { [weak self] input, target in
-                self?.noteSends.append(NoteSend(png: input.pngData, target: target))
+                self?.noteSends.append(NoteSend(png: input.pngData, target: target, snapshot: input.snapshotPDF))
             } : nil,
             presentation: overlay, framing: CaptureFramingEnvironment(defaults: UserDefaults(suiteName: defaultsSuite) ?? .standard,
                 palette: PortraitCaptureRenderer.palette(bundle: .module, subdirectory: "CaptureFixtures/ThemeEditor"),
@@ -416,5 +416,44 @@ struct CaptureControllerSendTests {
         try fixture.click(fixture.easelRow(fixture.easel.id))
         #expect(fixture.easelSends.map(\.id) == [fixture.easel.id])
         #expect(fixture.finishes == [false])
+    }
+}
+
+@Suite("Capture controller sharp full pages")
+struct CaptureControllerSnapshotTests {
+    static let pdf = Data("%PDF-1.7 full page".utf8)
+
+    @MainActor @Test func aFullPageCaptureSendsItsPageDocumentWithThePictureToEaselsAndNotes() async throws {
+        let fixture = try await CaptureControllerFixture()
+        fixture.engine.pdfData = Self.pdf
+        await fixture.capture(.fullPage)
+        try fixture.click(fixture.easelRow(fixture.easel.id))
+        #expect(fixture.easelSends.first?.input.snapshotPDF == Self.pdf)
+        #expect(fixture.easelSends.first?.png == (try fixture.capturedPNG))
+
+        let again = try await CaptureControllerFixture()
+        again.engine.pdfData = Self.pdf
+        await again.capture(.fullPage)
+        try again.click(again.noteRow(CaptureNoteTarget.note(again.noteURL).id))
+        #expect(again.noteSends.first?.snapshot == Self.pdf)
+    }
+
+    @MainActor @Test func onlyFullPageCapturesCarryAPageDocument() async throws {
+        let fixture = try await CaptureControllerFixture()
+        fixture.engine.pdfData = Self.pdf
+        await fixture.capture(.viewport)
+        try fixture.click(fixture.easelRow(fixture.easel.id))
+        #expect(fixture.easelSends.count == 1 && fixture.easelSends.first?.input.snapshotPDF == nil)
+    }
+
+    @MainActor @Test func aFramedFullPageCaptureDropsThePageDocument() async throws {
+        let fixture = try await CaptureControllerFixture()
+        fixture.engine.pdfData = Self.pdf
+        await fixture.capture(.fullPage)
+        try fixture.click(fixture.row(.frame))
+        let portrait = try #require(fixture.portrait)
+        portrait.onCapture?()
+        try fixture.click(fixture.easelRow(fixture.easel.id))
+        #expect(fixture.easelSends.count == 1 && fixture.easelSends.first?.input.snapshotPDF == nil)
     }
 }

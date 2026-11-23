@@ -922,7 +922,7 @@ final class NoteHTMLConversion {
         block.props.capture = NoteCapture(values: [
             NoteCapture.sourceKey: node["data-capture"], NoteCapture.dateKey: node["data-captured"],
             NoteCapture.viewportKey: node["data-viewport"], NoteCapture.scrollKey: node["data-scroll"], NoteCapture.regionKey: node["data-region"],
-            NoteCapture.scrollersKey: node["data-scrollers"],
+            NoteCapture.scrollersKey: node["data-scrollers"], NoteCapture.snapshotKey: node["data-snapshot"].map(resolve),
         ].compactMapValues { $0 }, flags: Set([node["data-live"] == nil ? nil : NoteCapture.liveFlag,
                                                 node["data-fullpage"] == nil ? nil : NoteCapture.fullPageFlag].compactMap { $0 }))
         return block

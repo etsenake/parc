@@ -18,6 +18,7 @@ struct EaselPastedNoteMedia {
     var mask: EaselImageMask?
     var credit: EaselMediaCredit?
     var captured: EaselItem?
+    var snapshot: URL?
 
     static let maximumCount = 20
 
@@ -34,6 +35,9 @@ struct EaselPastedNoteMedia {
         if let capture = NoteCaptureLive.capture(of: block), capture.sourceAddress != nil, var captured = NoteCaptureLive.chromeItem(of: block) {
             captured.text = NoteCaptureText.title(for: capture, alt: alt)
             media.captured = captured
+            if let snapshot = capture.snapshot, case .file(let file)? = Self.origin(snapshot, kind: .pdf, base: base, trusted: folder) {
+                media.snapshot = file
+            }
             return media
         }
         media.crop = block.props.crop.map { EaselRect(x: $0.x, y: $0.y, width: $0.width, height: $0.height) }
@@ -159,6 +163,13 @@ extension EaselCanvasView {
         entry.mask = media.mask
         entry.credit = media.credit
         entry.captured = media.captured
+        entry.snapshotPDF = media.snapshot.flatMap(Self.snapshotPDF)
         return entry
+    }
+
+    static func snapshotPDF(_ file: URL) -> Data? {
+        guard let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= EaselStore.maximumAssetBytes,
+              let data = try? Data(contentsOf: file), CaptureSnapshotPDF(data: data) != nil else { return nil }
+        return data
     }
 }

@@ -6,13 +6,15 @@ package struct NoteCaptureInput {
     let pageTitle: String
     let capturedAt: Date
     let captureLayout: EaselCaptureLayout?
+    let snapshotPDF: Data?
 
-    package init(pngData: Data, sourceURL: String, pageTitle: String, capturedAt: Date, captureLayout: EaselCaptureLayout?) {
+    package init(pngData: Data, sourceURL: String, pageTitle: String, capturedAt: Date, captureLayout: EaselCaptureLayout?, snapshotPDF: Data? = nil) {
         self.pngData = pngData
         self.sourceURL = sourceURL
         self.pageTitle = pageTitle
         self.capturedAt = capturedAt
         self.captureLayout = captureLayout
+        self.snapshotPDF = snapshotPDF
     }
 
     var capture: NoteCapture {
@@ -81,7 +83,12 @@ package enum NoteCaptureDelivery {
         guard !session.isReadOnly, !session.page.settings.locked else { throw NoteCaptureDeliveryError.locked(file.title) }
         let path = try NoteAttachments.placeData(input.pngData, fileExtension: "png", suggestedName: input.pageTitle,
                                                 into: file.url, date: input.capturedAt).path
-        let block = NoteCapture.block(source: path, title: input.pageTitle, capture: input.capture)
+        var capture = input.capture
+        if let pdf = input.snapshotPDF, CaptureSnapshotPDF(data: pdf) != nil {
+            capture.snapshot = try? NoteAttachments.placeData(pdf, fileExtension: "pdf", suggestedName: input.pageTitle,
+                                                             into: file.url, date: input.capturedAt).path
+        }
+        let block = NoteCapture.block(source: path, title: input.pageTitle, capture: capture)
         guard insert(block, into: session) else { throw NoteCaptureDeliveryError.locked(file.title) }
         return Result(note: file.url, block: block.id, title: file.title)
     }

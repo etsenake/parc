@@ -57,6 +57,7 @@ enum NoteMediaImport {
             block.props.source = source
             block.props.credit = nil
             block.props.crop = nil
+            block.props.capture?.snapshot = nil
         }
     }
 

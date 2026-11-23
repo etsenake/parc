@@ -246,6 +246,7 @@ extension NoteClipboard {
                     else if !block.kind.isMedia { copy.props.source = relink(source) }
                 }
             }
+            if copy.props.source != block.props.source { copy.props.capture?.snapshot = nil }
             if let target = block.props.target, absolute(target) != nil { copy.props.target = relink(target) }
             if var table = block.props.table {
                 table.rows = table.rows.map { $0.map(fix) }

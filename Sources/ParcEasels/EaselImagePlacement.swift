@@ -1,5 +1,6 @@
 import AppKit
 import ImageIO
+import PDFKit
 import ParcCore
 
 @MainActor
@@ -11,7 +12,8 @@ package struct EaselImageInput {
     package var capturedPage = false
     package var captureLayout: EaselCaptureLayout?
     package var capturedAt: Date?
-    package init(pngData: Data, sourceURL: URL?, pageTitle: String, valid: @escaping () -> Bool, capturedPage: Bool = false, captureLayout: EaselCaptureLayout? = nil, capturedAt: Date? = nil) {
+    package var snapshotPDF: Data?
+    package init(pngData: Data, sourceURL: URL?, pageTitle: String, valid: @escaping () -> Bool, capturedPage: Bool = false, captureLayout: EaselCaptureLayout? = nil, capturedAt: Date? = nil, snapshotPDF: Data? = nil) {
         self.pngData = pngData
         self.sourceURL = sourceURL
         self.pageTitle = pageTitle
@@ -19,6 +21,7 @@ package struct EaselImageInput {
         self.capturedPage = capturedPage
         self.captureLayout = captureLayout
         self.capturedAt = capturedAt
+        self.snapshotPDF = snapshotPDF
     }
     package var isValid: Bool { valid() }
 }
@@ -103,22 +106,28 @@ package enum EaselImagePlacement {
             }
             guard image.isValid else { throw CocoaError(.userCancelled) }
             let assetID = try session.importPNG(pngData)
+            let card = image.capturedPage && image.sourceURL != nil
+            let snapshot = card ? image.snapshotPDF.flatMap { importedSnapshot($0, into: session) } : nil
             let width = min(480, Double(size.width))
             let target = EaselPages.resolvedPage(page, in: session.document)
             let onPage = EaselPages.view(session.document, page: target).items
             let bottom = onPage.map { $0.frame.y + $0.frame.height }.max() ?? 0
-            let card = image.capturedPage && image.sourceURL != nil
             let item = EaselItem(kind: card ? .webCard : .image,
                 frame: EaselRect(x: 40, y: max(40, bottom + 32), width: width,
                                  height: max(1, width * Double(size.height) / Double(size.width))),
                 zIndex: (onPage.map(\.zIndex).max() ?? 0) + 1,
                 text: card ? image.pageTitle : "", url: image.sourceURL?.absoluteString, assetID: assetID, capturedAt: image.capturedAt ?? Date(),
-                captureLayout: card ? image.captureLayout : nil, page: target)
+                captureLayout: card ? image.captureLayout : nil, page: target, snapshot: snapshot)
             try session.perform(card ? "Add captured webpage" : "Add webpage image") { $0.items.append(item) }
             return Result(session: session, itemID: item.id)
         } catch {
             if let createdID { try? store.delete(createdID) }
             throw error
         }
+    }
+
+    static func importedSnapshot(_ data: Data, into session: EaselSession) -> String? {
+        guard data.count <= EaselStore.maximumAssetBytes, CaptureSnapshotPDF(data: data) != nil, PDFDocument(data: data) != nil else { return nil }
+        return try? session.importAsset(data, type: .pdf)
     }
 }

@@ -40,6 +40,11 @@ public protocol NoteMediaHost: NSView {
     func zoom(image: NoteMediaImage, from rect: NSRect, in view: NSView, crop: NoteImageCrop?, mask: NoteImageMask?)
     func commitFraming(crop: NoteImageCrop?, mask: NoteImageMask?, name: String)
     func setAltText(_ text: String)
+    var snapshotSource: NoteMediaSource { get }
+}
+
+extension NoteMediaHost {
+    public var snapshotSource: NoteMediaSource { .empty }
 }
 
 package enum NoteMediaMode: Equatable {

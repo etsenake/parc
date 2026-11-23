@@ -67,6 +67,7 @@ final class PageCaptureController: NSObject {
     private var state = State.selecting
     private var image: CapturedImage?
     private var captureLayout: EaselCaptureLayout?
+    private var snapshotPDF: Data?
     private var pngData: Data? { image?.pngData }
     private var imageEditor: CaptureImageEditor?
     private var acceptedEdits: CaptureImageEditSnapshot?
@@ -204,7 +205,7 @@ final class PageCaptureController: NSObject {
         imageEditor?.close(); imageEditor = nil; acceptedEdits = nil
         observers.forEach { NotificationCenter.default.removeObserver($0) }; observers.removeAll()
         portrait?.removeFromSuperview(); portrait = nil
-        edgeGuard.removeFromSuperview(); overlay.removeFromSuperview(); image = nil; capturedPageColor = nil
+        edgeGuard.removeFromSuperview(); overlay.removeFromSuperview(); image = nil; snapshotPDF = nil; capturedPageColor = nil
         finished(restoreFocus)
     }
 
@@ -292,6 +293,7 @@ final class PageCaptureController: NSObject {
                             region: EaselRect(x: $0.region.minX, y: $0.region.minY, width: $0.region.width, height: $0.region.height),
                             scrollContainers: $0.scrollContainers.map(EaselScrollContainer.init), fullPage: mode == .fullPage)
                     }
+                    self.snapshotPDF = mode == .fullPage ? result.pdfData : nil
                     self.capturedAt = Date(); self.capturedPageColor = self.lease.pageThemeColor
                     InterfaceSoundEffects.shared.playCapture()
                     self.showPreview(changed: true)
@@ -422,7 +424,7 @@ final class PageCaptureController: NSObject {
             image?.removeFrame(); showPreview(changed: true)
         case .retake:
             captureID = UUID(); savedCapture = nil; libraryNeedsUpdate = false; overlay.setLibrarySaved(false)
-            image = nil; capturedPageColor = nil; acceptedEdits = nil
+            image = nil; snapshotPDF = nil; capturedPageColor = nil; acceptedEdits = nil
             if acquisitionMode == .region { state = .selecting; overlay.showSelection(); parent?.makeFirstResponder(overlay) }
             else { capture(acquisitionMode) }
         case .message: shareMessage()
@@ -500,6 +502,7 @@ final class PageCaptureController: NSObject {
         input.capturedPage = true
         input.capturedAt = capturedAt
         input.captureLayout = image?.isOriginalOutput == true ? captureLayout : nil
+        input.snapshotPDF = image?.isOriginalOutput == true ? snapshotPDF : nil
         return input
     }
 

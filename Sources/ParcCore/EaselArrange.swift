@@ -84,7 +84,7 @@ package struct EaselClipboardPayload: Codable, Equatable {
 
     package static func assetIDs(of selected: Set<UUID>, in document: EaselDocument) -> Set<String> {
         let ids = EaselArrange.withFollowers(selected, in: document)
-        return Set(document.items.filter { ids.contains($0.id) }.compactMap(\.assetID))
+        return Set(document.items.filter { ids.contains($0.id) }.flatMap(\.carriedAssets))
     }
 
     package static func capturing(_ selected: Set<UUID>, in document: EaselDocument, assets available: [String: Data]) throws -> EaselClipboardPayload? {
@@ -99,8 +99,14 @@ package struct EaselClipboardPayload: Codable, Equatable {
             return copy
         }
         var assets: [String: Data] = [:]
-        for id in Set(items.compactMap(\.assetID)) { assets[id] = available[id] }
-        let payload = EaselClipboardPayload(documentID: document.id, items: items, assets: assets)
+        for id in Set(items.flatMap(\.carriedAssets)) { assets[id] = available[id] }
+        let carried = items.map { item -> EaselItem in
+            guard let snapshot = item.snapshot, assets[snapshot] == nil else { return item }
+            var copy = item
+            copy.snapshot = nil
+            return copy
+        }
+        let payload = EaselClipboardPayload(documentID: document.id, items: carried, assets: assets)
         try payload.validate()
         return payload
     }
@@ -123,8 +129,8 @@ package struct EaselClipboardPayload: Codable, Equatable {
     func validate() throws {
         guard version == Self.currentVersion, !items.isEmpty, items.count <= Self.maximumItems,
               Set(items.map(\.id)).count == items.count,
-              items.allSatisfy({ $0.assetID.map { assets[$0] != nil } ?? true }),
-              assets.count <= items.count, assets.values.allSatisfy({ !$0.isEmpty && $0.count <= Self.maximumAssetBytes }),
+              items.allSatisfy({ $0.carriedAssets.allSatisfy { assets[$0] != nil } }),
+              assets.count <= items.reduce(0, { $0 + $1.carriedAssets.count }), assets.values.allSatisfy({ !$0.isEmpty && $0.count <= Self.maximumAssetBytes }),
               assets.keys.allSatisfy({ $0.count <= 64 && !$0.contains("/") }) else {
             throw EaselStoreError.invalidDocument("pasted Easel objects")
         }

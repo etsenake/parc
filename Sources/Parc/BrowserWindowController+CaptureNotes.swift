@@ -22,7 +22,8 @@ extension BrowserWindowController {
         guard canOpenNoteOverPeek, presentation.isReady, !isClosing, !wholeWindowClose,
               transferringTabIDs.isEmpty else { throw CaptureSendRefusal.windowBusy }
         let input = NoteCaptureInput(pngData: image.pngData, sourceURL: image.sourceURL?.absoluteString ?? "",
-                                     pageTitle: image.pageTitle, capturedAt: image.capturedAt ?? Date(), captureLayout: image.captureLayout)
+                                     pageTitle: image.pageTitle, capturedAt: image.capturedAt ?? Date(), captureLayout: image.captureLayout,
+                                     snapshotPDF: image.snapshotPDF)
         let result = try NoteCaptureDelivery.deliver(input, to: target, notesFolder: NoteFolderPreferences.folder(for: profileID))
         pageCapture?.dismiss(restoreFocus: false)
         openNote(url: result.note, overPeek: true)

@@ -413,6 +413,7 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
         registerForDraggedTypes([Self.documentDragType, .URL, EaselStyledText.pasteboardType, EaselStyledText.previousPasteboardType, EaselStyledText.legacyPasteboardType, .rtfd, .rtf, .fileURL, Self.gifPasteboardType, .png, .tiff, .string])
         subscription = session.$document.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.documentDidChange() }
         NotificationCenter.default.addObserver(self, selector: #selector(inlineDatesChanged), name: EaselInlineText.datesChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(snapshotTileReady(_:)), name: EaselSnapshotTiles.tileReady, object: nil)
     }
     func documentDidChange() {
         let document = self.session.document
@@ -976,7 +977,7 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
             case .video:
                 if drawsLinkedVideoCard(item) { drawMediaCard(item, in: r) } else { drawVideoObject(item, in: r, controls: showsEditor) }
             case .webCard where item.assetID != nil:
-                if let id = item.assetID, let picture = image(id) { EaselPictureRenderer.draw(picture, asset: id, in: r) }
+                drawCapturedPage(item, in: r)
             case .link where item.url != nil:
                 drawBookmarkCard(item, in: r)
             case .link, .webCard, .browser:

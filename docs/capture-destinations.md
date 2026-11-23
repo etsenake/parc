@@ -86,6 +86,21 @@ once per capture, in the background, from a light summary of each Easel, and a
 failed send reloads it the same way. A capture whose page stops being current
 closes instead of leaving a menu that ignores clicks.
 
+## Sharp long captures
+
+A Full Page capture that carries the engine's vector PDF still lands as the same
+capture card or capture block, framed by the PNG's shape, but its picture is
+drawn from the PDF. On an Easel the PDF is a second asset on the card
+(`snapshot`); the PNG stays for thumbnails, HTML export and fallback. A PDF over
+the 30 MB asset limit, or one PDFKit can't open, is simply left out. The canvas
+draws the PNG while it is at least as sharp as the zoom needs; past that it
+draws 512-pixel tiles rendered off the main thread at the next power-of-two
+scale for only the visible part of the card, from one shared 32-million-pixel
+cache, showing the PNG under tiles that haven't landed. PDF, PNG and Copy as
+Image exports draw the PDF itself as vectors. Copy, paste, Send and Copy to
+Easel and moving an Easel between Profiles carry the PDF with the card. In a
+note the PDF sits in Attachments beside the PNG, as [Notes](notes.md) describes.
+
 ## Ownership and checks
 
 The capture lease owns the exact page, document, Profile, Space and window.
@@ -107,4 +122,7 @@ Easel or note, that a Library save in flight holds only Save to Library and
 Retake, that a page or lease that stops being current or a window that cannot
 become key refuses the send with its banner and leaves the capture open, and that
 a failed send stays open with its error while the Easel list reloads in the
-background.
+background. `CaptureControllerSnapshotTests`, `EaselCaptureSnapshotTests`,
+`CaptureSnapshotPDFTests` and `NoteCaptureSnapshotDeliveryTests` cover which
+captures carry the page PDF, how it is stored and refused, tile geometry and
+vector export, built from tiny generated PDFs.

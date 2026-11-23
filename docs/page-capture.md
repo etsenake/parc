@@ -69,6 +69,14 @@ PNG's `pHYs` chunk without touching a pixel, and crops, edits and frames encode
 the same density. Copy, Save, Library, Easel, Note and Messages all take that
 one PNG, so every output opens at screen size with full device sharpness.
 
+A Full Page too long or large for full Retina sharpness comes back as a
+scaled-down PNG (at most 16,384 pixels a side and 80 million in all) plus a
+vector PDF of the whole page in `pdfData`, one long page at a point per CSS
+pixel. The controller keeps that PDF only with the original, unedited output,
+the same rule as the Make live layout: crop, frame, edit and retake drop it.
+Easel and Note sends draw their snapshot from it ([destinations](capture-destinations.md#sharp-long-captures));
+Library, Copy, Save and Messages keep the PNG.
+
 ## Ownership and output
 
 `PageCaptureController` adds a sibling over the real viewport without reparenting

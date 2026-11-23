@@ -223,13 +223,15 @@ from before them opens and looks the same:
 | `credit` | A picture's photographer: `name`, `profileURL` and `photoURL`. |
 | `url` | An http or https link on a video or audio object that isn't copied in. |
 | `preview` | A bookmark's saved `title`, `summary`, `siteName`, `image` and `icon`; the last two are web addresses or PNG assets. |
+| `snapshot` | A captured webpage card's vector PDF of a long Full Page, drawn instead of its PNG ([sharp long captures](capture-destinations.md#sharp-long-captures)). |
 
 Validation refuses each field on anything but an image, crops outside the
 picture or thinner than 1% of it, turns outside 1–3, alt text over 4 KB, an
 unknown mask, a GIF asset on anything but an image, a video asset on anything
 but a video, audio assets on anything but audio, PDF and file assets on
 anything but their own kind, a poster that isn't a PNG or sits on an empty
-video, a file name on anything but a video, audio, file or PDF, a credit on
+video, a snapshot that isn't a PDF or sits on anything but a captured webpage
+card with a picture, a file name on anything but a video, audio, file or PDF, a credit on
 anything but an image and a link on a file, PDF or equation, so a malformed
 file is rejected whole. An empty object is its kind with neither an asset nor
 a link. Asset names are a lowercase UUID plus `.png`, `.gif`, `.mp4`, `.mov`,
@@ -250,7 +252,9 @@ saved bookmark pictures along with the assets.
   `editImageAltText`, `chooseReplacementImage` and `replaceImage(id:data:)`.
 - `EaselPictureRendering.swift` draws every asset picture through
   `EaselPictureRenderer` and keeps the downsampled copies in
-  `EaselPictureCache`.
+  `EaselPictureCache`. `EaselSnapshotRendering.swift` draws capture cards' PDF
+  snapshots from visible tiles (`EaselSnapshotTiles`) on screen and as vectors
+  in exports, using ParcCore's `CaptureSnapshotPDF`.
 - `EaselCanvasView+Video.swift` loads video facts, draws posters for exports
   and routes play, pause and stop to the hosted Notes player.
 - `NoteMediaHost.swift` is the seam the Notes media views talk to:

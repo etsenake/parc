@@ -13,6 +13,8 @@ package protocol NoteMediaResizing: AnyObject {
 package final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
     private let frameLayer = CALayer()
     private let picture = CALayer()
+    private var snapshotLayer: NoteCaptureSnapshotLayer?
+    private var snapshotURL: URL?
     private let maskLayer = CAShapeLayer()
     private let ring = CAShapeLayer()
     private let shimmer = NoteMediaShimmer()
@@ -122,9 +124,28 @@ package final class NoteImageContentView: NoteMediaContentView, NoteMediaResizin
         } else if framingChanged, window != nil, image != nil {
             animatesNextLayout = true
         }
+        refreshSnapshot()
         configureToolbar()
         refreshBadge()
         needsLayout = true
+    }
+
+    private func refreshSnapshot() {
+        let url = host?.snapshotSource.url
+        guard url != snapshotURL else { return }
+        snapshotURL = url
+        snapshotLayer?.removeFromSuperlayer()
+        snapshotLayer = nil
+        guard let url, let snapshot = CaptureSnapshotPDF(url: url) else { return }
+        let layer = NoteCaptureSnapshotLayer(snapshot: snapshot, url: url)
+        NoteMediaMotion.instant {
+            layer.contentsScale = window?.backingScaleFactor ?? 2
+            layer.bounds = picture.bounds
+            layer.position = picture.position
+            frameLayer.insertSublayer(layer, above: picture)
+        }
+        layer.refreshOrientation()
+        snapshotLayer = layer
     }
 
     package override func rebind(to source: NoteMediaSource) {
@@ -200,6 +221,11 @@ package final class NoteImageContentView: NoteMediaContentView, NoteMediaResizin
         applyGeometry(frame: frame, anchorX: anchorX, picture: pictureRect, maskPath: mask?.path(in: local), animated: animated)
         NoteMediaMotion.instant {
             picture.contentsScale = window?.backingScaleFactor ?? 2
+            if let snapshotLayer, snapshotLayer.contentsScale != picture.contentsScale {
+                snapshotLayer.contentsScale = picture.contentsScale
+                snapshotLayer.setNeedsDisplay()
+            }
+            snapshotLayer?.refreshOrientation()
             ring.path = Self.ringPath(frame: frame, mask: mask)
             ring.strokeColor = NoteMediaStyle.cg(NoteTheme.accent, in: self)
         }
@@ -248,6 +274,8 @@ package final class NoteImageContentView: NoteMediaContentView, NoteMediaResizin
             frameLayer.position = toPosition
             picture.bounds = toPictureBounds
             picture.position = pictureRect.origin
+            snapshotLayer?.bounds = toPictureBounds
+            snapshotLayer?.position = pictureRect.origin
             if let maskPath {
                 maskLayer.frame = toBounds
                 maskLayer.path = maskPath
@@ -264,9 +292,11 @@ package final class NoteImageContentView: NoteMediaContentView, NoteMediaResizin
         }
         if fromBounds != toBounds { spring(frameLayer, "bounds", NSValue(rect: fromBounds), NSValue(rect: toBounds)) }
         if fromPosition != toPosition { spring(frameLayer, "position", NSValue(point: fromPosition), NSValue(point: toPosition)) }
-        if fromPictureBounds != toPictureBounds { spring(picture, "bounds", NSValue(rect: fromPictureBounds), NSValue(rect: toPictureBounds)) }
-        if fromPicturePosition != pictureRect.origin {
-            spring(picture, "position", NSValue(point: fromPicturePosition), NSValue(point: pictureRect.origin))
+        for layer in [picture, snapshotLayer].compactMap({ $0 }) {
+            if fromPictureBounds != toPictureBounds { spring(layer, "bounds", NSValue(rect: fromPictureBounds), NSValue(rect: toPictureBounds)) }
+            if fromPicturePosition != pictureRect.origin {
+                spring(layer, "position", NSValue(point: fromPicturePosition), NSValue(point: pictureRect.origin))
+            }
         }
         if let fromPath, let maskPath { spring(maskLayer, "path", fromPath, maskPath) }
     }

@@ -62,11 +62,7 @@ extension EaselCanvasView {
                     imported[original] = id
                     created.append(id)
                 }
-                let items = payload.items.map { item -> EaselItem in
-                    var copy = item
-                    copy.assetID = item.assetID.flatMap { imported[$0] }
-                    return copy
-                }
+                let items = payload.items.map { $0.carryingAssets(imported) }
                 guard let landed = EaselBoardSend.landing(items, in: target.document) else {
                     target.discardUnusedAssets(created)
                     return false

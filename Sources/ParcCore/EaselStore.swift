@@ -622,7 +622,8 @@ package struct EaselItem: Codable, Identifiable, Equatable {
     package var fileName: String?
     package var preview: EaselLinkPreviewData?
     package var credit: EaselMediaCredit?
-    package init(id: UUID = UUID(), kind: EaselItemKind, frame: EaselRect, zIndex: Int = 0, movedToFrontAt: Date? = nil, text: String = "", textStyle: EaselTextStyle? = nil, richText: EaselRichText? = nil, url: String? = nil, assetID: String? = nil, color: String = "#252525", points: [EaselPoint] = [], capturedAt: Date? = nil, captureLayout: EaselCaptureLayout? = nil, liveCapture: Bool? = nil, shape: EaselShape? = nil, fill: String? = nil, fillOpacity: Double? = nil, strokeWidth: Double? = nil, strokeDash: EaselStrokeDash? = nil, startHead: EaselArrowHead? = nil, endHead: EaselArrowHead? = nil, routing: EaselConnectorRouting? = nil, startConnection: EaselConnection? = nil, endConnection: EaselConnection? = nil, groupID: UUID? = nil, locked: Bool? = nil, rotation: Double? = nil, flipHorizontal: Bool? = nil, flipVertical: Bool? = nil, labelPosition: Double? = nil, labelBackground: Bool? = nil, waypoints: [EaselPoint]? = nil, brush: EaselBrush? = nil, pattern: String? = nil, attachedTo: UUID? = nil, contentsHidden: Bool? = nil, crop: EaselRect? = nil, mask: EaselImageMask? = nil, altText: String? = nil, quarterTurns: Int? = nil, table: EaselTable? = nil, language: String? = nil, stamp: String? = nil, poster: String? = nil, mindMap: EaselMindMapLink? = nil, page: UUID? = nil, fileName: String? = nil, preview: EaselLinkPreviewData? = nil, credit: EaselMediaCredit? = nil) {
+    package var snapshot: String?
+    package init(id: UUID = UUID(), kind: EaselItemKind, frame: EaselRect, zIndex: Int = 0, movedToFrontAt: Date? = nil, text: String = "", textStyle: EaselTextStyle? = nil, richText: EaselRichText? = nil, url: String? = nil, assetID: String? = nil, color: String = "#252525", points: [EaselPoint] = [], capturedAt: Date? = nil, captureLayout: EaselCaptureLayout? = nil, liveCapture: Bool? = nil, shape: EaselShape? = nil, fill: String? = nil, fillOpacity: Double? = nil, strokeWidth: Double? = nil, strokeDash: EaselStrokeDash? = nil, startHead: EaselArrowHead? = nil, endHead: EaselArrowHead? = nil, routing: EaselConnectorRouting? = nil, startConnection: EaselConnection? = nil, endConnection: EaselConnection? = nil, groupID: UUID? = nil, locked: Bool? = nil, rotation: Double? = nil, flipHorizontal: Bool? = nil, flipVertical: Bool? = nil, labelPosition: Double? = nil, labelBackground: Bool? = nil, waypoints: [EaselPoint]? = nil, brush: EaselBrush? = nil, pattern: String? = nil, attachedTo: UUID? = nil, contentsHidden: Bool? = nil, crop: EaselRect? = nil, mask: EaselImageMask? = nil, altText: String? = nil, quarterTurns: Int? = nil, table: EaselTable? = nil, language: String? = nil, stamp: String? = nil, poster: String? = nil, mindMap: EaselMindMapLink? = nil, page: UUID? = nil, fileName: String? = nil, preview: EaselLinkPreviewData? = nil, credit: EaselMediaCredit? = nil, snapshot: String? = nil) {
         self.id = id
         self.kind = kind
         self.frame = frame
@@ -673,6 +674,7 @@ package struct EaselItem: Codable, Identifiable, Equatable {
         self.fileName = fileName
         self.preview = preview
         self.credit = credit
+        self.snapshot = snapshot
     }
     package var ownsEmbeddedPage: Bool { (kind == .browser && url != nil) || (kind == .webCard && captureLayout != nil && liveCapture == true) }
     package var isEmptyPlaceholder: Bool {
@@ -683,7 +685,14 @@ package struct EaselItem: Codable, Identifiable, Equatable {
         }
     }
     var assetReferences: [String] {
-        [assetID, poster].compactMap { $0 } + (preview?.assetIDs ?? [])
+        [assetID, poster, snapshot].compactMap { $0 } + (preview?.assetIDs ?? [])
+    }
+    package var carriedAssets: [String] { [assetID, snapshot].compactMap { $0 } }
+    package func carryingAssets(_ imported: [String: String]) -> EaselItem {
+        var copy = self
+        copy.assetID = assetID.flatMap { imported[$0] }
+        copy.snapshot = copy.assetID == nil ? nil : snapshot.flatMap { imported[$0] }
+        return copy
     }
     package var resolvedShape: EaselShape? {
         switch kind {
@@ -1261,6 +1270,9 @@ package final class EaselStore {
         }
         if let poster = item.poster, item.kind != .video || EaselAssetType.of(assetID: poster) != .png || item.isEmptyPlaceholder {
             throw EaselStoreError.invalidDocument("video poster")
+        }
+        if let snapshot = item.snapshot, item.kind != .webCard || item.assetID == nil || EaselAssetType.of(assetID: snapshot) != .pdf {
+            throw EaselStoreError.invalidDocument("capture snapshot")
         }
         if let type, let owner = type.kind, owner != item.kind { throw EaselStoreError.invalidDocument("media on an object that can't play it") }
         if [.audio, .file, .pdf].contains(item.kind), let type, type.kind != item.kind {

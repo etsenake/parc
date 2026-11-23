@@ -64,9 +64,10 @@ package struct NoteCapture: Hashable, Codable {
     var capturedAt: Date?
     package var geometry: NoteCaptureGeometry?
     package var live = false
+    package var snapshot: String?
 
     static let sourceKey = "capture", dateKey = "captured", viewportKey = "viewport", scrollKey = "scroll", regionKey = "region"
-    static let scrollersKey = "scrollers"
+    static let scrollersKey = "scrollers", snapshotKey = "snapshot"
     static let liveFlag = "live"
     static let fullPageFlag = "fullpage"
 
@@ -88,14 +89,23 @@ package struct NoteCapture: Hashable, Codable {
             if geometry.fullPage { items.append((Self.fullPageFlag, nil)) }
             if live { items.append((Self.liveFlag, nil)) }
         }
+        if let snapshot { items.append((Self.snapshotKey, snapshot)) }
         return items
     }
 
-    init(sourceURL: String, capturedAt: Date? = nil, geometry: NoteCaptureGeometry? = nil, live: Bool = false) {
+    init(sourceURL: String, capturedAt: Date? = nil, geometry: NoteCaptureGeometry? = nil, live: Bool = false, snapshot: String? = nil) {
         self.sourceURL = sourceURL
         self.capturedAt = capturedAt.flatMap { $0.timeIntervalSinceReferenceDate.isFinite ? Self.wholeSeconds($0) : nil }
         self.geometry = geometry?.isValid == true ? geometry : nil
         self.live = live && self.geometry != nil
+        self.snapshot = snapshot.flatMap(Self.validSnapshot)
+    }
+
+    static func validSnapshot(_ path: String) -> String? {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.utf8.count <= 4096, trimmed.lowercased().hasSuffix(".pdf"),
+              !trimmed.contains("://") || trimmed.lowercased().hasPrefix("file://") else { return nil }
+        return trimmed
     }
 
     init?(values: [String: String], flags: Set<String>) {
@@ -104,7 +114,7 @@ package struct NoteCapture: Hashable, Codable {
                   geometry: NoteCaptureGeometry(viewport: values[Self.viewportKey], scroll: values[Self.scrollKey],
                                                 region: values[Self.regionKey], scrollers: values[Self.scrollersKey],
                                                 fullPage: flags.contains(Self.fullPageFlag)),
-                  live: flags.contains(Self.liveFlag))
+                  live: flags.contains(Self.liveFlag), snapshot: values[Self.snapshotKey])
     }
 
     static func block(source: String, title: String, capture: NoteCapture) -> NoteBlock {

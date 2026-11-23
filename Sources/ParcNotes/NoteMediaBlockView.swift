@@ -61,6 +61,14 @@ final class NoteMediaBlockView: NoteCaptionedBlockView, NotePageHostObserving {
         return NoteMediaSource(block.props.source) { environment?.resolve($0) ?? URL(string: $0) }
     }
 
+    var snapshotSource: NoteMediaSource {
+        guard block.kind == .image, let snapshot = block.props.capture?.snapshot else { return .empty }
+        let environment = editor?.environment
+        let resolved = NoteMediaSource(snapshot) { environment?.resolve($0) ?? URL(string: $0) }
+        guard case .local = resolved else { return .empty }
+        return resolved
+    }
+
     var isImporting: Bool {
         guard let editor else { return false }
         return NoteMediaImport.imports(for: editor.environment).isPending(block.props.source, in: editor.session)
@@ -490,6 +498,7 @@ final class NoteMediaBlockView: NoteCaptionedBlockView, NotePageHostObserving {
             block.props.source = value
             block.props.credit = nil
             block.props.crop = nil
+            block.props.capture?.snapshot = nil
         }
     }
 
@@ -552,6 +561,7 @@ final class NoteMediaBlockView: NoteCaptionedBlockView, NotePageHostObserving {
             block.props.source = imported.source
             block.props.credit = imported.credit
             block.props.crop = nil
+            block.props.capture?.snapshot = nil
             if replacesOwnAlt { block.props.alt = imported.alt }
         }
     }
