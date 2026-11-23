@@ -159,7 +159,7 @@ struct NoteFileNode: Hashable, Sendable {
     init?(path: String) {
         var info = stat()
         guard stat(path, &info) == 0 else { return nil }
-        device = UInt64(info.st_dev)
+        device = UInt64(truncatingIfNeeded: info.st_dev)
         inode = UInt64(info.st_ino)
     }
 }

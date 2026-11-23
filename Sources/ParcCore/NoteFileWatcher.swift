@@ -91,7 +91,7 @@ final class NoteFileWatcher: NSObject, NSFilePresenter, @unchecked Sendable {
         }
         var info = stat()
         let described = fstat(descriptor, &info) == 0
-        let identity = described ? WatchedIdentity(device: UInt64(info.st_dev), inode: UInt64(info.st_ino), isFolder: watchingFolder) : nil
+        let identity = described ? WatchedIdentity(device: UInt64(truncatingIfNeeded: info.st_dev), inode: UInt64(info.st_ino), isFolder: watchingFolder) : nil
         let sighting: NoteFileSighting? = watchingFolder ? .absent : (described ? .file(NoteFileStamp(info)) : nil)
         if let seen {
             if sighting != seen { events(.changed) }

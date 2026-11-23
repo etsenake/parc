@@ -8,7 +8,7 @@ struct NoteFileStamp: Hashable, Sendable {
     var nanoseconds: Int
 
     init(_ info: stat) {
-        device = UInt64(info.st_dev)
+        device = UInt64(truncatingIfNeeded: info.st_dev)
         inode = UInt64(info.st_ino)
         size = Int64(info.st_size)
         seconds = info.st_mtimespec.tv_sec
