@@ -406,7 +406,8 @@ struct CaptureControllerSendTests {
         let fixture = try await CaptureControllerFixture()
         fixture.engine.deliversImmediately = false
         fixture.controller.present(.fullPage)
-        #expect(fixture.captureMethods == [.fullPage])
+        #expect(fixture.engine.deliverNextCapture())
+        #expect(fixture.captureMethods == [.viewport, .fullPage])
         #expect(fixture.engine.pendingCaptures == 1)
         #expect(fixture.controller.destinationsLoad == nil)
 
@@ -416,5 +417,103 @@ struct CaptureControllerSendTests {
         try fixture.click(fixture.easelRow(fixture.easel.id))
         #expect(fixture.easelSends.map(\.id) == [fixture.easel.id])
         #expect(fixture.finishes == [false])
+    }
+}
+
+@Suite("Capture controller full page cover")
+struct CaptureControllerFullPageCoverTests {
+    @MainActor @Test func fullPageFreezesTheVisibleAreaUnderTheBusyStateUntilThePreview() async throws {
+        let fixture = try await CaptureControllerFixture()
+        fixture.engine.deliversImmediately = false
+        fixture.controller.present(.fullPage)
+        #expect(fixture.captureMethods == [.viewport])
+        #expect(fixture.controller.overlay.stillCoverImage == nil)
+
+        #expect(fixture.engine.deliverNextCapture())
+        #expect(fixture.captureMethods == [.viewport, .fullPage])
+        let cover = try #require(fixture.controller.overlay.stillCoverImage)
+        #expect(cover.width == 160 && cover.height == 120)
+        #expect(fixture.controller.destinationsLoad == nil)
+
+        #expect(fixture.engine.deliverNextCapture())
+        await fixture.controller.destinationsLoad?.value
+        #expect(fixture.controller.overlay.stillCoverImage == nil)
+        try fixture.click(fixture.easelRow(fixture.easel.id))
+        #expect(fixture.easelSends.map(\.id) == [fixture.easel.id])
+    }
+
+    @MainActor @Test func aCoverThatFailsStillCapturesTheFullPage() async throws {
+        let fixture = try await CaptureControllerFixture()
+        fixture.engine.deliversImmediately = false
+        fixture.controller.present(.fullPage)
+        fixture.engine.pngData = nil
+        fixture.engine.errorMessage = "The renderer returned no usable capture pixels."
+
+        #expect(fixture.engine.deliverNextCapture())
+        #expect(fixture.captureMethods == [.viewport, .fullPage])
+        #expect(fixture.controller.overlay.stillCoverImage == nil)
+
+        fixture.engine.pngData = fixture.png
+        fixture.engine.errorMessage = nil
+        #expect(fixture.engine.deliverNextCapture())
+        await fixture.controller.destinationsLoad?.value
+        try fixture.click(fixture.easelRow(fixture.easel.id))
+        #expect(fixture.easelSends.map(\.id) == [fixture.easel.id])
+    }
+
+    @MainActor @Test func cancellingBeforeTheCoverArrivesNeverStartsTheFullPage() async throws {
+        let fixture = try await CaptureControllerFixture()
+        fixture.engine.deliversImmediately = false
+        fixture.controller.present(.fullPage)
+
+        fixture.controller.overlay.onCancel?()
+        #expect(fixture.finishes == [true])
+        #expect(fixture.engine.deliverNextCapture())
+
+        #expect(fixture.captureMethods == [.viewport])
+        #expect(fixture.controller.overlay.stillCoverImage == nil)
+    }
+
+    @MainActor @Test func aFailedFullPageDropsTheCoverAndReturnsToSelection() async throws {
+        let fixture = try await CaptureControllerFixture()
+        fixture.engine.deliversImmediately = false
+        fixture.controller.present(.fullPage)
+        #expect(fixture.engine.deliverNextCapture())
+        #expect(fixture.controller.overlay.stillCoverImage != nil)
+
+        fixture.engine.pngData = nil
+        fixture.engine.errorMessage = "The page kept moving while it was being captured. Try again."
+        #expect(fixture.engine.deliverNextCapture())
+
+        #expect(fixture.controller.overlay.stillCoverImage == nil)
+        #expect(fixture.controller.destinationsLoad == nil)
+        #expect(fixture.finishes.isEmpty)
+        #expect(fixture.controller.overlay.superview === fixture.host)
+    }
+
+    @MainActor @Test func retakingAFullPageCoversThePageAgain() async throws {
+        let fixture = try await CaptureControllerFixture()
+        await fixture.capture(.fullPage)
+        #expect(fixture.captureMethods == [.viewport, .fullPage])
+        fixture.engine.deliversImmediately = false
+
+        fixture.press(.retake)
+        #expect(fixture.engine.deliverNextCapture())
+
+        #expect(fixture.captureMethods == [.viewport, .fullPage, .viewport, .fullPage])
+        #expect(fixture.controller.overlay.stillCoverImage != nil)
+        #expect(fixture.engine.deliverNextCapture())
+        #expect(fixture.controller.overlay.stillCoverImage == nil)
+    }
+
+    @MainActor @Test func theVisibleAreaNeverTakesACover() async throws {
+        let fixture = try await CaptureControllerFixture()
+        fixture.engine.deliversImmediately = false
+        fixture.controller.present(.viewport)
+        #expect(fixture.engine.deliverNextCapture())
+
+        #expect(fixture.captureMethods == [.viewport])
+        #expect(fixture.engine.pendingCaptures == 0)
+        #expect(fixture.controller.overlay.stillCoverImage == nil)
     }
 }

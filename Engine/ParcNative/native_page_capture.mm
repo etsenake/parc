@@ -9,11 +9,9 @@
 #include <utility>
 #include <vector>
 
-#include "base/base64.h"
 #include "parc/native/native_internal_urls.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
-#include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
@@ -21,6 +19,7 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/strcat.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
@@ -37,8 +36,6 @@
 #include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_service.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
-#include "content/public/browser/devtools_agent_host.h"
-#include "content/public/browser/devtools_agent_host_client.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/render_frame_host.h"
@@ -54,10 +51,11 @@
 #include "native_page_retirement.h"
 #include "native_profile_removal.h"
 #include "tab_transfer.h"
-#include "third_party/blink/public/common/web_preferences/web_preferences.h"
 #include "third_party/blink/public/common/page/page_zoom.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "third_party/skia/include/core/SkRect.h"
 #include "ui/base/base_window.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/geometry/point_f.h"
@@ -216,14 +214,7 @@ std::u16string ElementQuery(NSPoint point, double zoom) {
   })())JS";
   return base::UTF8ToUTF16(script);
 }
-std::u16string GeometryQuery(gfx::PointF centre) {
-  std::string script = "(() => { const px = " + base::NumberToString(centre.x()) +
-      ", py = " + base::NumberToString(centre.y()) + R"JS(;
-    const v = visualViewport;
-    if (!v) return null;
-    const geometry = {width:innerWidth, height:innerHeight, x:v.pageLeft, y:v.pageTop, scale:v.scale};
-    if (!Number.isFinite(v.scale) || v.scale <= 0) return geometry;
-    const cx = px / v.scale + v.offsetLeft, cy = py / v.scale + v.offsetTop;
+constexpr std::string_view kLocateScript = R"JS(
     const stableID = id => /^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(id) && !/[0-9]{3}/.test(id);
     const locate = el => {
       const steps = [];
@@ -240,14 +231,108 @@ std::u16string GeometryQuery(gfx::PointF centre) {
       }
       return null;
     };
-    let hit = document.elementFromPoint(cx, cy);
-    while (hit && hit.shadowRoot) {
-      const inner = hit.shadowRoot.elementFromPoint(cx, cy);
-      if (!inner || inner === hit) break;
-      hit = inner;
-    }
-    const scroller = document.scrollingElement || document.documentElement;
     const scrolls = value => value === 'auto' || value === 'scroll' || value === 'overlay';
+    const up = el => el.parentElement || (el.parentNode instanceof ShadowRoot ? el.parentNode.host : null);
+    const hitAt = (x, y) => {
+      let hit = document.elementFromPoint(x, y);
+      while (hit && hit.shadowRoot) {
+        const inner = hit.shadowRoot.elementFromPoint(x, y);
+        if (!inner || inner === hit) break;
+        hit = inner;
+      }
+      return hit;
+    };)JS";
+constexpr std::string_view kFindScript = R"JS(
+      const find = (anchor, path) => {
+        let node = anchor === null ? document.documentElement : document.getElementById(anchor);
+        for (const step of path ? path.split('>') : []) {
+          if (!node) return null;
+          if (step === '^') { node = node.shadowRoot; continue; }
+          const [tag, index] = step.split(':');
+          node = Array.prototype.filter.call(node.children, c => c.localName === tag)[Number(index)];
+        }
+        return node instanceof Element ? node : null;
+      };)JS";
+constexpr std::string_view kPinScript = R"JS(
+    const holds = (outer, inner) => {
+      for (let n = inner, depth = 0; n && depth < 512; n = up(n), depth++) if (n === outer) return true;
+      return false;
+    };
+    const stack = (x, y) => {
+      const found = [];
+      const visit = (root, depth) => {
+        for (const el of root.elementsFromPoint(x, y)) {
+          if (found.includes(el)) continue;
+          if (depth < 3 && el.shadowRoot && el.shadowRoot !== root) visit(el.shadowRoot, depth + 1);
+          if (!found.includes(el)) found.push(el);
+        }
+      };
+      visit(document, 0);
+      return found;
+    };
+    const pinning = (target, element, clientTop, clientBottom) => {
+      const styles = new Map();
+      const styleOf = el => {
+        let style = styles.get(el);
+        if (!style) { style = getComputedStyle(el); styles.set(el, style); }
+        return style;
+      };
+      const stuck = el => {
+        const style = styleOf(el), r = el.getBoundingClientRect();
+        const top = parseFloat(style.top), bottom = parseFloat(style.bottom);
+        return (Number.isFinite(top) && Math.abs(r.top - clientTop - top) < 1) ||
+            (Number.isFinite(bottom) && Math.abs(clientBottom - bottom - r.bottom) < 1);
+      };
+      const pin = el => {
+        let found = null;
+        for (let n = el, depth = 0; n && depth < 64; n = up(n), depth++) {
+          if (holds(n, target)) break;
+          const position = styleOf(n).position;
+          if ((element && !holds(target, n)) || position === 'fixed' ||
+              (position === 'sticky' && stuck(n))) found = n;
+        }
+        return found;
+      };
+      return {styleOf, pin};
+    };)JS";
+constexpr std::string_view kHoldScript = R"JS(
+    const key = '__parcFullPageCapture';
+    const hold = (state, el, prop, value) => {
+      try {
+        state.saved.push({el, prop, value:el.style.getPropertyValue(prop),
+                          priority:el.style.getPropertyPriority(prop), attr:el.hasAttribute('style')});
+        el.style.setProperty(prop, value, 'important');
+      } catch (e) {}
+    };
+    const release = state => {
+      for (const s of state.saved.reverse()) {
+        try {
+          if (s.value) s.el.style.setProperty(s.prop, s.value, s.priority);
+          else s.el.style.removeProperty(s.prop);
+          if (!s.attr && s.el.getAttribute('style') === '') s.el.removeAttribute('style');
+        } catch (e) {}
+      }
+      state.saved = [];
+    };)JS";
+constexpr std::string_view kAreaScript = R"JS(
+    const box = target.getBoundingClientRect();
+    const clientTop = element ? box.top + target.clientTop : 0;
+    const clientBottom = clientTop + target.clientHeight;
+    const area = element ? {left:Math.max(0, box.left + target.clientLeft), top:Math.max(0, clientTop),
+        right:Math.min(innerWidth, box.left + target.clientLeft + target.clientWidth),
+        bottom:Math.min(innerHeight, clientBottom)}
+      : {left:0, top:0, right:target.clientWidth, bottom:clientBottom};)JS";
+
+std::u16string GeometryQuery(gfx::PointF centre) {
+  return base::UTF8ToUTF16(base::StrCat({"(() => { const px = ", base::NumberToString(centre.x()),
+      ", py = ", base::NumberToString(centre.y()), R"JS(;
+    const v = visualViewport;
+    if (!v) return null;
+    const geometry = {width:innerWidth, height:innerHeight, x:v.pageLeft, y:v.pageTop, scale:v.scale};
+    if (!Number.isFinite(v.scale) || v.scale <= 0) return geometry;
+    const cx = px / v.scale + v.offsetLeft, cy = py / v.scale + v.offsetTop;)JS", kLocateScript, R"JS(
+    const hit = hitAt(cx, cy);
+    const scroller = document.scrollingElement || document.documentElement;
     const containers = [];
     for (let el = hit; el && el !== document.documentElement && el !== scroller;) {
       const style = getComputedStyle(el);
@@ -265,13 +350,247 @@ std::u16string GeometryQuery(gfx::PointF centre) {
           return geometry;
         }
       }
-      el = el.parentElement || (el.parentNode instanceof ShadowRoot ? el.parentNode.host : null);
+      el = up(el);
     }
     geometry.containers = containers.reverse();
     return geometry;
-  })())JS";
-  return base::UTF8ToUTF16(script);
+  })())JS"}));
 }
+
+struct FullPageTarget {
+  bool element = false;
+  std::optional<std::string> anchor;
+  std::string path;
+};
+
+struct FullPageFrame {
+  double y = 0;
+  double content = 0;
+  double client = 0;
+  double left = 0;
+  double top = 0;
+  double right = 0;
+  double bottom = 0;
+  double top_bar = 0;
+  double bottom_bar = 0;
+  bool hid = false;
+  bool pending = false;
+};
+
+std::string JsonText(base::Value value) {
+  return base::WriteJson(value).value_or("null");
+}
+
+std::string FullPageTargetScript(const FullPageTarget& target) {
+  return base::StrCat({"const element = ", target.element ? "true" : "false", ", anchor = ",
+      target.anchor ? JsonText(base::Value(*target.anchor)) : "null", ", path = ",
+      JsonText(base::Value(target.path)), ";"});
+}
+
+std::u16string FullPageMeasureQuery() {
+  return base::UTF8ToUTF16(base::StrCat({R"JS((() => {
+    const v = visualViewport;
+    if (!v) return null;
+    const result = {kind:'none', scale:v.scale, width:innerWidth, height:innerHeight};
+    if (!(Math.abs(v.scale - 1) < 0.001)) return result;)JS", kLocateScript, kPinScript, kHoldScript, R"JS(
+    if (window[key]) { release(window[key]); delete window[key]; }
+    const doc = document.scrollingElement || document.documentElement;
+    const clipped = value => value === 'hidden' || value === 'clip';
+    const rootStyle = getComputedStyle(document.documentElement);
+    const bodyStyle = document.body ? getComputedStyle(document.body) : null;
+    const rootScrolls = !clipped(rootStyle.overflowY) &&
+        !(rootStyle.overflowY === 'visible' && bodyStyle && clipped(bodyStyle.overflowY));
+    let target = rootScrolls && doc.scrollHeight > innerHeight + 1 ? doc : null;
+    if (!target) {
+      const cx = innerWidth / 2, cy = innerHeight / 2, seen = new Set();
+      let best = null;
+      for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++) {
+        for (let el = hitAt(innerWidth * (i + 0.5) / 5, innerHeight * (j + 0.5) / 5);
+             el && el !== document.documentElement && el !== doc && !seen.has(el); el = up(el)) {
+          seen.add(el);
+          const style = getComputedStyle(el);
+          if (!scrolls(style.overflowY) || el.scrollHeight <= el.clientHeight + 1 ||
+              style.visibility !== 'visible') continue;
+          const r = el.getBoundingClientRect();
+          const covers = Math.max(0, Math.min(r.right, innerWidth) - Math.max(r.left, 0)) *
+              Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0));
+          if (covers < innerWidth * innerHeight / 3) continue;
+          const centre = r.left <= cx && cx < r.right && r.top <= cy && cy < r.bottom;
+          if (!best || centre > best.centre || (centre === best.centre && covers > best.covers))
+            best = {el, centre, covers};
+        }
+      }
+      if (!best) return result;
+      target = best.el;
+    }
+    const element = target !== doc;
+    const at = element ? locate(target) : {anchor:null, path:''};
+    if (!at) { result.kind = 'unreachable'; return result; }
+    const start = target.scrollTop;
+    const state = {target, saved:[], hidden:new Set(), pins:new Map(), sides:[], fixed:[], left:0, right:0};
+    const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_ELEMENT);
+    for (let n = walker.nextNode(), count = 0; n && count < 20000 && state.fixed.length < 300;
+         n = walker.nextNode(), count++) {
+      const position = getComputedStyle(n).position;
+      if ((position === 'fixed' || position === 'sticky') && !holds(n, target)) state.fixed.push(n);
+    }
+    hold(state, element ? target : document.documentElement, 'scrollbar-width', 'none');
+    hold(state, element ? target : document.documentElement, 'scroll-snap-type', 'none');
+    window[key] = state;)JS", kAreaScript, R"JS(
+    if (!element) {
+      const {pin} = pinning(target, false, clientTop, clientBottom);
+      const span = area.right - area.left, tall = area.bottom - area.top;
+      let left = area.left, right = area.right;
+      for (const fraction of [0.3, 0.5, 0.7]) {
+        for (const x of [area.left + 0.5, area.right - 0.5]) {
+          for (const el of stack(x, area.top + tall * fraction)) {
+            const p = pin(el);
+            if (!p) break;
+            const r = p.getBoundingClientRect();
+            if (r.height < tall / 2 || r.width >= span / 2) continue;
+            if (r.left <= area.left + 1) left = Math.max(left, Math.min(r.right, area.right));
+            else if (r.right >= area.right - 1) right = Math.min(right, Math.max(r.left, area.left));
+            else continue;
+            if (!state.sides.includes(p)) state.sides.push(p);
+          }
+        }
+      }
+      if (right - left >= span / 3) { area.left = left; area.right = right; } else state.sides = [];
+    }
+    state.left = area.left;
+    state.right = area.right;
+    return Object.assign(result, {kind:element ? 'element' : 'document', anchor:at.anchor, path:at.path,
+        start, left:area.left, top:area.top, right:area.right, bottom:area.bottom,
+        content:target.scrollHeight, client:target.clientHeight});
+  })())JS"}));
+}
+
+std::u16string FullPageFrameQuery(const FullPageTarget& target, std::optional<double> offset,
+                                  bool hide) {
+  return base::UTF8ToUTF16(base::StrCat({"(() => { ", FullPageTargetScript(target),
+      " const offset = ", offset ? base::NumberToString(*offset) : "null",
+      ", hide = ", hide ? "true" : "false", ";", kLocateScript, kFindScript, kPinScript, kHoldScript, R"JS(
+    const state = window[key];
+    const doc = document.scrollingElement || document.documentElement;
+    const target = element ? find(anchor, path) : doc;
+    if (!state || !target || target !== state.target) return null;
+    if (offset !== null) target.scrollTo({top:offset, behavior:'instant'});)JS", kAreaScript, R"JS(
+    if (!element) { area.left = state.left; area.right = state.right; }
+    const span = area.right - area.left, tall = area.bottom - area.top;
+    if (!(span > 1 && tall > 1)) return null;
+    const {styleOf, pin} = pinning(target, element, clientTop, clientBottom);
+    const bars = new Set();
+    const reach = (y, down) => {
+      let edge = null;
+      for (let i = 1; i < 8; i++) {
+        for (const el of stack(area.left + span * i / 8, y)) {
+          const p = pin(el);
+          if (!p) break;
+          if (state.hidden.has(p) || state.sides.includes(p) || styleOf(p).visibility !== 'visible') continue;
+          const r = p.getBoundingClientRect();
+          if (r.height >= tall / 3 || Math.min(r.right, area.right) - Math.max(r.left, area.left) < span / 3) continue;
+          bars.add(p);
+          edge = down ? Math.max(edge ?? y, r.bottom) : Math.min(edge ?? y, r.top);
+        }
+      }
+      return edge;
+    };
+    let top = area.top, bottom = area.bottom;
+    for (let i = 0; i < 3 && top < area.top + tall / 3; i++) {
+      const edge = reach(top + 0.5, true);
+      if (edge === null || edge <= top + 0.5) break;
+      top = Math.min(edge, area.top + tall / 3);
+    }
+    for (let i = 0; i < 3 && bottom > area.bottom - tall / 3; i++) {
+      const edge = reach(bottom - 0.5, false);
+      if (edge === null || edge >= bottom - 0.5) break;
+      bottom = Math.max(edge, area.bottom - tall / 3);
+    }
+    const now = target.scrollTop;
+    const points = [];
+    for (let i = 0; i < 10; i++) for (let j = 0; j < 10; j++)
+      points.push([area.left + span * (i + 0.5) / 10, top + (bottom - top) * (j + 0.5) / 10]);
+    const aim = el => {
+      if (!el.isConnected) return;
+      const r = el.getBoundingClientRect();
+      const l = Math.max(r.left, area.left), t = Math.max(r.top, top);
+      const rr = Math.min(r.right, area.right), b = Math.min(r.bottom, bottom);
+      if (rr - l >= 1 && b - t >= 1) points.push([(l + rr) / 2, (t + b) / 2]);
+    };
+    state.fixed.forEach(aim);
+    for (let n = target; element && n && n !== document.documentElement; n = up(n)) {
+      const parent = up(n);
+      if (parent) for (const sibling of parent.children) if (sibling !== n) aim(sibling);
+    }
+    let hid = 0;
+    for (const [x, y] of bottom - top > 1 ? points.slice(0, 400) : []) {
+      for (const el of stack(x, y)) {
+        const p = pin(el);
+        if (!p) break;
+        if (bars.has(p) || state.hidden.has(p) || state.sides.includes(p)) continue;
+        const r = p.getBoundingClientRect(), seen = state.pins.get(p);
+        if (r.width * r.height >= span * tall * 0.6) continue;
+        if (!seen) state.pins.set(p, {top:r.top, left:r.left, at:now});
+        const sure = styleOf(p).position === 'sticky' || (element && !holds(target, p)) ||
+            (seen !== undefined && Math.abs(now - seen.at) > 2 && Math.abs(r.top - seen.top) < 1 &&
+             Math.abs(r.left - seen.left) < 1);
+        if (hide && sure) { hold(state, p, 'visibility', 'hidden'); state.hidden.add(p); hid++; }
+      }
+    }
+    let pending = 0;
+    for (let i = 0; i < document.images.length && i < 4000 && !pending; i++) {
+      const img = document.images[i];
+      if (img.complete) continue;
+      const r = img.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0 && r.bottom > area.top && r.top < area.bottom &&
+          r.right > area.left && r.left < area.right) pending++;
+    }
+    return {y:now, content:target.scrollHeight, client:target.clientHeight, left:area.left, top:area.top,
+            right:area.right, bottom:area.bottom, topBar:top - area.top, bottomBar:area.bottom - bottom,
+            hid, pending};
+  })())JS"}));
+}
+
+std::u16string FullPageRestoreQuery(const FullPageTarget& target, std::optional<double> start) {
+  return base::UTF8ToUTF16(base::StrCat({"(() => { ", FullPageTargetScript(target),
+      " const start = ", start ? base::NumberToString(*start) : "null", ";", kFindScript, kHoldScript, R"JS(
+    const state = window[key];
+    delete window[key];
+    if (state) release(state);
+    const doc = document.scrollingElement || document.documentElement;
+    const target = state && state.target && state.target.isConnected ? state.target :
+        element ? find(anchor, path) : doc;
+    if (target && start !== null) target.scrollTo({top:start, behavior:'instant'});
+    return true;
+  })())JS"}));
+}
+
+std::optional<FullPageFrame> FullPageFrameFrom(const base::Value& value) {
+  const auto* dict = value.GetIfDict();
+  if (!dict) return std::nullopt;
+  FullPageFrame frame;
+  const std::pair<const char*, double*> fields[] = {
+      {"y", &frame.y}, {"content", &frame.content}, {"client", &frame.client},
+      {"left", &frame.left}, {"top", &frame.top}, {"right", &frame.right},
+      {"bottom", &frame.bottom}, {"topBar", &frame.top_bar}, {"bottomBar", &frame.bottom_bar}};
+  for (const auto& [name, field] : fields) {
+    const auto number = dict->FindDouble(name);
+    if (!number || !BoundedFinite(*number)) return std::nullopt;
+    *field = *number;
+  }
+  const auto hid = dict->FindDouble("hid"), pending = dict->FindDouble("pending");
+  if (!hid || !pending || frame.content < 0 || frame.client < 0 || frame.top_bar < 0 ||
+      frame.bottom_bar < 0 || frame.right < frame.left || frame.bottom < frame.top) return std::nullopt;
+  frame.hid = *hid > 0;
+  frame.pending = *pending > 0;
+  return frame;
+}
+
+bool SameFullPageFrame(const FullPageFrame& a, const FullPageFrame& b, bool content) {
+  return std::abs(a.y - b.y) < 0.5 && (!content || std::abs(a.content - b.content) < 0.5) &&
+      std::abs(a.top_bar - b.top_bar) < 0.5 && std::abs(a.bottom_bar - b.bottom_bar) < 0.5;
+}
+
 std::optional<NSArray<PCNativeCaptureScrollContainer*>*> ScrollContainersFrom(
     const base::DictValue& dict) {
   const base::ListValue* list = dict.FindList("containers");
@@ -305,15 +624,6 @@ EncodedCapture EncodeBitmap(SkBitmap bitmap) {
   auto png = gfx::PNGCodec::EncodeBGRASkBitmap(bitmap, false);
   return png ? EncodedCapture{std::move(*png), gfx::Size(bitmap.width(), bitmap.height())}
              : EncodedCapture{};
-}
-EncodedCapture DecodeProtocolPNG(std::string encoded) {
-  std::string bytes;
-  if (!base::Base64Decode(encoded, &bytes)) return {};
-  auto span = base::as_byte_span(bytes);
-  SkBitmap bitmap = gfx::PNGCodec::Decode(span);
-  if (bitmap.drawsNothing()) return {};
-  return {std::vector<uint8_t>(span.begin(), span.end()),
-          gfx::Size(bitmap.width(), bitmap.height())};
 }
 void PostFailure(CaptureCompletion completion, NSString* error) {
   auto result = [[PCNativePageCaptureResult alloc]
@@ -371,7 +681,6 @@ auto& ActiveCaptures() {
 class PageCapture final : public content::WebContentsObserver,
                           public ProfileObserver,
                           public content::RenderWidgetHostObserver,
-                          public content::DevToolsAgentHostClient,
                           public std::enable_shared_from_this<PageCapture> {
  public:
   PageCapture(PCNativePage* page, content::WebContents& contents, NSWindow* window,
@@ -464,7 +773,8 @@ class PageCapture final : public content::WebContentsObserver,
       PostFailure(completion, @"The source page is no longer available for this capture.");
     }
     ClearTarget();
-    StopProtocol(true);
+    RestoreFullPage();
+    full_page_.reset();
     ReleaseOperation();
     timer_.Stop();
     weak_factory_.InvalidateWeakPtrs();
@@ -727,7 +1037,6 @@ class PageCapture final : public content::WebContentsObserver,
   }
   bool GeometryMatches() const {
     if (!page_ || !NSEqualSizes(page_.nativeView.bounds.size, host_size_)) return false;
-    if (protocol_inflight_ || restoring_) return true;
     auto* view = web_contents() ? web_contents()->GetRenderWidgetHostView() : nullptr;
     NSView* renderer = view ? view->GetNativeView().GetNativeNSView() : nil;
     return renderer && view->GetViewBounds().size() == viewport_ &&
@@ -765,97 +1074,305 @@ class PageCapture final : public content::WebContentsObserver,
         {base::TaskPriority::USER_VISIBLE}, base::BindOnce(&EncodeBitmap, std::move(bitmap)),
         base::BindOnce(&PageCapture::Deliver, weak_factory_.GetWeakPtr(), request));
   }
+  enum class FramePhase { kScrolled, kSettled, kChecked };
+  struct FullPage {
+    FullPageTarget target;
+    bool scrolls = false;
+    bool applied = false;
+    bool first = true;
+    bool may_retry = true;
+    std::optional<double> start;
+    double zoom = 1;
+    float device_scale = 1;
+    double left = 0;
+    double top = 0;
+    double right = 0;
+    double bottom = 0;
+    double content = 0;
+    double client = 0;
+    double css_width = 0;
+    int covered = 0;
+    int frames = 0;
+    int settles = 0;
+    int checks = 0;
+    std::optional<FullPageFrame> read;
+    base::TimeTicks started;
+    base::TimeTicks frame_started;
+    PageCaptureGeometry geometry;
+    SkBitmap canvas;
+  };
   void StartFullPage(uint64_t request) {
     capture_layout_ = nil;
-    agent_ = content::DevToolsAgentHost::GetOrCreateFor(web_contents());
-    if (!agent_ || agent_->IsAttached() || !agent_->AttachClient(this)) {
-      agent_.reset();
-      Fail(request, @"Close this page’s developer tools before capturing the full page.");
-      return;
-    }
-    attached_ = true;
-    const auto& prefs = web_contents()->GetOrCreateWebPreferences();
-    original_hide_scrollbars_ = prefs.hide_scrollbars;
-    original_record_document_ = prefs.record_whole_document;
-    protocol_inflight_ = true;
-    constexpr std::string_view command =
-        R"({"id":1,"method":"Page.captureScreenshot","params":{"format":"png","fromSurface":true,"captureBeyondViewport":true}})";
-    agent_->DispatchProtocolMessage(this, base::as_byte_span(command));
-  }
-  void StopProtocol(bool restore) {
-    auto keep_alive = weak_from_this().lock();
-    if (restoring_) return;
-    restoring_ = true;
-    if (agent_ && attached_) {
-      attached_ = false;
-      agent_->DetachClient(this);
-    }
-    agent_.reset();
-    if (!protocol_inflight_) { restoring_ = false; return; }
-    protocol_inflight_ = false;
-    auto* contents = web_contents();
-    if (!restore || !contents || contents->IsBeingDestroyed()) {
-      restoring_ = false;
-      return;
-    }
-    auto prefs = contents->GetOrCreateWebPreferences();
-    prefs.hide_scrollbars = original_hide_scrollbars_;
-    prefs.record_whole_document = original_record_document_;
-    contents->SetWebPreferences(prefs);
-    if (document_.AsRenderFrameHostIfValid() == contents->GetPrimaryMainFrame() &&
-        page_ && ContentsForNativePage(page_) == contents &&
-        page_.nativeView.window == window_) {
-      NSView* container = contents->GetNativeView().GetNativeNSView();
-      if (auto* view = contents->GetRenderWidgetHostView(); view && container) {
-        NSSize size = container.bounds.size;
-        if (size.width > 0 && size.height > 0)
-          view->SetSize(gfx::Size(std::lround(size.width), std::lround(size.height)));
-      }
-    }
-    restoring_ = false;
-  }
-  void DispatchProtocolMessage(content::DevToolsAgentHost* agent,
-                               base::span<const uint8_t> message) override {
-    if (agent != agent_.get() || !attached_ || !completion_) return;
-    auto parsed = base::JSONReader::Read(base::as_string_view(message),
-                                        base::JSON_PARSE_RFC);
-    const base::DictValue* value = parsed ? parsed->GetIfDict() : nullptr;
-    if (!value || value->FindInt("id") != 1) return;
-    const uint64_t request = request_;
-    const std::string* data = value->FindStringByDottedPath("result.data");
-    std::string encoded = data ? *data : std::string();
-    runner_->PostTask(FROM_HERE, base::BindOnce(&PageCapture::ProtocolResult,
-        weak_factory_.GetWeakPtr(), request, std::move(encoded)));
-  }
-  void ProtocolResult(uint64_t request, std::string encoded) {
-    auto keep_alive = weak_from_this().lock();
-    if (!completion_ || request != request_) return;
-    StopProtocol(true);
-    if (!Valid()) { Invalidate(true); return; }
-    if (encoded.empty()) {
+    auto* view = web_contents()->GetRenderWidgetHostView();
+    const double zoom = blink::ZoomLevelToZoomFactor(content::HostZoomMap::GetZoomLevel(web_contents()));
+    const float device_scale = view ? view->GetDeviceScaleFactor() : 0;
+    if (!std::isfinite(zoom) || zoom <= 0 || !std::isfinite(device_scale) || device_scale <= 0) {
       Fail(request, @"The renderer could not capture the full page.");
       return;
     }
-    base::ThreadPool::PostTaskAndReplyWithResult(FROM_HERE,
-        {base::TaskPriority::USER_VISIBLE},
-        base::BindOnce(&DecodeProtocolPNG, std::move(encoded)),
-        base::BindOnce(&PageCapture::Deliver, weak_factory_.GetWeakPtr(), request));
+    full_page_ = std::make_unique<FullPage>();
+    full_page_->zoom = zoom;
+    full_page_->device_scale = device_scale;
+    full_page_->started = base::TimeTicks::Now();
+    document_.AsRenderFrameHostIfValid()->ExecuteJavaScriptInIsolatedWorld(FullPageMeasureQuery(),
+        base::BindOnce(&PageCapture::FullPageMeasured, weak_factory_.GetWeakPtr(), request),
+        ISOLATED_WORLD_ID_CHROME_INTERNAL);
   }
-  void AgentHostClosed(content::DevToolsAgentHost*) override {
-    attached_ = false;
-    runner_->PostTask(FROM_HERE, base::BindOnce(&PageCapture::Invalidate,
-        weak_factory_.GetWeakPtr(), true));
+  bool FullPageCurrent(uint64_t request) {
+    if (!completion_ || request != request_ || !full_page_) return false;
+    if (!Valid()) { Invalidate(true); return false; }
+    return true;
   }
-  bool MayAttachToURL(const GURL& url, bool) override {
-    return Valid() && url == web_contents()->GetLastCommittedURL();
+  void FullPageMeasured(uint64_t request, base::Value value) {
+    if (!FullPageCurrent(request)) return;
+    FullPage& page = *full_page_;
+    const auto* dict = value.GetIfDict();
+    const auto scale = dict ? dict->FindDouble("scale") : std::nullopt;
+    const std::string* kind = dict ? dict->FindString("kind") : nullptr;
+    if (kind && (*kind == "document" || *kind == "element")) page.applied = true;
+    if (!scale || !kind || !std::isfinite(*scale)) {
+      Fail(request, @"The page changed while it was being captured. Try again.");
+      return;
+    }
+    if (std::abs(*scale - 1) >= 0.001) {
+      Fail(request, @"Pinch back out to capture the full page.");
+      return;
+    }
+    if (!page.applied) { CopyFullPageFrame(request); return; }
+    const base::Value* anchor = dict->Find("anchor");
+    const std::string* path = dict->FindString("path");
+    const auto start = dict->FindDouble("start"), left = dict->FindDouble("left");
+    const auto top = dict->FindDouble("top"), right = dict->FindDouble("right");
+    const auto bottom = dict->FindDouble("bottom"), content = dict->FindDouble("content");
+    const auto client = dict->FindDouble("client"), width = dict->FindDouble("width");
+    if (!anchor || !(anchor->is_none() || anchor->is_string()) || !path || !start || !left || !top ||
+        !right || !bottom || !content || !client || !width ||
+        !ScrollAnchorValid(anchor->is_string() ? base::SysUTF8ToNSString(anchor->GetString()) : nil) ||
+        !ScrollPathValid(base::SysUTF8ToNSString(*path)) || !BoundedFinite(*start) ||
+        !BoundedFinite(*left) || !BoundedFinite(*top) || !BoundedFinite(*right) ||
+        !BoundedFinite(*bottom) || !BoundedFinite(*content) || !BoundedFinite(*client) ||
+        !BoundedFinite(*width) || *right <= *left || *bottom <= *top || *content < 0 ||
+        *client <= 0 || *width <= 0) {
+      Fail(request, @"The page changed while it was being captured. Try again.");
+      return;
+    }
+    page.target.element = *kind == "element";
+    if (anchor->is_string()) page.target.anchor = anchor->GetString();
+    page.target.path = *path;
+    page.start = *start;
+    page.left = *left;
+    page.top = *top;
+    page.right = *right;
+    page.bottom = *bottom;
+    page.content = *content;
+    page.client = *client;
+    page.css_width = *width;
+    page.scrolls = true;
+    RequestFullPageFrame(request, 0);
   }
-  bool MayAttachToRenderFrameHost(content::RenderFrameHost* frame) override {
-    return Valid() && frame == document_.AsRenderFrameHostIfValid();
+  void RequestFullPageFrame(uint64_t request, double offset) {
+    FullPage& page = *full_page_;
+    if (++page.frames > kPageCaptureMaxFrames) {
+      FinishFullPage(request, PageCaptureFills(PageCaptureBandsFor(page.geometry), page.covered));
+      return;
+    }
+    page.settles = 0;
+    page.checks = 0;
+    page.read.reset();
+    page.frame_started = base::TimeTicks::Now();
+    RunFrameQuery(request, offset, FramePhase::kScrolled, SkBitmap());
   }
-  bool IsTrusted() override { return false; }
-  bool MayReadLocalFiles() override { return false; }
-  bool MayWriteLocalFiles() override { return false; }
-  bool AllowUnsafeOperations() override { return false; }
+  void RunFrameQuery(uint64_t request, std::optional<double> offset, FramePhase phase,
+                     SkBitmap bitmap) {
+    const bool hide = !full_page_->first && phase != FramePhase::kChecked;
+    document_.AsRenderFrameHostIfValid()->ExecuteJavaScriptInIsolatedWorld(
+        FullPageFrameQuery(full_page_->target, offset, hide),
+        base::BindOnce(&PageCapture::FullPageFrameRead, weak_factory_.GetWeakPtr(), request, phase,
+                       std::move(bitmap)),
+        ISOLATED_WORLD_ID_CHROME_INTERNAL);
+  }
+  void FullPageFrameRead(uint64_t request, FramePhase phase, SkBitmap bitmap, base::Value value) {
+    if (!FullPageCurrent(request)) return;
+    FullPage& page = *full_page_;
+    const auto frame = FullPageFrameFrom(value);
+    if (!frame || (page.target.element &&
+        (std::abs(frame->left - page.left) > 1 || std::abs(frame->top - page.top) > 1 ||
+         std::abs(frame->right - page.right) > 1 || std::abs(frame->bottom - page.bottom) > 1))) {
+      Fail(request, @"The page changed while it was being captured. Try again.");
+      return;
+    }
+    switch (phase) {
+      case FramePhase::kScrolled:
+        page.read = frame;
+        AwaitFullPageFrames(request, 2);
+        return;
+      case FramePhase::kSettled: {
+        const bool moving = !page.read || !SameFullPageFrame(*page.read, *frame, true) ||
+            frame->hid || frame->pending;
+        page.read = frame;
+        if (moving && page.settles < 40 &&
+            base::TimeTicks::Now() - page.frame_started < base::Milliseconds(600)) {
+          ++page.settles;
+          AwaitFullPageFrames(request, 1);
+          return;
+        }
+        CopyFullPageFrame(request);
+        return;
+      }
+      case FramePhase::kChecked:
+        if (page.read && SameFullPageFrame(*page.read, *frame, false)) {
+          AcceptFullPageFrame(request, std::move(bitmap));
+          return;
+        }
+        if (++page.checks > 2) {
+          Fail(request, @"The page kept moving while it was being captured. Try again.");
+          return;
+        }
+        page.read = frame;
+        AwaitFullPageFrames(request, 1);
+        return;
+    }
+  }
+  void AwaitFullPageFrames(uint64_t request, int count) {
+    document_.AsRenderFrameHostIfValid()->InsertVisualStateCallback(base::BindOnce(
+        &PageCapture::FullPageFrameShown, weak_factory_.GetWeakPtr(), request, count - 1));
+  }
+  void FullPageFrameShown(uint64_t request, int remaining, bool shown) {
+    if (!FullPageCurrent(request)) return;
+    if (!shown) { Invalidate(true); return; }
+    if (remaining > 0) { AwaitFullPageFrames(request, remaining); return; }
+    RunFrameQuery(request, std::nullopt, FramePhase::kSettled, SkBitmap());
+  }
+  void CopyFullPageFrame(uint64_t request) {
+    web_contents()->GetRenderWidgetHostView()->CopyFromSurface(
+        gfx::Rect(viewport_), gfx::Size(), base::Seconds(10),
+        base::BindOnce([](scoped_refptr<base::SequencedTaskRunner> runner,
+                         base::WeakPtr<PageCapture> weak, uint64_t request,
+                         const content::CopyFromSurfaceResult& result) {
+          runner->PostTask(FROM_HERE, base::BindOnce(&PageCapture::FullPageFrameCopied,
+              weak, request, result.has_value() ? result->bitmap : SkBitmap()));
+        }, runner_, weak_factory_.GetWeakPtr(), request));
+  }
+  void FullPageFrameCopied(uint64_t request, SkBitmap bitmap) {
+    if (!FullPageCurrent(request)) return;
+    FullPage& page = *full_page_;
+    auto* view = web_contents()->GetRenderWidgetHostView();
+    const double zoom = blink::ZoomLevelToZoomFactor(content::HostZoomMap::GetZoomLevel(web_contents()));
+    if (bitmap.drawsNothing() || bitmap.colorType() != kN32_SkColorType || zoom != page.zoom ||
+        !view || view->GetDeviceScaleFactor() != page.device_scale ||
+        (!page.canvas.drawsNothing() && (bitmap.width() != page.geometry.frame_width ||
+                                         bitmap.height() != page.geometry.frame_height))) {
+      Fail(request, @"The renderer could not capture the full page.");
+      return;
+    }
+    if (!page.scrolls) { AcceptFullPageFrame(request, std::move(bitmap)); return; }
+    RunFrameQuery(request, std::nullopt, FramePhase::kChecked, std::move(bitmap));
+  }
+  NSString* StartFullPageCanvas(const SkBitmap& frame) {
+    FullPage& page = *full_page_;
+    PageCaptureGeometry& geometry = page.geometry;
+    geometry.frame_width = frame.width();
+    geometry.frame_height = frame.height();
+    geometry.scale = page.zoom * page.device_scale;
+    if (page.scrolls) {
+      if (std::abs(page.css_width * geometry.scale - frame.width()) > 2 * geometry.scale + 2)
+        return @"The renderer could not capture the full page.";
+      geometry.area_left = page.left;
+      geometry.area_top = page.top;
+      geometry.area_right = page.right;
+      geometry.area_bottom = page.bottom;
+      geometry.content_height = page.content;
+      geometry.client_height = page.client;
+    }
+    const PageCaptureBands bands = PageCaptureBandsFor(geometry);
+    if (bands.output_height <= 0 ||
+        !page.canvas.tryAllocPixels(frame.info().makeWH(bands.width, bands.output_height))) {
+      page.canvas.reset();
+      return @"This page is too big to capture in one piece.";
+    }
+    page.canvas.eraseColor(SK_ColorTRANSPARENT);
+    return nil;
+  }
+  void AcceptFullPageFrame(uint64_t request, SkBitmap bitmap) {
+    FullPage& page = *full_page_;
+    if (page.canvas.drawsNothing()) {
+      if (NSString* error = StartFullPageCanvas(bitmap)) {
+        Fail(request, error);
+        return;
+      }
+    }
+    if (page.read) {
+      page.geometry.top_bar = page.read->top_bar;
+      page.geometry.bottom_bar = page.read->bottom_bar;
+      page.geometry.content_height = std::min(page.content, page.read->content);
+    }
+    const PageCaptureStep step = PageCaptureTakeFrame(page.geometry, page.covered,
+        page.read ? page.read->y : 0, page.first, page.may_retry);
+    if (step.retry_offset) {
+      page.may_retry = false;
+      RequestFullPageFrame(request, *step.retry_offset);
+      return;
+    }
+    SkCanvas canvas(page.canvas);
+    for (const PageCaptureSlice& slice : step.slices) {
+      SkBitmap rows;
+      if (bitmap.extractSubset(&rows, SkIRect::MakeXYWH(slice.left, slice.source_y, slice.width,
+                                                        slice.height)))
+        canvas.writePixels(rows, slice.left, slice.dest_y);
+    }
+    page.covered = step.covered;
+    page.first = false;
+    page.may_retry = true;
+    if (step.next_offset && base::TimeTicks::Now() - page.started < base::Seconds(18)) {
+      RequestFullPageFrame(request, *step.next_offset);
+      return;
+    }
+    FinishFullPage(request, step.next_offset ?
+        PageCaptureFills(PageCaptureBandsFor(page.geometry), page.covered) : step.fills);
+  }
+  void FillFullPageGaps(const std::vector<PageCaptureSlice>& fills) {
+    SkBitmap& canvas = full_page_->canvas;
+    const int probe = std::max(8, PageCapturePixels(8, full_page_->geometry.scale));
+    for (const PageCaptureSlice& fill : fills) {
+      if (fill.width <= 0 || fill.height <= 0 || fill.left < 0 || fill.source_y < probe ||
+          fill.left + fill.width > canvas.width() || fill.source_y >= canvas.height() ||
+          fill.dest_y < 0 || fill.dest_y + fill.height > canvas.height()) continue;
+      const uint32_t* source = canvas.getAddr32(fill.left, fill.source_y);
+      bool uniform = true;
+      for (int y = fill.source_y - probe; uniform && y < fill.source_y; ++y) {
+        const uint32_t* row = canvas.getAddr32(fill.left, y);
+        uniform = std::equal(row, row + fill.width, source);
+      }
+      if (!uniform) continue;
+      for (int y = fill.dest_y; y < fill.dest_y + fill.height; ++y)
+        std::copy_n(source, fill.width, canvas.getAddr32(fill.left, y));
+    }
+  }
+  void FinishFullPage(uint64_t request, const std::vector<PageCaptureSlice>& fills) {
+    RestoreFullPage();
+    FullPage& page = *full_page_;
+    SkBitmap output;
+    if (page.canvas.drawsNothing() || page.covered <= 0 ||
+        !page.canvas.extractSubset(&output, SkIRect::MakeWH(page.canvas.width(),
+            std::min(page.covered, page.canvas.height())))) {
+      Fail(request, @"The renderer could not capture the full page.");
+      return;
+    }
+    FillFullPageGaps(fills);
+    full_page_.reset();
+    EncodeSurface(request, std::move(output));
+  }
+  void RestoreFullPage() {
+    if (!full_page_ || !full_page_->applied) return;
+    full_page_->applied = false;
+    auto* frame = document_.AsRenderFrameHostIfValid();
+    auto* contents = web_contents();
+    if (!frame || !contents || contents->IsBeingDestroyed() || !frame->IsRenderFrameLive() ||
+        frame != contents->GetPrimaryMainFrame()) return;
+    frame->ExecuteJavaScriptInIsolatedWorld(
+        FullPageRestoreQuery(full_page_->target, full_page_->start), base::NullCallback(),
+        ISOLATED_WORLD_ID_CHROME_INTERNAL);
+  }
   void Deliver(uint64_t request, EncodedCapture encoded) {
     if (!completion_ || request != request_) return;
     if (!Valid()) { Invalidate(true); return; }
@@ -874,7 +1391,8 @@ class PageCapture final : public content::WebContentsObserver,
   void Fail(uint64_t request, NSString* error) {
     auto keep_alive = weak_from_this().lock();
     if (!completion_ || request != request_) return;
-    StopProtocol(true);
+    RestoreFullPage();
+    full_page_.reset();
     timer_.Stop();
     ReleaseOperation();
     auto completion = completion_;
@@ -916,11 +1434,6 @@ class PageCapture final : public content::WebContentsObserver,
   NSRect viewport_frame_ = NSZeroRect;
   NSSize host_size_ = NSZeroSize;
   bool valid_ = true;
-  bool attached_ = false;
-  bool protocol_inflight_ = false;
-  bool restoring_ = false;
-  bool original_hide_scrollbars_ = false;
-  bool original_record_document_ = false;
   uint64_t request_ = 0;
   CaptureCompletion completion_ = nil;
   CaptureCompletion element_completion_ = nil;
@@ -933,7 +1446,7 @@ class PageCapture final : public content::WebContentsObserver,
   void (^invalidated_)() = nil;
   NSMutableArray* __strong observers_ = [[NSMutableArray alloc] init];
   scoped_refptr<base::SequencedTaskRunner> runner_;
-  scoped_refptr<content::DevToolsAgentHost> agent_;
+  std::unique_ptr<FullPage> full_page_;
   base::OneShotTimer timer_;
   base::OneShotTimer target_timer_;
   PrefChangeRegistrar pref_observer_;
@@ -1096,17 +1609,7 @@ class LiveCapturePosition final : public std::enable_shared_from_this<LiveCaptur
     auto json = base::WriteJson(list);
     if (!json) return "aligned = false;";
     auto n = [](double value) { return base::NumberToString(value); };
-    return "const containers = " + *json + R"JS(;
-      const find = (anchor, path) => {
-        let node = anchor === null ? document.documentElement : document.getElementById(anchor);
-        for (const step of path ? path.split('>') : []) {
-          if (!node) return null;
-          if (step === '^') { node = node.shadowRoot; continue; }
-          const [tag, index] = step.split(':');
-          node = Array.prototype.filter.call(node.children, c => c.localName === tag)[Number(index)];
-        }
-        return node instanceof Element ? node : null;
-      };
+    return "const containers = " + *json + ";" + std::string(kFindScript) + R"JS(
       document.body.style.transform = '';
       for (const c of containers) {
         c.element = find(c.anchor, c.path);

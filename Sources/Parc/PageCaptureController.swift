@@ -308,7 +308,19 @@ final class PageCaptureController: NSObject {
         switch mode {
         case .region: lease.captureRegion(rect, completion: completion)
         case .viewport, .portrait: lease.captureViewport(completion: completion)
-        case .fullPage: lease.captureFullPage(completion: completion)
+        case .fullPage: coverThenCaptureFullPage(generation: generation, completion: completion)
+        }
+    }
+
+    private func coverThenCaptureFullPage(generation: UInt64, completion: @escaping (PCNativePageCaptureResult) -> Void) {
+        lease.captureViewport { [weak self] cover in
+            MainActor.assumeIsolated {
+                guard let self, self.state == .capturing, self.request == generation else { return }
+                self.reconcile()
+                guard self.state == .capturing, self.valid(), self.lease.isValid else { self.dismiss(restoreFocus: false); return }
+                if let still = cover.pngData.flatMap({ NSBitmapImageRep(data: $0)?.cgImage }) { self.overlay.showStillCover(still) }
+                self.lease.captureFullPage(completion: completion)
+            }
         }
     }
 
@@ -641,6 +653,7 @@ final class PageCaptureOverlay: NSView {
     var onAction: ((Action) -> Void)?
     var pageSize = CGSize.zero
     let palette = CapturePalette()
+    private let stillCover = CaptureStillCover()
     private let wash = ThemeRendererView()
     private let picture = CapturePictureView()
     private let pictureFrame = CaptureFlippedView()
@@ -680,6 +693,7 @@ final class PageCaptureOverlay: NSView {
     private let reduceMotion: () -> Bool
     private let scheduleFrames: (Timer) -> Void
     var presentedImageRect: NSRect { picture.frame }
+    var stillCoverImage: CGImage? { stillCover.image }
     var onPicturePixels: ((CGSize) -> Void)? {
         get { picture.onPixelSizeChange }
         set { picture.onPixelSizeChange = newValue }
@@ -713,7 +727,7 @@ final class PageCaptureOverlay: NSView {
         pictureFrame.layer?.shadowRadius = PeekCardAppearance.shadowRadius
         pictureFrame.layer?.shadowOffset = NSSize(width: 0, height: PeekCardAppearance.shadowOffsetY)
         wash.alphaValue = PeekCardAppearance.backdropOpacity; wash.isHidden = true
-        addSubview(wash); addSubview(pictureFrame); addSubview(picture)
+        addSubview(stillCover); addSubview(wash); addSubview(pictureFrame); addSubview(picture)
         addSubview(selectionShade)
         elementLens.isHidden = true; addSubview(elementLens)
         modeChrome.install(in: self)
@@ -734,7 +748,7 @@ final class PageCaptureOverlay: NSView {
         let entering = !modeChrome.isShown
         settlePresentation()
         endSelection()
-        selecting = true; editing = false; busy = false; selection = nil; start = nil
+        selecting = true; editing = false; busy = false; selection = nil; start = nil; stillCover.image = nil
         elementLens.isHidden = false; elementLens.setTarget(nil, animated: false)
         if entering { CaptureModeMotion.enter(elementLens) }
         selectionShade.region = nil; hideWash()
@@ -749,7 +763,7 @@ final class PageCaptureOverlay: NSView {
     func showBusy() {
         settlePresentation()
         endSelection()
-        selecting = false; editing = false; busy = true; setPaletteShown(false); showWash()
+        selecting = false; editing = false; busy = true; setPaletteShown(false); showWash(); stillCover.image = nil
         picture.isHidden = true; pictureFrame.isHidden = true
         hint.stringValue = CaptureModeHint.capturing; hint.isHidden = false
         modeChrome.setBusy(true); cancel.isHidden = modeChrome.isShown
@@ -770,7 +784,7 @@ final class PageCaptureOverlay: NSView {
         settlePresentation()
         previewSourceRect = sourceRect
         endSelection()
-        editing = false; selecting = false; busy = false; selection = nil
+        editing = false; selecting = false; busy = false; selection = nil; stillCover.image = nil
         committedPixels = image
         let previous = drafting ? picture.image : nil
         picture.image = image; imageSize = NSSize(width: image.width, height: image.height)
@@ -782,6 +796,10 @@ final class PageCaptureOverlay: NSView {
         needsLayout = true; needsDisplay = true; window?.invalidateCursorRects(for: self)
     }
     var alertSound: () -> Void = { NSSound.beep() }
+    func showStillCover(_ image: CGImage) {
+        guard busy else { return }
+        stillCover.image = image
+    }
     func showError(_ message: String, alert: Bool = true) {
         palette.setError(message)
         if alert { alertSound() }
@@ -830,7 +848,7 @@ final class PageCaptureOverlay: NSView {
         imageRect = backingAlignedRect(geometry.image, options: .alignAllEdgesNearest); capturedRect = geometry.captured
         lift?.retarget(imageRect)
         placePicture()
-        elementLens.frame = bounds; selectionShade.frame = bounds
+        elementLens.frame = bounds; selectionShade.frame = bounds; stillCover.frame = bounds
         if wash.frame != bounds { wash.frame = bounds; wash.invalidateCoordinates() }
         selectionShade.region = editing ? selection : nil; selectionShade.dimmingRect = editing ? imageRect : nil
         if paletteShown, geometry.palette.width > 0, geometry.palette.height > 0 {
@@ -1133,7 +1151,7 @@ final class PageCaptureOverlay: NSView {
             if !hint.isHidden { hint.retire(); CaptureModeMotion.fadeAway(hint, from: self) }
         }
         modeChrome.retire(fading: fading)
-        endSelection(); elementLens.retire()
+        endSelection(); elementLens.retire(); stillCover.image = nil
     }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -1153,6 +1171,21 @@ final class PageCaptureOverlay: NSView {
 
 @MainActor
 class CaptureFlippedView: NSView { override var isFlipped: Bool { true } }
+
+@MainActor
+final class CaptureStillCover: CaptureFlippedView {
+    var image: CGImage? {
+        didSet { isHidden = image == nil; layer?.contents = image; needsDisplay = true }
+    }
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true; isHidden = true
+        layer?.contentsGravity = .resize
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+    override var wantsUpdateLayer: Bool { true }
+    override func updateLayer() { layer?.contentsGravity = .resize; layer?.contents = image }
+}
 
 @MainActor
 final class CaptureElementLens: CaptureFlippedView {
