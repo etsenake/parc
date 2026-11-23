@@ -60,7 +60,7 @@ package final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
     private let cover = NSView()
     private let backButton = NoteToolbarButton(icon: .symbol("chevron.left"), label: "Back")
     private let reloadButton = NoteToolbarButton(icon: .symbol("arrow.clockwise"), label: "Reload")
-    private let openButton = NoteToolbarButton(icon: .symbol("arrow.up.right.square"), label: "Open in Peek")
+    private let openButton = NoteToolbarButton(icon: .peek, label: "Open in Peek")
     private let moreButton = NoteToolbarButton(icon: .symbol("ellipsis"), label: "More")
     private let doneButton: NoteToolbarButton
     private let captionButton = NoteToolbarButton(icon: .symbol("text.below.photo"), label: "Caption")
@@ -435,7 +435,7 @@ package final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
         } else {
             items.append(.init(id: "snapshot", title: "Back to Snapshot", icon: .symbol("photo")))
         }
-        items.append(.init(id: "open", title: "Open in Peek", icon: .symbol("arrow.up.right.square")))
+        items.append(.init(id: "open", title: "Open in Peek", icon: .peek))
         items.append(.init(id: "site", title: "Site Information", icon: .symbol("info.circle"),
                            isEnabled: browser.canShowSiteInfo, separatorBefore: true))
         let list = NoteMenuList(items: items)

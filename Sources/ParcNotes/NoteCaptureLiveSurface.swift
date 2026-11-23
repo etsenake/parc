@@ -49,7 +49,7 @@ final class NoteCaptureLiveSurface: NSView, NoteEmbeddedPageInputSurface {
     private let fallback: NoteEmbedFallbackView
     private let reloadButton = NoteToolbarButton(icon: .symbol("arrow.clockwise"), label: "Reload")
     private let backButton = NoteToolbarButton(icon: .symbol("chevron.left"), label: "Back")
-    private let openButton = NoteToolbarButton(icon: .symbol("arrow.up.right.square"), label: "Open in Peek")
+    private let openButton = NoteToolbarButton(icon: .peek, label: "Open in Peek")
     private let doneButton = NoteToolbarButton(icon: .symbol("checkmark"), label: "Back to the note")
     private let snapshotChip = NoteChip(EaselWebItemChrome.backToSnapshotTitle, icon: .symbol("photo"))
     private var status: String?

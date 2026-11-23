@@ -80,6 +80,12 @@ package enum NoteIconRenderer {
             guard let image = NoteCustomEmojiImages.image(at: url) else { return }
             let side = min(rect.width, rect.height, (pointSize * 1.25).rounded())
             NoteCustomEmojiImages.draw(image, fittingIn: NSRect(x: rect.midX - side / 2, y: rect.midY - side / 2, width: side, height: side))
+        case .peek:
+            guard let image = peekImage(pointSize: pointSize) else {
+                draw(.symbol("arrow.up.right.square"), in: rect, tint: tint, pointSize: pointSize, weight: weight)
+                return
+            }
+            drawTemplate(image, centeredIn: rect, tint: tint)
         case .noteMark, .easelMark:
             let side = min(rect.width, rect.height, (pointSize * 1.25).rounded())
             let mark: DocumentDefaultIcon = icon == .noteMark ? .note : .easel
@@ -87,6 +93,18 @@ package enum NoteIconRenderer {
                                                    width: side, height: side),
                                         from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
         }
+    }
+
+    static func peekImage(pointSize: CGFloat, bundle: Bundle = .main) -> NSImage? {
+        guard let url = bundle.resourceURL?.appendingPathComponent("SidebarPreview/open-in-peek.pdf"),
+              let source = NSImage(contentsOf: url), source.size.width > 0, source.size.height > 0 else { return nil }
+        let side = (pointSize * 1.15).rounded()
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { bounds in
+            source.draw(in: bounds)
+            return true
+        }
+        image.isTemplate = true
+        return image
     }
 
     package static func drawTemplate(_ image: NSImage, centeredIn rect: NSRect, tint: NSColor) {

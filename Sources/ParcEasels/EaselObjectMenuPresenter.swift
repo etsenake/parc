@@ -81,7 +81,7 @@ package final class EaselObjectMenuPresenter: EaselCanvasMenuPresenting {
 
     private static func items(_ rows: [EaselMenuRow]) -> [NoteMenuList.Item] {
         rows.enumerated().map { index, row in
-            let icon: NoteIcon? = row.glyph.map { .glyph($0) } ?? row.symbol.map { .symbol($0) }
+            let icon: NoteIcon? = row.icon ?? row.glyph.map { .glyph($0) } ?? row.symbol.map { .symbol($0) }
             var item = NoteMenuList.Item(id: row.id, title: row.title, icon: icon, shortcut: row.shortcut)
             item.isEnabled = row.isEnabled && (row.perform != nil || !row.children.isEmpty)
             item.isDestructive = row.isDestructive

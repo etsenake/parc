@@ -1,11 +1,13 @@
 import AppKit
 import ParcCore
+import ParcNotes
 
 package struct EaselMenuRow {
     var id: String
     var title: String
     var symbol: String?
     var glyph: String?
+    var icon: NoteIcon?
     var shortcut: String?
     var isEnabled: Bool
     var isDestructive: Bool
@@ -258,7 +260,11 @@ extension EaselCanvasView {
                     canvas.setLiveCapture(item.id, enabled: !live)
                 })
             }
-            if onOpenURL != nil, let url = URL(string: raw) {
+            if let url = URL(string: raw), [.webCard, .browser].contains(item.kind), onOpenLivePage != nil {
+                var peek = row("open-source", "Open in Peek", nil) { $0.onOpenLivePage?(url) }
+                peek.icon = .peek
+                object.append(peek)
+            } else if onOpenURL != nil, let url = URL(string: raw) {
                 object.append(row("open-source", "Open Source", "arrow.up.right.square") { $0.onOpenURL?(url) })
             }
             object.append(row("copy-source", "Copy Source URL", "link") { canvas in

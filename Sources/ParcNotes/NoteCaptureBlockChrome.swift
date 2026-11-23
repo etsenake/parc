@@ -12,7 +12,7 @@ final class NoteCaptureSnapshotHeader: NSView {
     private let header = EmbeddedPageHeader()
     private let makeLive = NoteChip(EaselWebItemChrome.makeLiveTitle, icon: .symbol("dot.radiowaves.left.and.right"), style: .filled)
     private let snapshot = NoteChip(EaselWebItemChrome.backToSnapshotTitle, icon: .symbol("photo"))
-    private let openButton = NoteToolbarButton(icon: .symbol("arrow.up.right.square"), label: "Open in Peek")
+    private let openButton = NoteToolbarButton(icon: .peek, label: "Open in Peek")
     private var address: URL?
 
     override init(frame: NSRect) {
