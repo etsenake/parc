@@ -935,20 +935,16 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
     }
     package override func setNeedsDisplay(_ invalidRect: NSRect) {
         super.setNeedsDisplay(invalidRect)
-        routeDisplay(invalidRect)
+        guard !invalidRect.isNull, !invalidRect.isEmpty else { return }
+        decoration.setNeedsDisplay(invalidRect)
     }
     package override var needsDisplay: Bool {
         get { super.needsDisplay }
         set {
             super.needsDisplay = newValue
-            if newValue { routeDisplay(bounds) }
-        }
-    }
-    private func routeDisplay(_ rect: NSRect) {
-        guard !rect.isNull, !rect.isEmpty else { return }
-        decoration.setNeedsDisplay(rect)
-        for case let card as EaselCanvasArtwork in artwork.values where card.frame.intersects(rect) {
-            card.setNeedsDisplay(rect.offsetBy(dx: -card.frame.minX, dy: -card.frame.minY))
+            guard newValue else { return }
+            decoration.needsDisplay = true
+            for case let card as EaselCanvasArtwork in artwork.values { card.needsDisplay = true }
         }
     }
     fileprivate func drawObject(id: UUID) {

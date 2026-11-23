@@ -199,7 +199,8 @@ struct EaselCanvasTestsEmbeddedRemoval {
         #expect(!replacement.items.contains { $0.id == doomed.id })
         board.settle()
         #expect(board.session.document.items.map(\.id) == [kept.id, shape.id])
-        #expect([kept, shape].filter { board.hasView($0) }.count == 2)
+        #expect(board.hasView(shape))
+        #expect(board.canvas.artwork[kept.id] == nil, "Objects on another Easel page have no view until that page is shown")
         #expect(board.canvas.artwork[doomed.id] == nil)
     }
 

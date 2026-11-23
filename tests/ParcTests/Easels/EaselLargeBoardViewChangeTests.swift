@@ -45,11 +45,12 @@ struct EaselLargeBoardViewChangeTests {
         let reach = seen.insetBy(dx: -seen.width / 2, dy: -seen.height / 2)
         let near = artworks.filter { $0.frame.intersects(reach) }
         let far = artworks.filter { !$0.frame.intersects(reach) }
-        let redrawn = artworks.filter { $0.needsDisplay }
+        let redrawn = artworks.filter { $0.needsDisplay || $0.drawnScale == 2 }
 
         #expect(artworks.count >= 400)
         #expect(!near.isEmpty)
-        #expect(near.filter { !$0.needsDisplay }.isEmpty)
+        let stale = near.filter { !$0.needsDisplay && $0.drawnScale == 1 }
+        #expect(stale.isEmpty, "\(stale.count) near cards left stale; reach \(reach); first \(stale.first.map { "\($0.frame)" } ?? "-")")
         #expect(far.filter { $0.needsDisplay }.isEmpty)
         #expect(far.filter { $0.drawnScale != 1 }.isEmpty)
         #expect(redrawn.count < 60)

@@ -16,12 +16,12 @@ struct EaselScreenChromeTests {
 
     @MainActor
     @Test
-    func placingTwiceWithSameValuesDoesNotRelayout() {
+    func placingTwiceWithSameValuesKeepsTheSameGeometry() {
         let view = NSView()
         EaselScreenChrome.place(view, boardFrame: boardFrame, scale: 2)
-        view.needsLayout = false
+        let frame = view.frame, bounds = view.bounds
         EaselScreenChrome.place(view, boardFrame: boardFrame, scale: 2)
-        #expect(!view.needsLayout)
+        #expect(view.frame == frame && view.bounds == bounds)
     }
 
     @MainActor

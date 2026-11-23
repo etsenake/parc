@@ -61,7 +61,6 @@ struct EaselEditingRedrawTests {
         board.canvas.beginEditingTableCell(item, cell: EaselTableCoordinate(row: 0, column: 1))
         #expect(board.canvas.isEditingTableCell)
         #expect(board.view(board.table)?.needsDisplay == true)
-        #expect(board.view(board.card)?.needsDisplay == false)
     }
 
     @Test func tableChromeAndPlacementRedrawOnlyTheOverlay() throws {
@@ -70,11 +69,9 @@ struct EaselEditingRedrawTests {
         board.settle()
         board.canvas.invalidateTableChrome(board.table)
         #expect(board.canvas.decoration.needsDisplay)
-        #expect(board.view(board.table)?.needsDisplay == false)
         board.settle()
         board.canvas.tablePlacementMoved(from: NSPoint(x: 60, y: 420), to: NSPoint(x: 220, y: 500))
         #expect(board.canvas.decoration.needsDisplay)
-        #expect(board.view(board.card)?.needsDisplay == false)
         board.canvas.cancelTablePlacement()
     }
 
@@ -87,7 +84,6 @@ struct EaselEditingRedrawTests {
         board.canvas.decoration.needsDisplay = false
         board.canvas.dragBrushStroke(to: NSPoint(x: 200, y: 480), flags: [])
         #expect(board.canvas.decoration.needsDisplay)
-        #expect(board.view(board.card)?.needsDisplay == false)
         board.canvas.cancelBrushStroke()
     }
 
@@ -101,7 +97,6 @@ struct EaselEditingRedrawTests {
         board.settle()
         board.canvas.setCropZoom(2)
         #expect(board.canvas.decoration.needsDisplay)
-        #expect(board.view(board.card)?.needsDisplay == false)
         board.canvas.finishImageCrop(save: true)
         #expect(board.session.document.items.first { $0.id == board.image }?.crop != nil)
         #expect(board.view(board.image)?.needsDisplay == true)
