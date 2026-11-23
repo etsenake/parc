@@ -51,6 +51,34 @@ package struct CaptureLensMotion {
     }
 }
 
+package struct CaptureLiftMotion {
+    private var origin: DownloadArrivalSpring
+    private var size: DownloadArrivalSpring
+    private var lastTickTime: Double
+
+    package init(from start: CGRect, to target: CGRect, at time: Double) {
+        origin = DownloadArrivalSpring(initialValue: SIMD2(start.minX, start.minY))
+        size = DownloadArrivalSpring(initialValue: SIMD2(start.width, start.height))
+        origin.configure(response: 0.5, dampingRatio: 1)
+        size.configure(response: 0.5, dampingRatio: 1)
+        lastTickTime = time
+        retarget(target)
+    }
+    package mutating func retarget(_ target: CGRect) {
+        origin.toValue = SIMD2(target.minX, target.minY); size.toValue = SIMD2(target.width, target.height)
+    }
+    package mutating func tick(at time: Double) {
+        let dt = max(0, min(time - lastTickTime, 0.1))
+        lastTickTime = time
+        origin.tick(dt); size.tick(dt)
+        if !isAnimating { origin.value = origin.toValue; size.value = size.toValue }
+    }
+    package var isAnimating: Bool { !origin.hasResolved || !size.hasResolved }
+    package var rect: CGRect {
+        CGRect(x: origin.value.x, y: origin.value.y, width: max(0, size.value.x), height: max(0, size.value.y))
+    }
+}
+
 @MainActor package enum CaptureMotion {
     package static func reveal(_ layer: CALayer?, reduceMotion: Bool) {
         guard let layer else { return }
@@ -59,6 +87,14 @@ package struct CaptureLensMotion {
         let animation = CABasicAnimation(keyPath: "opacity")
         animation.fromValue = 0; animation.toValue = 1; animation.duration = 1
         animation.timingFunction = CAMediaTimingFunction(controlPoints: 0.215, 0.61, 0.355, 1)
+        layer.add(animation, forKey: "captureReveal")
+    }
+    package static func fadeIntoCard(_ layer: CALayer?) {
+        guard let layer else { return }
+        layer.removeAnimation(forKey: "captureReveal")
+        let animation = CABasicAnimation(keyPath: "opacity")
+        animation.fromValue = 0; animation.toValue = 1; animation.duration = 0.2
+        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
         layer.add(animation, forKey: "captureReveal")
     }
     package static func blendPortrait(_ view: NSImageView, previous: NSImage?) {

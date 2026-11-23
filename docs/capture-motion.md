@@ -9,7 +9,7 @@ extend a document lease or prove delivery to a message recipient.
 | Surface | Behavior |
 |---|---|
 | Selection rectangle | Latest target throttled at 90 ms; response 0.35, damping 0.87 spring; shared geometry for lens and cutouts. |
-| Newly acquired image | One-second opacity reveal with cubic (0.215, 0.61, 0.355, 1). Edits and catalog refreshes do not restart it. |
+| Newly acquired image | A capture that stays in place gets a one-second opacity reveal with cubic (0.215, 0.61, 0.355, 1). A lifted capture starts at the page-sized frame it was taken from and shrinks into its card on a critically damped 0.5-second spring, retargeting if the page resizes. Edits and catalog refreshes do not restart either. |
 | Selection instruction | 0.2-second ease-in-out crossfade; one accessible instruction. |
 | Capture mode | The scrim fades in over 0.2 seconds as the mode bar pops in like a Notes card; the bar fades out for a drag; Cancel fades the scrim, hint and bar out over 0.18 seconds. Reduce Motion keeps only short fades. |
 | Portrait preview | Response 0.5, damping 0.7 spring blends owned preview bitmaps, never committed output bytes. |
@@ -18,9 +18,11 @@ extend a document lease or prove delivery to a message recipient.
 
 New selection targets retain current position and velocity. Clearing the target,
 beginning a drag, retiring capture or detaching cancels its pending timer.
-Reduce Motion settles the latest target, shows final images immediately and
-turns the palette's pops, glides and pushes into short fades.
-Changing phase cancels reveals; a newer Portrait preview settles the old blend.
+Reduce Motion settles the latest target, shows final images immediately, fades
+a lifted card in over 0.2 seconds in its final place and turns the palette's
+pops, glides and pushes into short fades.
+Changing phase cancels reveals and settles a lift; a newer Portrait preview
+settles the old blend.
 
 ## Library preview
 

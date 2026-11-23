@@ -6,14 +6,21 @@ package enum CapturePresentation {
     package static let cornerRadius: CGFloat = 7
     package static let imageBorder: CGFloat = 4
 
+    static let cardSpacing: CGFloat = 16
+    static let cardWidthShare: CGFloat = 0.64
+    static let cardHeightShare: CGFloat = 0.72
+    static let liftCoverage: CGFloat = 0.5
+
     package struct Layout {
         package var image: NSRect
         package var palette: NSRect
+        package var captured: NSRect
+        package var lifted: Bool { captured != image }
     }
 
     package static func layout(bounds: NSRect, pixels: NSSize, source: NSRect?, paletteHeight: CGFloat,
                        editing: Bool, editingFooterHeight: CGFloat = 110, fullPalette: Bool = false) -> Layout {
-        guard bounds.width > 0, bounds.height > 0 else { return Layout(image: .zero, palette: .zero) }
+        guard bounds.width > 0, bounds.height > 0 else { return Layout(image: .zero, palette: .zero, captured: .zero) }
         let margin = min(paletteInset, bounds.width / 4, bounds.height / 4)
         let safe = bounds.insetBy(dx: margin, dy: margin)
         let paletteSize = NSSize(width: min(paletteWidth, safe.width), height: min(paletteHeight, safe.height))
@@ -33,16 +40,39 @@ package enum CapturePresentation {
         let fitArea = editing || compact ? imageArea : NSRect(origin: preferred.origin,
             size: NSSize(width: min(preferred.width, imageArea.width), height: min(preferred.height, imageArea.height)))
         let image = fitted(pixels, in: fitArea, constrainedTo: imageArea)
-        if !editing && !compact {
-            let border = image.insetBy(dx: -imageBorder, dy: -imageBorder)
-            let right = border.maxX + paletteInset
-            menu.origin.x = border.maxX + paletteWidth < bounds.maxX ? right : border.minX - paletteInset - menu.width
-            menu.origin.y = bounds.maxY - (border.minY - imageBorder + paletteWidth) < paletteInset
-                ? border.maxY - menu.height : border.minY
-            menu.origin.x = min(max(menu.minX, safe.minX), safe.maxX - menu.width)
-            menu.origin.y = min(max(menu.minY, safe.minY), safe.maxY - menu.height)
+        guard !editing && !compact else { return Layout(image: image, palette: menu, captured: image) }
+        let border = image.insetBy(dx: -imageBorder, dy: -imageBorder)
+        let right = border.maxX + paletteInset
+        menu.origin.x = border.maxX + paletteWidth < bounds.maxX ? right : border.minX - paletteInset - menu.width
+        menu.origin.y = bounds.maxY - (border.minY - imageBorder + paletteWidth) < paletteInset
+            ? border.maxY - menu.height : border.minY
+        menu.origin.x = min(max(menu.minX, safe.minX), safe.maxX - menu.width)
+        menu.origin.y = min(max(menu.minY, safe.minY), safe.maxY - menu.height)
+        let covered = preferred.intersection(bounds)
+        let coverage = covered.isNull ? 0 : covered.width * covered.height / (bounds.width * bounds.height)
+        guard menu.intersects(border) || coverage > liftCoverage else {
+            return Layout(image: image, palette: menu, captured: image)
         }
-        return Layout(image: image, palette: menu)
+        return card(bounds: bounds, safe: safe, pixels: pixels, captured: image, palette: paletteSize)
+    }
+
+    private static func card(bounds: NSRect, safe: NSRect, pixels: NSSize, captured: NSRect, palette: NSSize) -> Layout {
+        let shortest = min(bounds.width, bounds.height)
+        let margin = min(max(24, shortest * 0.08), shortest / 6)
+        let room = NSSize(width: min(bounds.width - 2 * margin - cardSpacing - palette.width, bounds.width * cardWidthShare) - 2 * imageBorder,
+                          height: min(bounds.height - 2 * margin, bounds.height * cardHeightShare) - 2 * imageBorder)
+        guard pixels.width > 0, pixels.height > 0, room.width > 0, room.height > 0 else {
+            return Layout(image: captured, palette: NSRect(origin: safe.origin, size: palette), captured: captured)
+        }
+        let scale = min(room.width / pixels.width, room.height / pixels.height, captured.width / pixels.width)
+        let size = NSSize(width: pixels.width * scale, height: pixels.height * scale)
+        let group = size.width + 2 * imageBorder + cardSpacing + palette.width
+        let image = NSRect(x: bounds.midX - group / 2 + imageBorder, y: bounds.midY - size.height / 2,
+                           width: size.width, height: size.height)
+        let border = image.insetBy(dx: -imageBorder, dy: -imageBorder)
+        var menu = NSRect(x: border.maxX + cardSpacing, y: border.minY, width: palette.width, height: palette.height)
+        menu.origin.y = min(max(menu.minY, safe.minY), safe.maxY - menu.height)
+        return Layout(image: image, palette: menu, captured: captured)
     }
 
     private static func fitted(_ pixels: NSSize, in proposed: NSRect, constrainedTo limit: NSRect) -> NSRect {

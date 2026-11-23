@@ -12,6 +12,16 @@ expansion and clipping. Viewport/full-page requests retain their original
 viewport. Pixels fit without distortion. Crop and Portrait changes fit the new
 aspect ratio in that same context without resampling the retained source PNG.
 
+Small captures stay where they were taken. A capture whose source covers more
+than half the page, such as Visible Area and Full Page, or that the palette
+could not sit beside, is lifted into a card: the image fits the room left after
+the palette column, a 16-point gap and margins of 8% of the page's shorter side
+(24 points minimum), capped at 64% of the page width and 72% of its height, and
+never larger than it was captured. The card and palette are centred together
+with the palette on the card's right, top-aligned with it, so the dimmed page
+shows on every side. The overlay's quarter-opacity black shade dims the page
+behind every preview.
+
 The preview uses a four-point frame, seven-point outer corners and 3.5-point
 image corners. The palette is a 273-point Notes menu card (`CapturePaletteView`
 on `NoteFloatingPanel` with `NoteMenuList` rows) with ten-point page margins and
@@ -61,5 +71,6 @@ Portrait composition, destination ordering, editing and motion have separate
 focused guides.
 
 `CapturePresentationTests` covers backing-scale anchoring, side and
-bottom placement, pixel-crop clipping, compact/tall layouts, appearance states
-and cursor resources.
+bottom placement, lifted cards for visible-area, full-page, framed and large
+captures, pixel-crop clipping, compact/tall layouts, appearance states and
+cursor resources.

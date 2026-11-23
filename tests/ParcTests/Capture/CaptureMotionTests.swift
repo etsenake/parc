@@ -252,6 +252,82 @@ struct CaptureLensFrameTests {
     }
 }
 
+struct CaptureCardLiftTests {
+    @MainActor private final class Driver {
+        var time: TimeInterval = 0
+        var reduceMotion = false
+        var frames: [Timer] = []
+        lazy var overlay = PageCaptureOverlay(frame: CGRect(x: 0, y: 0, width: 1000, height: 700),
+            now: { [unowned self] in time }, reduceMotion: { [unowned self] in reduceMotion },
+            scheduleFrames: { [weak self] in self?.frames.append($0) })
+
+        func capture(source: CGRect? = nil) throws {
+            let context = try #require(CGContext(data: nil, width: 1000, height: 700, bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            overlay.showPreview(try #require(context.makeImage()), sourceRect: source ?? overlay.bounds)
+            overlay.revealCapturedImage()
+        }
+
+        func advanceToRest() {
+            for frame in 1...180 {
+                time = Double(frame) / 60
+                frames.last?.fire()
+            }
+        }
+    }
+
+    @MainActor @Test func aVisibleAreaPreviewIsACardWithDimmedPageAround() throws {
+        let driver = Driver()
+        try driver.capture()
+        #expect(driver.overlay.bounds.insetBy(dx: 24, dy: 24).contains(driver.overlay.imageRect))
+    }
+
+    @MainActor @Test func theVisibleAreaPaletteSitsBesideTheCard() throws {
+        let driver = Driver()
+        try driver.capture()
+        #expect(!driver.overlay.palette.card.frame.intersects(driver.overlay.imageRect))
+    }
+
+    @MainActor @Test func theCaptureStartsAtThePageSizedFrame() throws {
+        let driver = Driver()
+        try driver.capture()
+        let overlay = driver.overlay
+        #expect(overlay.presentedImageRect == overlay.capturedRect && overlay.capturedRect.width > overlay.imageRect.width)
+    }
+
+    @MainActor @Test func theCaptureSettlesIntoTheCard() throws {
+        let driver = Driver()
+        try driver.capture()
+        let frame = try #require(driver.frames.first)
+        driver.advanceToRest()
+        #expect(driver.overlay.presentedImageRect == driver.overlay.imageRect && !frame.isValid)
+    }
+
+    @MainActor @Test func reduceMotionShowsTheCardWithoutMoving() throws {
+        let driver = Driver()
+        driver.reduceMotion = true
+        try driver.capture()
+        #expect(driver.frames.isEmpty && driver.overlay.presentedImageRect == driver.overlay.imageRect)
+    }
+
+    @MainActor @Test func aSmallRegionFadesInWhereItWasCaptured() throws {
+        let driver = Driver()
+        try driver.capture(source: CGRect(x: 100, y: 100, width: 200, height: 140))
+        #expect(driver.frames.isEmpty && driver.overlay.presentedImageRect == CGRect(x: 100, y: 100, width: 200, height: 140))
+    }
+
+    @MainActor @Test func croppingDuringTheLiftSettlesIt() throws {
+        let driver = Driver()
+        try driver.capture()
+        let frame = try #require(driver.frames.first)
+        let context = try #require(CGContext(data: nil, width: 1000, height: 700, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        driver.overlay.showEditing(try #require(context.makeImage()))
+        driver.overlay.layoutSubtreeIfNeeded()
+        #expect(!frame.isValid && driver.overlay.presentedImageRect == driver.overlay.imageRect)
+    }
+}
+
 struct CaptureOverlayPaletteTests {
     @MainActor private func preview() throws -> PageCaptureOverlay {
         let view = PageCaptureOverlay(frame: CGRect(x: 0, y: 0, width: 900, height: 600))

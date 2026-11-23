@@ -88,6 +88,77 @@ struct CapturePresentationTests {
         }
     }
 
+    private static let viewportPixels = NSSize(width: 2000, height: 1400)
+
+    private static func visibleArea(pixels: NSSize = viewportPixels, in area: NSRect = bounds, paletteHeight: CGFloat = 350,
+                                    editing: Bool = false, fullPalette: Bool = false) -> CapturePresentation.Layout {
+        layout(source: area, in: area, pixels: pixels, paletteHeight: paletteHeight, editing: editing, fullPalette: fullPalette)
+    }
+
+    private static func card(_ result: CapturePresentation.Layout) -> NSRect {
+        result.image.insetBy(dx: -CapturePresentation.imageBorder, dy: -CapturePresentation.imageBorder)
+    }
+
+    @Test func aSmallRegionStaysWhereItWasCaptured() {
+        #expect(!Self.layout(source: Self.source).lifted)
+    }
+
+    @Test func aVisibleAreaCaptureBecomesACardClearlySmallerThanThePage() {
+        let image = Self.visibleArea().image
+        #expect(image.width < Self.bounds.width * 0.7 && image.height < Self.bounds.height * 0.8)
+    }
+
+    @Test func aVisibleAreaCardLeavesDimmedPageOnEverySide() {
+        #expect(Self.bounds.insetBy(dx: 24, dy: 24).contains(Self.card(Self.visibleArea())))
+    }
+
+    @Test func aVisibleAreaCardHasThePaletteBesideItWithoutOverlap() {
+        let result = Self.visibleArea()
+        #expect(!result.palette.intersects(Self.card(result)) && result.palette.minX >= Self.card(result).maxX)
+    }
+
+    @Test func aVisibleAreaCardKeepsTheImageAndPaletteCentredTogether() {
+        let result = Self.visibleArea()
+        let left = Self.card(result).minX - Self.bounds.minX, right = Self.bounds.maxX - result.palette.maxX
+        #expect(abs(left - right) < 1)
+    }
+
+    @Test func aVisibleAreaCardLiftsFromThePageSizedCapture() {
+        let result = Self.visibleArea()
+        #expect(result.lifted && result.captured.width > Self.bounds.width * 0.9 && result.captured.contains(result.image))
+    }
+
+    @Test func aFullPageCaptureIsATallCardBesideThePalette() {
+        let result = Self.visibleArea(pixels: NSSize(width: 2000, height: 9000))
+        #expect(Self.bounds.insetBy(dx: 24, dy: 24).contains(Self.card(result)) && !result.palette.intersects(Self.card(result)))
+    }
+
+    @Test func aFramedVisibleAreaCaptureKeepsItsNewShapeInTheCard() {
+        let result = Self.visibleArea(pixels: NSSize(width: 1600, height: 1600))
+        #expect(abs(result.image.width - result.image.height) < 0.001 && !result.palette.intersects(Self.card(result)))
+    }
+
+    @Test func theFramePageSitsBesideTheCardInsideThePage() {
+        let result = Self.visibleArea(paletteHeight: 620, fullPalette: true)
+        #expect(Self.bounds.contains(result.palette) && !result.palette.intersects(Self.card(result)))
+    }
+
+    @Test func aLargeRegionMovesAsideForThePaletteWithoutGrowing() {
+        let region = NSRect(x: 200, y: 50, width: 600, height: 600)
+        let result = Self.layout(source: region, pixels: NSSize(width: 1200, height: 1200))
+        #expect(result.lifted && result.image.width <= 600 && !result.palette.intersects(Self.card(result)))
+    }
+
+    @Test func croppingAVisibleAreaCaptureUsesMoreOfThePageThanTheCard() {
+        #expect(Self.visibleArea(editing: true).image.width > Self.visibleArea().image.width)
+    }
+
+    @Test(arguments: LayoutSample.all.filter { $0.area.width >= 576 })
+    func widePanesKeepThePaletteClearOfAPageSizedCapture(_ sample: LayoutSample) {
+        let result = Self.layout(source: sample.area, in: sample.area, pixels: sample.pixels, paletteHeight: 450)
+        #expect(!result.palette.intersects(Self.card(result)))
+    }
+
     private static let narrow = NSRect(x: 0, y: 0, width: 400, height: 500)
 
     @Test func aNarrowPaneCapsThePaletteHeight() {

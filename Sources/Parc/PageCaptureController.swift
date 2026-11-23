@@ -588,12 +588,29 @@ final class PageCaptureOverlay: NSView {
     private var busy = false
     private var motionObserver: NSObjectProtocol?
     private(set) var imageRect = NSRect.zero
+    private(set) var capturedRect = NSRect.zero
     private var imageSize = NSSize.zero
     private var previewSourceRect: NSRect?
+    private var lift: CaptureLiftMotion?
+    private var liftTimer: Timer?
+    private let now: () -> TimeInterval
+    private let reduceMotion: () -> Bool
+    private let scheduleFrames: (Timer) -> Void
+    var presentedImageRect: NSRect { picture.frame }
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
 
-    override init(frame: NSRect) {
+    override convenience init(frame: NSRect) {
+        self.init(frame: frame, now: { ProcessInfo.processInfo.systemUptime },
+                  reduceMotion: { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion },
+                  scheduleFrames: { RunLoop.main.add($0, forMode: .common) })
+    }
+
+    init(frame: NSRect, now: @escaping () -> TimeInterval, reduceMotion: @escaping () -> Bool,
+         scheduleFrames: @escaping (Timer) -> Void) {
+        self.now = now
+        self.reduceMotion = reduceMotion
+        self.scheduleFrames = scheduleFrames
         super.init(frame: frame)
         wantsLayer = true
         setAccessibilityElement(true); setAccessibilityRole(.group)
@@ -715,12 +732,14 @@ final class PageCaptureOverlay: NSView {
         let geometry = CapturePresentation.layout(bounds: bounds, pixels: imageSize, source: previewSourceRect,
             paletteHeight: palette.view.naturalHeight, editing: editing, editingFooterHeight: hintHeight + 60,
             fullPalette: palette.view.showsFramePage)
-        imageRect = geometry.image; picture.frame = imageRect
-        pictureFrame.frame = imageRect.insetBy(dx: -CapturePresentation.imageBorder, dy: -CapturePresentation.imageBorder)
+        imageRect = geometry.image; capturedRect = geometry.captured
+        lift?.retarget(imageRect)
+        placePicture()
         elementLens.frame = bounds; selectionShade.frame = bounds
         selectionShade.region = editing ? selection : nil; selectionShade.dimmingRect = editing ? imageRect : nil
         if paletteShown, geometry.palette.width > 0, geometry.palette.height > 0 {
-            palette.place(geometry.palette, image: pictureFrame.frame, in: self)
+            palette.place(geometry.palette, image: imageRect.insetBy(dx: -CapturePresentation.imageBorder,
+                dy: -CapturePresentation.imageBorder), in: self)
         }
     }
     override func draw(_ dirtyRect: NSRect) {
@@ -955,10 +974,45 @@ final class PageCaptureOverlay: NSView {
         if first !== self { nextKeyView = nil }
     }
     func revealCapturedImage() {
-        CaptureMotion.reveal(picture.layer, reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+        layoutSubtreeIfNeeded()
+        settleLift()
+        guard capturedRect != imageRect, capturedRect.width > 0, capturedRect.height > 0 else {
+            CaptureMotion.reveal(picture.layer, reduceMotion: reduceMotion()); return
+        }
+        guard !reduceMotion() else {
+            CaptureMotion.fadeIntoCard(picture.layer); CaptureMotion.fadeIntoCard(pictureFrame.layer); return
+        }
+        lift = CaptureLiftMotion(from: capturedRect, to: imageRect, at: now())
+        placePicture()
+        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self else { timer.invalidate(); return }
+                self.tickLift()
+            }
+        }
+        liftTimer = timer; scheduleFrames(timer)
+    }
+    private func tickLift() {
+        guard var motion = lift else { settleLift(); return }
+        motion.tick(at: now())
+        lift = motion
+        if !motion.isAnimating { settleLift() } else { placePicture() }
+    }
+    private func settleLift() {
+        liftTimer?.invalidate(); liftTimer = nil
+        guard lift != nil else { return }
+        lift = nil
+        placePicture()
+    }
+    private func placePicture() {
+        let shown = lift?.rect ?? imageRect
+        picture.frame = shown
+        pictureFrame.frame = shown.insetBy(dx: -CapturePresentation.imageBorder, dy: -CapturePresentation.imageBorder)
     }
     private func settlePresentation() {
+        settleLift()
         picture.layer?.removeAnimation(forKey: "captureReveal")
+        pictureFrame.layer?.removeAnimation(forKey: "captureReveal")
         if hint.superview === self { hint.settleMotion() }
     }
     func retirePresentation() {
