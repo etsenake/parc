@@ -393,7 +393,7 @@ package final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
         if framesCapture, let captureLayout {
             let zoom = browser.nativePage?.liveCaptureZoomFactor ?? 1
             let size = EaselCaptureGeometry.displaySize(captureLayout, availableWidth: bounds.width,
-                                                        availableHeight: pageRect.height, pageZoom: zoom)
+                                                        availableHeight: pageRect.height, pageZoom: zoom * Double(boardScale))
             clip.frame = NSRect(x: (bounds.width - size.width) / 2, y: Self.headerHeight + (pageRect.height - size.height) / 2,
                                 width: size.width, height: size.height)
             browser.frame = NSRect(x: 0, y: 0, width: captureLayout.viewport.x * zoom, height: captureLayout.viewport.y * zoom)

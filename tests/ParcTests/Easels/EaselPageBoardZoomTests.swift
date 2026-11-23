@@ -23,9 +23,12 @@ struct EaselPageBoardZoomTests {
         settle(surface, at: scale)
         let frame = surface.frame.size
         #expect(surface.bounds.size == NSSize(width: frame.width * scale, height: frame.height * scale))
-        #expect(surface.convert(NSRect(origin: .zero, size: surface.bounds.size), to: surface.superview).size == frame)
+        let outer = surface.convert(NSRect(origin: .zero, size: surface.bounds.size), to: surface.superview).size
+        #expect(abs(outer.width - frame.width) < 0.001 && abs(outer.height - frame.height) < 0.001)
         surface.setFrameSize(NSSize(width: 600, height: 400))
         #expect(surface.bounds.size == NSSize(width: 600 * scale, height: 400 * scale))
+        surface.needsLayout = true
+        surface.layoutSubtreeIfNeeded()
         let area = surface.pageArea
         #expect(abs(area.visible.width - 600) < 0.001)
         #expect(abs(area.visible.height - (400 - NoteEmbedSurface.headerHeight / scale)) < 0.001)
