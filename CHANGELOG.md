@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.18.2 (2026-11-23)
+
+### Fixed
+
+- **release:** Every release step writes its full output to the release log and no message points to another log
+- **capture:** Stop full-page screenshots from taking the browser down with them
+- **easels:** Let Command-W turn the final page from any page
+
 ## 2.18.1 (2026-11-23)
 
 ### Fixed

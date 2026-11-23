@@ -1,6 +1,31 @@
 {
   "releases": [
     {
+      "version": "2.18.2",
+      "build": 57,
+      "date": "2026-11-23",
+      "changes": [
+        {
+          "type": "fix",
+          "scope": "release",
+          "summary": "Every release step writes its full output to the release log and no message points to another log",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "capture",
+          "summary": "Stop full-page screenshots from taking the browser down with them",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Let Command-W turn the final page from any page",
+          "breaking": false
+        }
+      ]
+    },
+    {
       "version": "2.18.1",
       "build": 56,
       "date": "2026-11-23",
