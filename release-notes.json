@@ -1,6 +1,73 @@
 {
   "releases": [
     {
+      "version": "2.18.1",
+      "build": 56,
+      "date": "2026-11-23",
+      "changes": [
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Captures of Parc's own pages and local files land on an Easel as plain pictures instead of being refused for their address",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Boards with a live page redraw their pictures and cards at the current zoom, and live pages loaded on a zoomed board fill their card",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "captures",
+          "summary": "Open in Peek buttons and menus use Parc's Peek icon, and an Easel webpage card's right-click Open goes to Peek",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "The snapshot bar stays its normal size at any board zoom and only covers the visible part of its card",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Live pages render sharp and fill their card at every board zoom",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Overlay redraws no longer repaint every object view",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Page holder geometry and region framing hold at every board zoom",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Object motion animations attach to object views on every board",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "A live full-page card reserves its header at screen size so the page area stays screen-shaped at any zoom",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Area redraw requests go to the overlay only, and editing and motion tests check the views they target",
+          "breaking": false
+        }
+      ]
+    },
+    {
       "version": "2.18.0",
       "build": 55,
       "date": "2026-11-23",

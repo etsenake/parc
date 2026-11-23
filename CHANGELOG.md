@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.18.1 (2026-11-23)
+
+### Fixed
+
+- **easels:** Captures of Parc's own pages and local files land on an Easel as plain pictures instead of being refused for their address
+- **easels:** Boards with a live page redraw their pictures and cards at the current zoom, and live pages loaded on a zoomed board fill their card
+- **captures:** Open in Peek buttons and menus use Parc's Peek icon, and an Easel webpage card's right-click Open goes to Peek
+- **easels:** The snapshot bar stays its normal size at any board zoom and only covers the visible part of its card
+- **easels:** Live pages render sharp and fill their card at every board zoom
+- **easels:** Overlay redraws no longer repaint every object view
+- **easels:** Page holder geometry and region framing hold at every board zoom
+- **easels:** Object motion animations attach to object views on every board
+- **easels:** A live full-page card reserves its header at screen size so the page area stays screen-shaped at any zoom
+- **easels:** Area redraw requests go to the overlay only, and editing and motion tests check the views they target
+
 ## 2.18.0 (2026-11-23)
 
 ### New
