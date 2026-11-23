@@ -20,12 +20,14 @@ the ••• menu, title-click address editing and the select-first rule, while
 note set-up keeps first-click activation, the scroll latch and the caption
 button. Note live-capture blocks still use their own `NoteCaptureLiveSurface`.
 
-An Easel holding a page draws every other object in its own view so pages can
-sit between objects. During a pinch, macOS stretches the existing pixels; once a
-zoom settles or the board scrolls, each object view drawn at another zoom and
-within half a screen of the visible area is redrawn at the current zoom
-(`EaselCanvasView.redrawCardsDrawnAtOtherZooms`), the same visible-area redraw
-a single-view board gets, so pictures and text stay sharp at every zoom.
+Every Easel board draws each object in its own view, so pages can sit between
+objects, and selection and annotations live in one overlay view above them.
+During a pinch, macOS stretches the existing pixels. When a zoom settles or the
+board scrolls, the view-changed step (`EaselCanvasView.redrawCardsDrawnAtOtherZooms`)
+redraws only the objects last drawn at another zoom that lie within half a
+screen of the visible area, so pictures and text stay sharp at every zoom. Live
+pages sit in holders measured in screen points, with their page zoom following
+the board zoom, and fixed-size chrome is placed through one shared helper.
 
 `EmbeddedPageOwnerGate` is the owner's lifecycle state: open, retiring, moving
 between windows (with a generation that a finished move advances) and disposed.
