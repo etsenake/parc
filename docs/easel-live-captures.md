@@ -56,7 +56,9 @@ transform, no lining-up cover and no couldn't-line-up path. It keeps the
 captured desktop layout: the live page gets a temporary zoom of the card's
 width over the captured viewport width, applied again after each load, so a
 narrow card shows the same layout as the capture rather than the site's narrow
-one (`setLiveCaptureDisplayZoom`, clamped to Chromium's zoom range). While the card is selected, wheel scrolling scrolls the
+one (`setLiveCaptureDisplayZoom`, clamped to Chromium's zoom range). The page
+fills the page area at every board zoom, including when Make live loads it on
+a zoomed-out board ([embedded pages](embedded-pages.md)). While the card is selected, wheel scrolling scrolls the
 page inside it, as for a webpage object; clicks and typing follow the same
 selected-object rules as region captures. Back to snapshot restores the tall
 card at the live card's current width and the image's shape. The live flag and

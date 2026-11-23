@@ -707,6 +707,7 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
     }
     func invalidateIncrementalDisplay(layout: Bool = false) {
         if layout { needsLayout = true }
+        redrawCardsDrawnAtOtherZooms()
         let chrome = controlChromeBounds, surfaces = usesObjectSurfaces
         if presentationMatchesPaintedArtwork(chrome: chrome, surfaces: surfaces) {
             presentationNoOpSkipCount += 1
@@ -876,7 +877,10 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
         guard let clip else { return }
         clip.postsBoundsChangedNotifications = true
         headerScrollObserver = NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: clip, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.positionSnapshotHeader() }
+            MainActor.assumeIsolated {
+                self?.positionSnapshotHeader()
+                self?.redrawCardsDrawnAtOtherZooms()
+            }
         }
     }
     private func synchronizePageSelection() {
@@ -942,6 +946,17 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
     private func repaintForObjectSurfaceChange() {
         needsDisplay = true
         decoration.needsDisplay = true
+    }
+    func redrawCardsDrawnAtOtherZooms() {
+        guard usesObjectSurfaces, !motion.isInteracting else { return }
+        let scale = canvasScale, seen = visibleRect
+        guard !seen.isEmpty else { return }
+        let reach = seen.insetBy(dx: -seen.width / 2, dy: -seen.height / 2)
+        for case let card as EaselCanvasArtwork in artwork.values {
+            guard let drawn = card.drawnScale, drawn != scale, card.frame.intersects(reach) else { continue }
+            card.drawnScale = nil
+            card.needsDisplay = true
+        }
     }
     package override func draw(_ dirtyRect: NSRect) {
         NSColor.clear.setFill(); dirtyRect.fill(using: .copy)
@@ -2511,10 +2526,11 @@ private struct CachedTextLayout {
 }
 
 @MainActor
-private final class EaselCanvasArtwork: NSView {
+final class EaselCanvasArtwork: NSView {
     override var wantsDefaultClipping: Bool { false }
     weak var canvas: EaselCanvasView?
     let id: UUID
+    var drawnScale: Double?
     init(canvas: EaselCanvasView, id: UUID) { self.canvas = canvas; self.id = id; super.init(frame: .zero) }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     override var isFlipped: Bool { true }
@@ -2522,6 +2538,7 @@ private final class EaselCanvasArtwork: NSView {
     override func draw(_ dirtyRect: NSRect) {
         NSGraphicsContext.saveGraphicsState(); defer { NSGraphicsContext.restoreGraphicsState() }
         let transform = AffineTransform(translationByX: -frame.minX, byY: -frame.minY); (transform as NSAffineTransform).concat()
+        drawnScale = canvas?.canvasScale
         canvas?.drawObject(id: id)
     }
 }

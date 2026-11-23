@@ -20,6 +20,13 @@ the ••• menu, title-click address editing and the select-first rule, while
 note set-up keeps first-click activation, the scroll latch and the caption
 button. Note live-capture blocks still use their own `NoteCaptureLiveSurface`.
 
+An Easel holding a page draws every other object in its own view so pages can
+sit between objects. During a pinch, macOS stretches the existing pixels; once a
+zoom settles or the board scrolls, each object view drawn at another zoom and
+within half a screen of the visible area is redrawn at the current zoom
+(`EaselCanvasView.redrawCardsDrawnAtOtherZooms`), the same visible-area redraw
+a single-view board gets, so pictures and text stay sharp at every zoom.
+
 `EmbeddedPageOwnerGate` is the owner's lifecycle state: open, retiring, moving
 between windows (with a generation that a finished move advances) and disposed.
 Creation needs an open owner; input stops during a move or a retirement; a
@@ -97,7 +104,11 @@ bar, as in an Easel, and Find and Replace is off.
 
 An Easel page keeps its layout at every canvas zoom. Chromium sizes it from the object's own
 bounds, so it lays out at the object's size, scales with the canvas and takes clicks where it is
-drawn; zooming never reflows it into a smaller viewport.
+drawn; zooming never reflows it into a smaller viewport. Chromium also resizes a page's renderer
+view to its container's size in window coordinates each time a main frame is created or swapped
+in, which a zoomed canvas shrinks by its magnification; the page's state observer sets that view
+back to its container's bounds at each of those points, so a page loaded or navigated while the
+canvas is zoomed fills its object too.
 
 Easel blocks in notes reuse this scroll latch for their canvas. Their webpage
 objects and live captures are pages in the note's own pool, so they share the

@@ -1494,7 +1494,19 @@ class NativePageState final
     [status_text_ reset];
     top_band_->Bind(&page.GetMainDocument(), false);
     network_activity_->Bind(&page.GetMainDocument(), false);
+    FitPrimaryWidgetView();
     ResendVisualProperties(page);
+  }
+  void FitPrimaryWidgetView() {
+    content::RenderWidgetHostView* view =
+        contents_ ? contents_->GetRenderWidgetHostView() : nullptr;
+    NSView* container = contents_ ? contents_->GetNativeView().GetNativeNSView() : nil;
+    NSView* widget = view ? view->GetNativeView().GetNativeNSView() : nil;
+    if (!container || !widget || widget.superview != container ||
+        NSEqualRects(widget.frame, container.bounds)) {
+      return;
+    }
+    widget.frame = container.bounds;
   }
   static void ResendVisualProperties(content::Page& page) {
     auto* host = content::RenderWidgetHostImpl::From(
@@ -1508,6 +1520,7 @@ class NativePageState final
     if (contents_ && frame == contents_->GetPrimaryMainFrame()) {
       top_band_->Bind(frame, true);
       network_activity_->Bind(frame, true);
+      FitPrimaryWidgetView();
     }
   }
   void RenderFrameHostChanged(content::RenderFrameHost*,
@@ -1515,6 +1528,7 @@ class NativePageState final
     if (contents_ && frame == contents_->GetPrimaryMainFrame()) {
       top_band_->Bind(frame, true);
       network_activity_->Bind(frame, true);
+      FitPrimaryWidgetView();
     }
   }
   void LinkPointerChanged() { [status_text_ setNeedsLinkOutcomeRefresh]; }
