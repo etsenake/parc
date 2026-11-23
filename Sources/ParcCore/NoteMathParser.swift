@@ -1239,24 +1239,28 @@ package struct NoteMathParser {
         }
         let numberText = String(trimmed[..<numberEnd])
         guard let number = Double(numberText == "-" || numberText == "+" ? numberText + "1" : numberText) else { return nil }
+        let value: Double
         switch trimmed[numberEnd...].lowercased() {
-        case "em": return number
-        case "ex": return number * 0.431
-        case "mu": return number / 18
-        case "pt": return number / 10
-        case "bp", "px": return number * 1.00375 / 10
-        case "dd": return number * 1238 / 1157 / 10
-        case "cc": return number * 14856 / 1157 / 10
-        case "nd": return number * 685 / 642 / 10
-        case "nc": return number * 1370 / 107 / 10
-        case "sp": return number / 65536 / 10
-        case "pc": return number * 1.2
-        case "mm": return number * 0.284528
-        case "cm": return number * 2.84528
-        case "in": return number * 7.227
+        case "em": value = number
+        case "ex": value = number * 0.431
+        case "mu": value = number / 18
+        case "pt": value = number / 10
+        case "bp", "px": value = number * 1.00375 / 10
+        case "dd": value = number * 1238 / 1157 / 10
+        case "cc": value = number * 14856 / 1157 / 10
+        case "nd": value = number * 685 / 642 / 10
+        case "nc": value = number * 1370 / 107 / 10
+        case "sp": value = number / 65536 / 10
+        case "pc": value = number * 1.2
+        case "mm": value = number * 0.284528
+        case "cm": value = number * 2.84528
+        case "in": value = number * 7.227
         default: return nil
         }
+        return abs(value) <= largestDimension ? value : nil
     }
+
+    static let largestDimension = 16383.99999 / 10
 
     private mutating func parseOptionalRowSpacing() throws(NoteMathParseError) -> Double? {
         let start = skipIndex(from: index)

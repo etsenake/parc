@@ -32,9 +32,14 @@ struct NoteMathParserTestsSizingAndBoxesTests {
         #expect(abs(value - fixture.expected) < fixture.tolerance)
     }
 
-    @Test(arguments: ["1cc", "1nd", "1nc"])
+    @Test(arguments: ["1cc", "1nd", "1nc", "16383pt", "-1638em"])
     func additionalTeXDimensionsAreRecognized(source: String) {
         #expect(NoteMathParser.dimension(source) != nil)
+    }
+
+    @Test(arguments: ["16384pt", "-2000em", "1000in", String(repeating: "9", count: 400) + "em"])
+    func sizesPastTeXsLargestDimensionAreRefused(source: String) {
+        #expect(NoteMathParser.dimension(source) == nil)
     }
 
     struct SizeCase: Sendable, CustomTestStringConvertible {

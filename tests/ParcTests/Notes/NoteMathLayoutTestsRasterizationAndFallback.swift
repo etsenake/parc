@@ -57,6 +57,14 @@ struct NoteMathLayoutTestsRasterizationAndFallback {
 
     @Test func errorSourceDraws() { #expect(fixture.picture("\\frac{a}").ink(x: 0...1, y: 0...1) > 50) }
 
+    @Test func aSpaceTooBigToDrawShowsAsATypoAndStillRasterizes() {
+        let source = "x\\hspace{" + String(repeating: "9", count: 400) + "em}y"
+        let rendering = NoteMathRenderer.render(source, fontSize: 20, color: .black, display: true)
+        #expect(rendering.error != nil)
+        #expect(rendering.size.width.isFinite && rendering.size.height.isFinite)
+        #expect(rendering.cgImage() != nil)
+    }
+
     @Test func bracketsDrawOnBothSides() {
         let matrix = fixture.picture("\\begin{bmatrix} a & b \\\\ c & d \\end{bmatrix}")
         #expect(matrix.ink(x: 0...0.12, y: 0.1...0.9) > 50)
