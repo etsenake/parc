@@ -395,10 +395,10 @@ package final class PortraitCaptureView: NSView {
 
     package init(source: CGImage, pageColor: NSColor?, backingScale: CGFloat = 1,
          composition: PortraitCaptureComposition? = nil, previewPixels: CGSize = CGSize(width: 4096, height: 4096),
-         defaults: UserDefaults = .standard) {
+         defaults: UserDefaults = .standard, colors: [NSColor]? = nil) {
         self.source = source; self.pageColor = composition?.pageColor ?? pageColor
         self.previewPixels = previewPixels
-        self.palette = composition?.palette ?? PortraitCaptureRenderer.palette()
+        self.palette = composition?.palette ?? colors ?? PortraitCaptureRenderer.palette()
         self.options = composition?.options ?? PortraitCaptureOptions(defaults: defaults)
         self.committed = composition?.options.settings
         self.desktop = composition?.desktop

@@ -99,3 +99,12 @@ state, activity ordering and profile isolation. `CaptureMessagePayloadTests`
 and `CaptureEaselPlacementTests` exercise the payload builder, importer,
 persistent Easel store and Undo session with generated PNGs. They cover source
 payloads, output failure and preservation of existing documents.
+`CaptureControllerSendTests` drive the real capture controller through the
+configurable capture lease in `tests/ParcEngineDoubles/PageCaptureEngineDoubles.h`,
+in a key window that is never shown, clicking palette rows as a pointer would.
+They check that a visible-area, framed or Library-saved capture reaches the chosen
+Easel or note, that a Library save in flight holds only Save to Library and
+Retake, that a page or lease that stops being current or a window that cannot
+become key refuses the send with its banner and leaves the capture open, and that
+a failed send stays open with its error while the Easel list reloads in the
+background.

@@ -16,6 +16,10 @@ and the relevant component test folders. The rules every test follows, and the k
 - [EaselEngineDoubles.h](EaselEngineDoubles.h) supplies native page doubles for
   the Easel page pool. [RenderFrameEngineDoubles.h](RenderFrameEngineDoubles.h)
   helps drive render-frame delivery.
+- [PageCaptureEngineDoubles.h](PageCaptureEngineDoubles.h) supplies a page
+  capture lease with settable validity, viewport, source and theme colour that
+  records capture calls and invalidation and delivers PNG results immediately
+  or when the test asks.
 - [ToolbarEngineDoubles.h](ToolbarEngineDoubles.h) supplies the toolbar
   engine fixture. [MiniPlayerEngineFixture.h](MiniPlayerEngineFixture.h)
   provides a configurable source for Mini Player tests.

@@ -26,6 +26,12 @@ enum CaptureSendRefusal: LocalizedError, Equatable {
     }
 }
 
+struct CaptureFramingEnvironment {
+    var defaults: UserDefaults = .standard
+    var palette: [NSColor]?
+    var desktop: (@MainActor (NSScreen?) async throws -> NSImage)?
+}
+
 @MainActor
 final class PageCaptureController: NSObject {
     enum Mode { case region, viewport, fullPage, portrait }
@@ -48,13 +54,15 @@ final class PageCaptureController: NSObject {
     private let valid: () -> Bool
     private let finished: (Bool) -> Void
     private let easelDestinations: @MainActor () async throws -> [CaptureEaselDestination]
-    private var destinationsLoad: Task<Void, Never>?
+    private(set) var destinationsLoad: Task<Void, Never>?
+    private(set) var libraryWrite: Task<Void, Never>?
     private var destinationsLoaded = false
     private let addToEasel: (EaselImageInput, UUID?) throws -> Void
     private let noteDestinations: (() throws -> [CaptureNoteDestination])?
     private let addToNote: ((EaselImageInput, CaptureNoteTarget) throws -> Void)?
     private var messageSharing: CaptureMessageSharing?
-    private let overlay = PageCaptureOverlay()
+    let overlay: PageCaptureOverlay
+    private let framing: CaptureFramingEnvironment
     private lazy var edgeGuard = PageCaptureEdgeGuard(overlay: overlay)
     private var state = State.selecting
     private var image: CapturedImage?
@@ -84,8 +92,10 @@ final class PageCaptureController: NSObject {
          addToEasel: @escaping (EaselImageInput, UUID?) throws -> Void,
          noteDestinations: (() throws -> [CaptureNoteDestination])? = nil,
          addToNote: ((EaselImageInput, CaptureNoteTarget) throws -> Void)? = nil,
+         presentation: PageCaptureOverlay? = nil, framing: CaptureFramingEnvironment = CaptureFramingEnvironment(),
          finished: @escaping (Bool) -> Void) {
         self.destination = destination
+        self.overlay = presentation ?? PageCaptureOverlay(); self.framing = framing
         self.lease = lease; self.sourceView = sourceView; self.containerView = containerView
         self.host = host; self.parent = parent
         self.valid = valid; self.easelDestinations = easelDestinations
@@ -302,7 +312,8 @@ final class PageCaptureController: NSObject {
         guard state == .preview, let image, valid(), lease.isValid, let parent else { return }
         let view = PortraitCaptureView(source: image.unframedPixels, pageColor: capturedPageColor,
                                        backingScale: image.backingScale, composition: image.frame,
-                                       previewPixels: overlay.convertToBacking(overlay.bounds).size)
+                                       previewPixels: overlay.convertToBacking(overlay.bounds).size,
+                                       defaults: framing.defaults, colors: framing.palette)
         view.onCapture = { [weak self, weak view] in
             guard let self, self.state == .configuringPortrait, let view, self.portrait === view else { return }
             self.reconcile()
@@ -322,7 +333,8 @@ final class PageCaptureController: NSObject {
             view.previewPixels = pixels
         }
         overlay.showFramePage(view, preview: view.previewImage)
-        view.loadDesktop(screen: parent.screen)
+        if let desktop = framing.desktop { view.loadDesktop(screen: parent.screen, provider: desktop) }
+        else { view.loadDesktop(screen: parent.screen) }
         parent.makeFirstResponder(view)
     }
 
@@ -555,7 +567,7 @@ final class PageCaptureController: NSObject {
         let input = destination.input(id: id, expectedRevision: savedCapture?.revision, capturedAt: capturedAt,
             title: lease.pageTitle, sourceURL: sourceURL, kind: captureKind, pngData: pngData)
         libraryWriteInProgress = true; overlay.setLibraryBusy(true)
-        Task { [weak self, library] in
+        libraryWrite = Task { [weak self, library] in
             do {
                 let item = try await reservation.perform { try await library.save(input) }
                 guard let self, self.state != .finished, self.captureID == id else { return }
@@ -573,7 +585,7 @@ final class PageCaptureController: NSObject {
         guard let destination, let library, valid(), lease.isValid else { return }
         guard let reservation = destination.reserve() else { overlay.showError("This Space is no longer available."); return }
         libraryWriteInProgress = true; overlay.setLibraryBusy(true)
-        Task { [weak self, library] in
+        libraryWrite = Task { [weak self, library] in
             do {
                 try await reservation.perform { try await library.delete(item) }
                 guard let self, self.state != .finished, self.captureID == item.id else { return }
