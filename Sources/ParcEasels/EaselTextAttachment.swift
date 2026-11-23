@@ -23,6 +23,7 @@ final class EaselImageAttachmentCell: NSTextAttachmentCell {
         super.init(imageCell: NSImage(data: source.data))
     }
     required init(coder: NSCoder) { fatalError("Attachment cells are restored from validated image bytes") }
+    override func copy(with zone: NSZone? = nil) -> Any { self }
     override func cellSize() -> NSSize {
         MainActor.assumeIsolated { ownedCellSize() }
     }

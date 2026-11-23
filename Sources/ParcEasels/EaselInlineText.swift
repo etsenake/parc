@@ -32,6 +32,7 @@ final class EaselInlineCell: NSTextAttachmentCell {
         super.init(textCell: "")
     }
     required init(coder: NSCoder) { fatalError("Inline cells are restored from validated runs") }
+    override func copy(with zone: NSZone? = nil) -> Any { self }
 
     func atomCell(font: NSFont, ink: NSColor) -> NoteAtomCell {
         let next = Key(font: font.fontName, size: font.pointSize, ink: ink, epoch: Self.epoch)
