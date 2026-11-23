@@ -18,7 +18,9 @@ and after the reply; matching values and page zoom admit CSS-pixel viewport,
 scroll and outward-rounded capture-region geometry. The lease still validates
 its original document, native page, Profile, window, screenshot policy and
 security ownership. Changed geometry leaves the ordinary genuine PNG intact
-but offers no live-region capability. Full-page captures have no region layout.
+but offers no live-region capability. A full-page capture records the page's
+CSS viewport at capture time, a zero scroll and a region covering that whole
+viewport, so Make live can open the page from its top.
 
 The same geometry read records the scroll context under the region's centre:
 every scrolled or scrollable ancestor of the element there (up to eight,

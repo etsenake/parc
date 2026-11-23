@@ -315,17 +315,6 @@ EncodedCapture DecodeProtocolPNG(std::string encoded) {
   return {std::vector<uint8_t>(span.begin(), span.end()),
           gfx::Size(bitmap.width(), bitmap.height())};
 }
-constexpr double kFullPageMaxSide = 16384;
-constexpr double kFullPageMaxPixels = 80000000;
-double FullPageScale(double width, double height, double density) {
-  if (!std::isfinite(width) || !std::isfinite(height) || !std::isfinite(density) ||
-      width < 1 || height < 1 || density <= 0) return 0;
-  const double device_width = width * density, device_height = height * density;
-  const double scale = std::min({1.0, (kFullPageMaxSide - 1) / device_width,
-      (kFullPageMaxSide - 1) / device_height,
-      std::sqrt(kFullPageMaxPixels * 0.999 / (device_width * device_height))});
-  return std::ceil(device_width * scale) >= 1 && std::ceil(device_height * scale) >= 1 ? scale : 0;
-}
 void PostFailure(CaptureCompletion completion, NSString* error) {
   auto result = [[PCNativePageCaptureResult alloc]
       initWithData:nil size:NSZeroSize error:error layout:nil];

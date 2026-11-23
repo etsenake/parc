@@ -31,9 +31,16 @@ is provenance and is never replayed to obtain pixels. See
 ## Native capture mechanism
 
 Region and viewport capture copy the original compositor surface at device
-scale. Full-page capture uses the page-owned DevTools screenshot route with
-`fromSurface` and `captureBeyondViewport`. It refuses an attached debugger and
-restores only its own temporary document preferences and renderer geometry.
+scale. Full-page capture uses the page-owned DevTools screenshot route in one
+pass: it reads the page's CSS size with `Page.getLayoutMetrics`, then asks for
+a single `Page.captureScreenshot` of the whole page with `fromSurface`,
+`captureBeyondViewport` and a clip whose scale keeps the picture within 16,384
+pixels a side and 80 million pixels. Chromium renders a capture taller than
+16,384 device pixels as repeats of its top, so a page that would exceed the
+limit at device scale is rendered at the largest scale that fits instead of
+being stretched afterwards. Ordinary pages keep full device sharpness. The
+capture refuses an attached debugger and restores only its own temporary
+document preferences and renderer geometry.
 
 One operation per WebContents owns the original document, Profile/private
 context, native window and screenshot-policy lease. Bounds round outward and

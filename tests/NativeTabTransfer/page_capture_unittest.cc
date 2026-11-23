@@ -78,5 +78,35 @@ TEST(NativePageCaptureTest, PlaceholderCopiesOnlyTheVisiblePage) {
   EXPECT_TRUE(PageCaptureNeedsKeyWindow(PageCapturePurpose::kPerson));
 }
 
+
+TEST(NativePageCaptureTest, FullPageKeepsDeviceSharpnessWhenItFits) {
+  EXPECT_EQ(FullPageScale(1440, 5000, 2), 1);
+  EXPECT_EQ(FullPageScale(1440, 16000, 1), 1);
+}
+
+TEST(NativePageCaptureTest, LongFullPageRendersSmallerInsteadOfRepeating) {
+  const double scale = FullPageScale(1440, 44000, 2);
+  EXPECT_GT(scale, 0);
+  EXPECT_LT(scale, 1);
+  EXPECT_LE(std::ceil(44000 * 2 * scale), kFullPageMaxSide);
+  EXPECT_LE(std::ceil(1440 * 2 * scale) * std::ceil(44000 * 2 * scale),
+            kFullPageMaxPixels);
+}
+
+TEST(NativePageCaptureTest, WideFullPageStaysWithinThePixelBudget) {
+  const double scale = FullPageScale(8000, 8000, 2);
+  EXPECT_LT(scale, 1);
+  EXPECT_LE(std::ceil(16000 * scale), kFullPageMaxSide);
+  EXPECT_LE(std::ceil(16000 * scale) * std::ceil(16000 * scale),
+            kFullPageMaxPixels);
+}
+
+TEST(NativePageCaptureTest, FullPageRefusesUnusableMeasurements) {
+  EXPECT_EQ(FullPageScale(0, 1000, 2), 0);
+  EXPECT_EQ(FullPageScale(1000, 1000, 0), 0);
+  EXPECT_EQ(FullPageScale(NAN, 1000, 2), 0);
+  EXPECT_EQ(FullPageScale(1000, INFINITY, 2), 0);
+}
+
 }
 }
