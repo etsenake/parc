@@ -356,7 +356,7 @@ package struct NoteMermaidProblem: Equatable, Sendable {
             let end = row + 1 < starts.count ? starts[row + 1] - 1 : text.length
             return start..<max(start, end)
         }
-        var row = min(line, starts.count) - 1
+        var row = max(1, min(line, starts.count)) - 1
         while row > 0, bounds(row).isEmpty || !NoteMermaid.hasContent(text.substring(with: NSRange(location: bounds(row).lowerBound, length: bounds(row).count))) {
             row -= 1
         }

@@ -119,8 +119,9 @@ package enum NotePDFZoom {
     }
 
     static func percent(current: CGFloat, fit: CGFloat) -> Int {
-        guard fit > 0, current > 0 else { return 100 }
-        return Int((current / fit * 100).rounded())
+        guard fit > 0, current > 0, fit.isFinite, current.isFinite else { return 100 }
+        let value = (current / fit * 100).rounded()
+        return value.isFinite ? Int(min(value, 1_000_000)) : 100
     }
 }
 
