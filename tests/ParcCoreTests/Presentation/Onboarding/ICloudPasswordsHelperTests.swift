@@ -114,6 +114,18 @@ struct ICloudPasswordsHelperTests {
         #expect(ICloudPasswordsSupport.installedHelper(manifest: missing, fallback: missing) == nil)
     }
 
+    @Test func aHelperPathThatIsNotAnOrdinaryFileIsNeverRead() throws {
+        let scratch = try PresentationScratch("parc-icloud-helper-kinds")
+        defer { scratch.remove() }
+        let folder = scratch.url.appendingPathComponent("directory", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let ordinary = scratch.url.appendingPathComponent("helper")
+        try Self.universal(Self.program(nil)).write(to: ordinary)
+        #expect(ICloudPasswordsSupport.helperFile(at: folder) == nil)
+        #expect(ICloudPasswordsSupport.helperFile(at: ordinary) == (try Data(contentsOf: ordinary)))
+        #expect(ICloudPasswordsSupport.helperFile(at: scratch.url.appendingPathComponent("missing")) == nil)
+    }
+
     @Test func anUpdatedSafariOnMacOS14OrEarly15AlreadyShipsTheAllowListSoSetupStopsOfferingTheExtension() {
         let allowList = Self.allowList
         #expect(!Self.connects(.restricted(allowList), on: Self.release(14, 6)))

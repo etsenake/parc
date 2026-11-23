@@ -53,10 +53,17 @@ package enum ICloudPasswordsSupport {
             .flatMap { $0["path"] as? String }
             .map { URL(fileURLWithPath: $0) }
         for candidate in [named, fallback].compactMap({ $0 }) {
-            if let file = try? Data(contentsOf: candidate, options: .alwaysMapped),
-               let helper = parentConstraint(in: file) { return helper }
+            if let file = helperFile(at: candidate), let helper = parentConstraint(in: file) { return helper }
         }
         return nil
+    }
+
+    static let maximumHelperBytes = 64 * 1024 * 1024
+
+    static func helperFile(at url: URL) -> Data? {
+        guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+              values.isRegularFile == true, let size = values.fileSize, size <= maximumHelperBytes else { return nil }
+        return try? Data(contentsOf: url)
     }
 
     static func parentConstraint(in file: Data) -> Helper? {
