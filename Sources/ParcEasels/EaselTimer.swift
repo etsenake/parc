@@ -141,7 +141,7 @@ final class EaselTimerButton: PointingHandButton {
     deinit {
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         let id = documentID
-        MainActor.assumeIsolated { EaselTimers.shared.detachDocument(id) }
+        Task { @MainActor in EaselTimers.shared.detachDocument(id) }
     }
 
     @objc private func motionPreferenceChanged() {

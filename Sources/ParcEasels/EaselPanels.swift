@@ -44,9 +44,12 @@ final class EaselPanels: EaselPanelPresenting {
     }
 
     deinit {
-        MainActor.assumeIsolated {
-            if let hoverMonitor { NSEvent.removeMonitor(hoverMonitor) }
-            hover?.dismiss(animated: false)
+        nonisolated(unsafe) let monitor = hoverMonitor
+        let card = hover
+        guard monitor != nil || card != nil else { return }
+        Task { @MainActor in
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            card?.dismiss(animated: false)
         }
     }
 
