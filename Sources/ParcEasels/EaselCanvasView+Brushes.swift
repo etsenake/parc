@@ -421,8 +421,9 @@ extension EaselCanvasView {
         brushes.trail.append((point, ProcessInfo.processInfo.systemUptime))
         refreshEraserTrail()
         guard brushes.trailTimer == nil else { return }
-        brushes.trailTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refreshEraserTrail() }
+        brushes.trailTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] timer in
+            guard let self else { timer.invalidate(); return }
+            MainActor.assumeIsolated { self.refreshEraserTrail() }
         }
     }
 
