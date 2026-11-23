@@ -847,11 +847,11 @@ struct LibraryEntryCanvas: View {
             guard let download = item.download, download.status == .completed, LibraryFlyoutText.canPreview(download) else { return nil }
             return DownloadLibraryIdentity(download)
         }
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        DispatchQueue.global(qos: .userInitiated).async { [weak self, weak parent] in
             let route = DownloadFileActivation.inspect(url)
-            DispatchQueue.main.async { [weak self] in
+            DispatchQueue.main.async { [weak self, weak parent] in
                 MainActor.assumeIsolated {
-                    guard let self, self.previewGeneration == token, self.window === parent, parent.attachedSheet == nil,
+                    guard let self, let parent, self.previewGeneration == token, self.window === parent, parent.attachedSheet == nil,
                           let current = self.downloads.first(where: { DownloadLibraryIdentity($0) == identity }),
                           current.status == .completed, self.downloadFileURL?(current) == url else { return }
                     switch route {
