@@ -1,5 +1,59 @@
 # Changelog
 
+## 2.17.1 (2026-11-23)
+
+### Fixed
+
+- **easels:** Captures sent to an Easel land on the page you're working on, and the Easel opens right to them
+- **notes:** Moving off a narrow image onto the empty space beside it no longer crashes Parc
+- **import:** Importing addresses with odd or retired field types from another browser skips those fields instead of crashing Parc
+- **import:** A garbled history address in another browser no longer crashes Parc when importing bookmarks with history
+- **pip:** Pages with a blank class on their caption boxes no longer crash the tab when you pop a video out
+- **downloads:** A download with garbled type info or a scuffed history entry no longer knocks Parc over
+- **launch:** Launching Parc again with odd bytes in its arguments no longer crashes the copy already running
+- **media:** Switching audio tracks after a protected video stumbles mid key hand-off no longer takes all video down with it
+- **media:** Stream captions and metadata with a missing start time no longer leave a crash waiting in the tab
+- **media:** A protected video told to play backwards or at a nonsense speed just holds still instead of crashing every video
+- **media:** Live streams with timeless metadata tags place them where they belong instead of feeding the page a nonsense start time
+- **extensions:** Installing an extension with a blank name now asks politely instead of crashing Parc
+- **spaces:** Rearranging Spaces while cards are still loading no longer trips the manager's key-view linking
+- **emoji:** Searching emojis with a skin-tone picker open closes the picker instead of leaving it pointing at a vanished cell
+- **library:** Previewing a download no longer lets a background queue hold your window
+- **toolbar:** Toolbar buttons tidy up after themselves without a hissy fit when the last goodbye comes from a background thread
+- **notes:** Typing an unfinished type attribute at the end of an HTML code block no longer crashes Parc
+- **notes:** Pasting endless nested Sass interpolation into a code block no longer overflows the stack
+- **notes:** Exporting a note whose image or PDF width is huge or not a number no longer crashes Parc
+- **notes:** A pasted table with impossible merged cells is repaired instead of crashing Parc
+- **easels:** A damaged Easel file gets skipped by the backlink index instead of crashing Parc in the background
+- **easels:** Dropping in a PDF with a wildly rotated page no longer crashes Parc
+- **archive:** Archived split tabs that disagree about their old layout come back one by one instead of crashing Parc
+- **notes:** Pasted lists that start counting at a gazillion no longer crash the page
+- **shortcuts:** Keyboard layout lookups hold onto the layout until they are done reading it, so remapping shortcuts never trips over freed memory
+- **emoji:** Searching the sidebar emoji picker reads what you type literally, so a stray bracket or a pile of spaces no longer blanks or freezes it
+- **history:** Spotlight asking Parc to reindex your history right at launch can no longer trip over a half-set-up indexer
+- **archive:** An archived tab whose saved split group forgot about it still shows up in the archive instead of quietly vanishing
+- **notes:** Undoing a property away while you drag its row lets go of the row instead of crashing
+- **notes:** A table that loses rows or columns mid-drag drops the dragged one gracefully instead of crashing
+- **notes:** Pictures with bogus size or resolution tags open at a sane size instead of crashing Parc
+- **notes:** Equations with impossibly huge spaces show a gentle typo instead of crashing Parc
+- **easels:** The page list no longer crashes or renames the wrong page when pages change under a held mouse
+- **easels:** Letting go of an Easel's timer button or link panels from another thread can't crash Parc
+- **easels:** A stray placeholder character before a mention no longer restyles the mention when text is copied
+- **notes:** A table that changes while you drag a row or column lets go of it, so a sync or reload can never make you move the wrong one
+- **easels:** Easel text carrying a damaged font size is refused when the Easel opens instead of crashing Parc when it is shown
+- **onboarding:** Checking for the iCloud Passwords helper reads it outright instead of mapping it, so a helper swapped mid-check can't crash Parc
+- **notes:** Notes on drives with unusual device numbers open instead of closing Parc
+- **notes:** Pasting wildly nested or odd HTML into a note no longer crashes Parc
+- **notes:** Markdown notes with thousands of nested toggles open instead of crashing
+- **notes:** Selections that outlive their text can be deleted without crashing Parc
+- **notes:** Hostile equations show an error instead of crashing Parc
+- **notes:** Zoom percent and diagram error lines survive extreme numbers
+- **notes:** Corrupt saved note text is rejected instead of crashing a paste
+- **media:** Casting a video that lost its source mid-connect no longer takes the tab down with it
+- **easels:** Copying an Easel mention or picture's cell can no longer corrupt memory and crash Parc
+- **easels:** The eraser's fading trail stops ticking when you close the Easel instead of buzzing in the background forever
+- **notes:** Equations accept every size TeX does and render enormous ones within a sane memory budget instead of rejecting big spaces
+
 ## 2.17.0 (2026-11-23)
 
 ### New

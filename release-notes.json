@@ -1,6 +1,307 @@
 {
   "releases": [
     {
+      "version": "2.17.1",
+      "build": 54,
+      "date": "2026-11-23",
+      "changes": [
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Captures sent to an Easel land on the page you're working on, and the Easel opens right to them",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Moving off a narrow image onto the empty space beside it no longer crashes Parc",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "import",
+          "summary": "Importing addresses with odd or retired field types from another browser skips those fields instead of crashing Parc",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "import",
+          "summary": "A garbled history address in another browser no longer crashes Parc when importing bookmarks with history",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "pip",
+          "summary": "Pages with a blank class on their caption boxes no longer crash the tab when you pop a video out",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "downloads",
+          "summary": "A download with garbled type info or a scuffed history entry no longer knocks Parc over",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "launch",
+          "summary": "Launching Parc again with odd bytes in its arguments no longer crashes the copy already running",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "media",
+          "summary": "Switching audio tracks after a protected video stumbles mid key hand-off no longer takes all video down with it",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "media",
+          "summary": "Stream captions and metadata with a missing start time no longer leave a crash waiting in the tab",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "media",
+          "summary": "A protected video told to play backwards or at a nonsense speed just holds still instead of crashing every video",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "media",
+          "summary": "Live streams with timeless metadata tags place them where they belong instead of feeding the page a nonsense start time",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "extensions",
+          "summary": "Installing an extension with a blank name now asks politely instead of crashing Parc",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "spaces",
+          "summary": "Rearranging Spaces while cards are still loading no longer trips the manager's key-view linking",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "emoji",
+          "summary": "Searching emojis with a skin-tone picker open closes the picker instead of leaving it pointing at a vanished cell",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "library",
+          "summary": "Previewing a download no longer lets a background queue hold your window",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "toolbar",
+          "summary": "Toolbar buttons tidy up after themselves without a hissy fit when the last goodbye comes from a background thread",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Typing an unfinished type attribute at the end of an HTML code block no longer crashes Parc",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Pasting endless nested Sass interpolation into a code block no longer overflows the stack",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Exporting a note whose image or PDF width is huge or not a number no longer crashes Parc",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "A pasted table with impossible merged cells is repaired instead of crashing Parc",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "A damaged Easel file gets skipped by the backlink index instead of crashing Parc in the background",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Dropping in a PDF with a wildly rotated page no longer crashes Parc",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "archive",
+          "summary": "Archived split tabs that disagree about their old layout come back one by one instead of crashing Parc",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Pasted lists that start counting at a gazillion no longer crash the page",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "shortcuts",
+          "summary": "Keyboard layout lookups hold onto the layout until they are done reading it, so remapping shortcuts never trips over freed memory",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "emoji",
+          "summary": "Searching the sidebar emoji picker reads what you type literally, so a stray bracket or a pile of spaces no longer blanks or freezes it",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "history",
+          "summary": "Spotlight asking Parc to reindex your history right at launch can no longer trip over a half-set-up indexer",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "archive",
+          "summary": "An archived tab whose saved split group forgot about it still shows up in the archive instead of quietly vanishing",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Undoing a property away while you drag its row lets go of the row instead of crashing",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "A table that loses rows or columns mid-drag drops the dragged one gracefully instead of crashing",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Pictures with bogus size or resolution tags open at a sane size instead of crashing Parc",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Equations with impossibly huge spaces show a gentle typo instead of crashing Parc",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "The page list no longer crashes or renames the wrong page when pages change under a held mouse",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Letting go of an Easel's timer button or link panels from another thread can't crash Parc",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "A stray placeholder character before a mention no longer restyles the mention when text is copied",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "A table that changes while you drag a row or column lets go of it, so a sync or reload can never make you move the wrong one",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Easel text carrying a damaged font size is refused when the Easel opens instead of crashing Parc when it is shown",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "onboarding",
+          "summary": "Checking for the iCloud Passwords helper reads it outright instead of mapping it, so a helper swapped mid-check can't crash Parc",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Notes on drives with unusual device numbers open instead of closing Parc",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Pasting wildly nested or odd HTML into a note no longer crashes Parc",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Markdown notes with thousands of nested toggles open instead of crashing",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Selections that outlive their text can be deleted without crashing Parc",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Hostile equations show an error instead of crashing Parc",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Zoom percent and diagram error lines survive extreme numbers",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Corrupt saved note text is rejected instead of crashing a paste",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "media",
+          "summary": "Casting a video that lost its source mid-connect no longer takes the tab down with it",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Copying an Easel mention or picture's cell can no longer corrupt memory and crash Parc",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "The eraser's fading trail stops ticking when you close the Easel instead of buzzing in the background forever",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Equations accept every size TeX does and render enormous ones within a sane memory budget instead of rejecting big spaces",
+          "breaking": false
+        }
+      ]
+    },
+    {
       "version": "2.17.0",
       "build": 53,
       "date": "2026-11-23",
