@@ -33,7 +33,9 @@ struct EaselObjectMotionSurfaceTests {
             scroll.documentView = canvas
             window.isReleasedWhenClosed = false
             window.contentView = scroll
+            canvas.wantsLayer = true
             canvas.layoutSubtreeIfNeeded()
+            canvas.layer?.displayIfNeeded()
         }
 
         func card(_ id: UUID) -> EaselCanvasArtwork? {
