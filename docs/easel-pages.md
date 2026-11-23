@@ -82,6 +82,11 @@ Each page remembers where you were looking (scroll position and zoom) for as
 long as the Easel stays open. The first visit to a page fits its contents at
 up to 100%, or starts at the top left when the page is empty.
 
+Live webpages and captures on other pages stay attached to the Easel's window,
+hidden and unable to take input. Returning to their page reuses them without a
+reload, and Command-W can close the Easel from any page with the usual webpage
+close confirmation when needed.
+
 ## Moving objects to another page
 
 Right-click a selection and choose **Move to Page**, then a page or **New

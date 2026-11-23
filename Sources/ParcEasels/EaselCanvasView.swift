@@ -875,7 +875,12 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
         positionSectionTitleField()
         synchronizePageSelection()
         let ids = Set(items.map(\.id))
-        for id in Array(artwork.keys) where !ids.contains(id) { retireArtwork(artwork.removeValue(forKey: id), id: id) }
+        let embeddedIDs = Set(session.fullDocument.items.lazy.filter(\.ownsEmbeddedPage).map(\.id))
+        for id in Array(artwork.keys) where !ids.contains(id) {
+            if embeddedIDs.contains(id) {
+                if let view = artwork[id], !view.isHidden { view.isHidden = true }
+            } else { retireArtwork(artwork.removeValue(forKey: id), id: id) }
+        }
         var ordered: [NSView] = []
         var overlayDirty = decoration.frame != bounds || marqueeRect != nil || guides != nil
         for item in items {
@@ -886,6 +891,7 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
             else { objectView = EaselCanvasArtwork(canvas: self, id: item.id); objectView.needsDisplay = true }
             if let old = artwork[item.id], old !== objectView { old.removeFromSuperview() }
             artwork[item.id] = objectView
+            if objectView.isHidden { objectView.isHidden = false }
             let previous = trackedItems[item.id]
             let nextFrame = item.ownsEmbeddedPage || !(objectView is EaselCanvasArtwork) ? rect(item)
                 : displayBounds(of: item).union(EaselCanvasRotation.bounds(item).insetBy(dx: -boardOverhang(item), dy: -boardOverhang(item)))
