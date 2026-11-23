@@ -89,7 +89,13 @@ final class SidebarEmojiPickerView: NSView, NSCollectionViewDataSource, NSCollec
             scrollToSelected()
         }
     }
-    private(set) var model: SidebarEmojiModel { didSet { currentIndex = model.index(containing: selectedEmoji); collectionView.reloadData() } }
+    private(set) var model: SidebarEmojiModel {
+        didSet {
+            closeSkinTone()
+            currentIndex = model.index(containing: selectedEmoji)
+            collectionView.reloadData()
+        }
+    }
     let searchField = NSSearchField()
     let scrollView = NSScrollView()
     let collectionView = NSCollectionView()
