@@ -67,6 +67,18 @@ __attribute__((objc_runtime_name("ParcNativeTests_ExtensionInstallTestsEducation
   EXPECT(_results == 1 && _choice == PCExtensionInstallCancel);
 }
 
+- (void)testAnExtensionWithABlankDisplayNameStillAsksToBeAdded {
+  PCExtensionInstallPresenter* p = [self make];
+  [p configureInstallationEducationWithName:@""];
+  [p start];
+  Pump();
+  EXPECT(Text(p.sheet.contentView, @"Add this extension to Parc?"));
+  EXPECT(Button(p.sheet.contentView, @"Add Extension") != nil);
+  [p.sheet cancelOperation:nil];
+  Pump();
+  EXPECT(_results == 1 && _choice == PCExtensionInstallCancel);
+}
+
 - (void)testEducationListsTheRequestedPermissions {
   PCExtensionInstallPresenter* p = [self shownEducation];
   EXPECT(Text(p.sheet.contentView, @"It can:"));

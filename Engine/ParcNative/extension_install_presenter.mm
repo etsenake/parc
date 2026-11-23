@@ -75,7 +75,6 @@
 - (void)cancelOperation:(id)sender {
   [self.request finish:PCExtensionInstallCancel];
 }
-// An input method composing in a field keeps its Return and Escape.
 - (BOOL)performKeyEquivalent:(NSEvent*)event {
   NSResponder* responder = self.firstResponder;
   if (event.type == NSEventTypeKeyDown && [responder isKindOfClass:NSTextView.class] &&
@@ -86,7 +85,6 @@
 }
 @end
 using namespace parc_dialog;
-// Dialogs.ExplainerScroll: a 26-point background fade until scrolled to the end.
 @interface PCDialogFade : NSView
 @end
 @implementation PCDialogFade
@@ -105,7 +103,6 @@ using namespace parc_dialog;
   self.needsDisplay = YES;
 }
 @end
-// The heading and Dialogs.ExplainerTextWithBullet rows in a leading LazyVStack.
 @interface PCDialogExplainerDocument : PCDialogFlippedView
 - (instancetype)initWithHeading:(NSString*)heading
                     permissions:(NSArray<NSString*>*)permissions
@@ -264,9 +261,11 @@ using namespace parc_dialog;
   [self fitStandardSheet:_sheet];
 }
 - (void)configureInstallationEducationWithName:(NSString*)name {
-  NSParameterAssert(!_started && name.length && !_parentAccounts);
+  NSParameterAssert(!_started && !_parentAccounts);
   _installationEducation = YES;
-  _title = [NSString stringWithFormat:@"Add the “%@” extension to Parc?", name];
+  _title = name.length
+               ? [NSString stringWithFormat:@"Add the “%@” extension to Parc?", name]
+               : @"Add this extension to Parc?";
   _heading = _permissions.count ? @"It can:"
                                : @"This extension requires no special permissions.";
   _acceptLabel = @"Add Extension";
@@ -402,17 +401,11 @@ using namespace parc_dialog;
   sheet.contentView = root;
   [sheet setContentSize:NSMakeSize(dialogWidth, y)];
 }
-// Fits the special-request sheet to its stack, which may grow with an error,
-// and the footer 22 points below it (38.5 points with the buttons' lip).
 - (void)fitStandardSheet:(NSWindow*)sheet {
   [sheet.contentView layoutSubtreeIfNeeded];
   [sheet setContentSize:NSMakeSize(
       kWidth, MAX(230, ceil(_stack.fittingSize.height) + kInset + 22 + 38.5 + 28))];
 }
-// Special requests (policy, enterprise justification, parent approval, repair,
-// re-enable, additional permissions, apps and themes) keep their own text and
-// controls in Parc's dialog. Return never accepts them, so the accept button
-// carries no Return badge.
 - (void)layOutStandardInSheet:(NSWindow*)sheet {
   PrepareSheet(sheet);
   PCDialogBaseView* root = [[PCDialogBaseView alloc] initWithFrame:NSMakeRect(0, 0, kWidth, 320)];
@@ -572,14 +565,11 @@ using namespace parc_dialog;
     [buttonViews addObject:accept];
   }
   for (PCDialogButton* button in buttonViews) {
-    // The view extends past the 36-point body for its centered border and lip.
     [button.widthAnchor constraintEqualToConstant:button.bodyWidth + 1].active = YES;
     [button.heightAnchor constraintEqualToConstant:38.5].active = YES;
     [buttons addView:button inGravity:NSStackViewGravityTrailing];
   }
   [root addSubview:stack];
-  // The footer keeps Parc's 28-point side inset, wider than the content column;
-  // the buttons' centered border extends half a point past it, as in PlaceFooter.
   [root addSubview:buttons];
   [NSLayoutConstraint activateConstraints:@[
     [stack.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:kInset],
@@ -668,7 +658,6 @@ using namespace parc_dialog;
     return;
   }
   if (_parentSubmit) {
-    // The secure field is cleared before either network request starts.
     NSString* credential = [_parentPassword.stringValue copy];
     NSInteger parent = _parentChoice.indexOfSelectedItem;
     _parentPassword.stringValue = @"";
