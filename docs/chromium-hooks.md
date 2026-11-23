@@ -33,14 +33,14 @@ Each patch entry says what it changes, which files it touches and why it must st
 
 ## Counts
 
-The reference covers 70 hooks and 76 patches:
+The reference covers 70 hooks and 77 patches:
 
 - 65 setters in `parc/chromium_hooks.h`, plus its one call-in, `DestroyUnusedOTRProfile`.
 - 5 setters in layer headers: the Widevine request observer, the Safari-identity query, worker
   identity, the AirPlay playback-target handler and Blink's player move. Their 5 call-ins are the
   Safari-identity check, the three AirPlay answers and picture-in-picture scrubbing. One more
   call-in, `content::NotifyNativeDeferredOpenURL`, lives in `content/public/browser/parc_native_links.h`.
-- 76 patches in [`overlay.json`](../Engine/ParcHost/overlay.json): 75 in
+- 77 patches in [`overlay.json`](../Engine/ParcHost/overlay.json): 76 in
   `Engine/ParcHost/integration/` and `extension_context_menu_native` in `Engine/ParcNative/`.
 
 To recheck the counts after a change, compare the setters the header declares with the ones the
@@ -65,7 +65,7 @@ and the three AirPlay call-ins.
 | Area | Hooks | Patches | Reference |
 |---|---|---|---|
 | Browser and startup | 23 | 14 | [browser, pages and windows](chromium-hooks-browser.md#browser-and-startup-hooks) |
-| Page and window | 18 | 8 | [browser, pages and windows](chromium-hooks-browser.md#page-and-window-hooks) |
+| Page and window | 18 | 9 | [browser, pages and windows](chromium-hooks-browser.md#page-and-window-hooks) |
 | Interface routing and prompts | 20 | 30 | [interface and prompts](chromium-hooks-interface.md) |
 | Media and FairPlay | 8 | 16 | [media and Blink](chromium-hooks-media.md#media-and-fairplay-hooks) |
 | Blink and renderer | 1 | 4 | [media and Blink](chromium-hooks-media.md#blink-and-renderer-hooks) |
@@ -80,7 +80,8 @@ Patches by area:
   `native-license-host` and `native-applescript-lifecycle`.
 - Page and window: `native-host-route-direct-overlay`, `native-window-lookup-direct`,
   `native-views-bubble-guards`, `native-fullscreen-window`, `native-input-diagnostics-direct`,
-  `native-external-split-drop`, `color-provider-manager-observer` and `native-side-panel`.
+  `native-external-split-drop`, `color-provider-manager-observer`, `native-side-panel` and
+  `paint-preview-pdf`.
 - Interface routing and prompts: `native-site-permissions-direct`, `native-site-settings-direct`,
   `native-sad-tab`,
   `native-server-certificate-viewer-direct`, `native-http-auth`, `native-tab-sharing-direct`,

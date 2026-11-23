@@ -42,11 +42,24 @@ being stretched afterwards. Ordinary pages keep full device sharpness. The
 capture refuses an attached debugger and restores only its own temporary
 document preferences and renderer geometry.
 
+A page too large for full sharpness also gets a vector PDF, as Safari's Full
+Page screenshot does: one unbroken PDF page at one point per CSS pixel, sharp at
+any zoom. Before the screenshot, Paint Preview records the whole document, with
+its subframes, in memory and with no scrolling; the screenshot waits for that
+recording because it resizes the view. While the screenshot runs, a sandboxed
+Paint Preview compositor writes the recording through Skia's PDF backend. The
+result carries both the PNG and the PDF once both finish. A recording that takes
+longer than 10 seconds, a failed recording or compositor, or a PDF still
+unfinished at the 30-second deadline leaves the PDF out and keeps the PNG.
+Ordinary pages stay image-only and keep their speed. Private windows record the
+same way, in memory only. The compositor method is the kept
+`paint-preview-pdf` patch ([hooks reference](chromium-hooks-browser.md#page-and-window-patches)).
+
 One operation per WebContents owns the original document, Profile/private
 context, native window and screenshot-policy lease. Bounds round outward and
 respect Chromium's current dimension limits. Surface capture has a 10-second
 deadline; the full operation has a 30-second deadline. Cancellation invalidates
-protocol and worker callbacks. Results contain genuine PNG bytes or an error;
+protocol, Paint Preview and worker callbacks. Results contain genuine PNG bytes or an error;
 missing pixels never become a placeholder.
 
 The engine's PNG carries device pixels but no density, so every app would open

@@ -339,7 +339,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_bridge.h",
       "target": "parc/native/native_appkit_bridge.h",
-      "sha256": "e9103e642e86a4657878f6cbee5f7554ddf2c2a7545bb5a9d17b49e8b23e2be0"
+      "sha256": "2079791fbeda46bcb28f81747a53e22db5dc011437a380dc9c7b1de9ec482e42"
     },
     {
       "source": "Engine/ParcNative/native_appkit_host.h",
@@ -534,7 +534,7 @@
     {
       "source": "tests/NativeTabTransfer/page_capture_unittest.cc",
       "target": "parc/tests/parc_native_tab_transfer/page_capture_unittest.cc",
-      "sha256": "57ef98fe6a1da465053c8956dbdd02a0b2c4b062513fccc0fbe3a995ca06bc04"
+      "sha256": "6550d10a7b2e14b441e0dffcdfe645f646c7dc69cb24f8c69ba8a4dc1437f7ca"
     },
     {
       "source": "Engine/ParcNative/downloads.cc",
@@ -1189,12 +1189,22 @@
     {
       "source": "Engine/ParcNative/native_page_capture.mm",
       "target": "parc/native/native_page_capture.mm",
-      "sha256": "1d01a6f8b1423988f6b11346ae9351775d3901dce49d0847be46ae9ea79f9a35"
+      "sha256": "50bab044da11f05171a78cab9c20b2ff5b7a85f1c3da256f59850a1f884788ba"
     },
     {
       "source": "Engine/ParcNative/native_page_capture.h",
       "target": "parc/native/native_page_capture.h",
-      "sha256": "562cf5ff92e27b2239814ea26c5cc7ff236379ea8eeebb1dc8c4806d0b975573"
+      "sha256": "b7f60024931958bff516606bc8ee869d4f131b80b84ac812940280780aac794c"
+    },
+    {
+      "source": "Engine/ParcNative/native_page_pdf.h",
+      "target": "parc/native/native_page_pdf.h",
+      "sha256": "70e84c43381e2b3f5aa5bf15732be39338e61198ced499f4d4ec5a1e38eed2bd"
+    },
+    {
+      "source": "Engine/ParcNative/native_page_pdf.mm",
+      "target": "parc/native/native_page_pdf.mm",
+      "sha256": "9088dd5c977b1be51f2a5c16539db9155763f5f436aa2389f89ddd30258abcfb"
     },
     {
       "source": "Engine/ParcNative/native_download_arrival.h",
@@ -2124,7 +2134,7 @@
     {
       "source": "Engine/ParcChromium/BUILD.gn",
       "target": "parc/BUILD.gn",
-      "sha256": "8789b32d01bb87907bc6a854dc91e7e030b63e2405948c60e05277fccb0ebf98"
+      "sha256": "67fced91108874194b695f041a496769a8e75ef9d70c931bd96daabdf2192cc2"
     },
     {
       "source": "Engine/ParcChromium/generate_product_name_strings.py",
@@ -6991,6 +7001,42 @@
           "target": "chrome/browser/resources/settings/privacy_page/security/security_page.html",
           "before_sha256": "a7d3855832eac4d4dccdb7a119660dbfb85d92b4f19e49f78304170d9459b00b",
           "after_sha256": "4fee4bf5877b28e2d98c94a2a9553ad0cd659d4daf53f50a005e897e9114debf"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/paint-preview-pdf.patch",
+      "sha256": "36319a0f7cba57d5f123d256fc5383dd8337f9e1ebdbc37e6be61320ac37b7bd",
+      "files": [
+        {
+          "target": "components/services/paint_preview_compositor/public/mojom/paint_preview_compositor.mojom",
+          "before_sha256": "e7e63304d923847e226b1ec040400eadb03041f12a73d6b379fa1209c9d7e528",
+          "after_sha256": "65f8116068cb06e3484472ef7abfb9df6a471b6bf398735ce9ff204efcf24acd"
+        },
+        {
+          "target": "components/services/paint_preview_compositor/paint_preview_compositor_impl.h",
+          "before_sha256": "1ed56b85f627111b5e27e02ac88f2dbf89bc55ae0fc09a1e7c5ce490e48fcbf7",
+          "after_sha256": "1164143f61425c76dec20e5f07f2202cf3501e979f67ded6ffbf7635feb1ed4f"
+        },
+        {
+          "target": "components/services/paint_preview_compositor/paint_preview_compositor_impl.cc",
+          "before_sha256": "fae344357eeafe3a4f7c1c9fec12b35f72f6b0803000557f37d12e8bf178bb9c",
+          "after_sha256": "a875ff2804ac602002249f636d271679264c224e2e5e50f2aa3a8739a7df58fd"
+        },
+        {
+          "target": "components/paint_preview/public/paint_preview_compositor_client.h",
+          "before_sha256": "6fe6272baf7d7d1ff010ecc679e2b7a0d0622c2548f7f1bd0b38f4e08284c23c",
+          "after_sha256": "5fbf572382f91ce5915fbe937b3792e81324c5b4316f9010afb6762b6b70d595"
+        },
+        {
+          "target": "components/paint_preview/browser/paint_preview_compositor_client_impl.h",
+          "before_sha256": "01c8d47b0c661514e7031fd3ec68aa786719978e74eb7efb1e2b9df52cdded14",
+          "after_sha256": "5fc235d4a4a5c7a30e253db928496007aacec817a67796156e625047c44aaf53"
+        },
+        {
+          "target": "components/paint_preview/browser/paint_preview_compositor_client_impl.cc",
+          "before_sha256": "047a22e41817d02a9c864a841fa131fd670570150c128c13ddf2dbfad73c0ebd",
+          "after_sha256": "351847c81cf3ea5adb6d28e964c2ed5fc91ca5ed713883179e06585794459d1f"
         }
       ]
     }

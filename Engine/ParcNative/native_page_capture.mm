@@ -51,6 +51,7 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "native_appkit_host.h"
 #include "native_page_capture.h"
+#include "native_page_pdf.h"
 #include "native_page_retirement.h"
 #include "native_profile_removal.h"
 #include "tab_transfer.h"
@@ -144,16 +145,17 @@ bool BoundedFinite(double value) { return std::isfinite(value) && std::abs(value
 @end
 @interface PCNativePageCaptureResult ()
 - (instancetype)initWithData:(NSData*)data size:(NSSize)size error:(NSString*)error
-                     layout:(PCNativeCaptureLayout*)layout;
+                     layout:(PCNativeCaptureLayout*)layout pdf:(NSData*)pdf;
 @end
 @implementation PCNativePageCaptureResult
 @synthesize pngData = _pngData, image = _image, pixelSize = _pixelSize;
 @synthesize errorMessage = _errorMessage;
 @synthesize layout = _layout, pdfData = _pdfData;
 - (instancetype)initWithData:(NSData*)data size:(NSSize)size error:(NSString*)error
-                     layout:(PCNativeCaptureLayout*)layout {
+                     layout:(PCNativeCaptureLayout*)layout pdf:(NSData*)pdf {
   if ((self = [super init])) {
     _pngData = [data copy];
+    _pdfData = [pdf copy];
     _image = data ? [[NSImage alloc] initWithData:data] : nil;
     _pixelSize = size;
     _errorMessage = [error copy];
@@ -317,7 +319,7 @@ EncodedCapture DecodeProtocolPNG(std::string encoded) {
 }
 void PostFailure(CaptureCompletion completion, NSString* error) {
   auto result = [[PCNativePageCaptureResult alloc]
-      initWithData:nil size:NSZeroSize error:error layout:nil];
+      initWithData:nil size:NSZeroSize error:error layout:nil pdf:nil];
   base::SequencedTaskRunner::GetCurrentDefault()->PostTask(FROM_HERE,
       base::BindOnce([](CaptureCompletion callback, PCNativePageCaptureResult* value) {
         callback(value);
@@ -465,6 +467,7 @@ class PageCapture final : public content::WebContentsObserver,
     }
     ClearTarget();
     StopProtocol(true);
+    ResetPdf();
     ReleaseOperation();
     timer_.Stop();
     weak_factory_.InvalidateWeakPtrs();
@@ -815,15 +818,59 @@ class PageCapture final : public content::WebContentsObserver,
     command.Set("id", 2);
     command.Set("method", "Page.captureScreenshot");
     command.Set("params", std::move(params));
-    std::string json;
-    if (!base::JSONWriter::Write(command, &json)) {
+    if (!base::JSONWriter::Write(command, &screenshot_command_) || screenshot_command_.empty()) {
+      Fail(request, @"The renderer could not capture the full page.");
+      return;
+    }
+    if (scale >= 1) {
+      SendScreenshot(request);
+      return;
+    }
+    auto weak = weak_factory_.GetWeakPtr();
+    pdf_pending_ = true;
+    pdf_ = PagePdf::Start(*web_contents(),
+        base::BindOnce(&PageCapture::PdfRecorded, weak, request),
+        base::BindOnce(&PageCapture::PdfFinished, weak, request));
+    pdf_record_timer_.Start(FROM_HERE, base::Seconds(10), base::BindOnce(
+        &PageCapture::PdfRecorded, weak, request, false));
+  }
+  void PdfRecorded(uint64_t request, bool recorded) {
+    auto keep_alive = weak_from_this().lock();
+    if (!completion_ || request != request_ || screenshot_command_.empty()) return;
+    pdf_record_timer_.Stop();
+    if (!recorded) ResetPdf();
+    if (!Valid()) { Invalidate(true); return; }
+    SendScreenshot(request);
+  }
+  void SendScreenshot(uint64_t request) {
+    std::string json = std::move(screenshot_command_);
+    screenshot_command_.clear();
+    if (!agent_ || !attached_ || json.empty()) {
       Fail(request, @"The renderer could not capture the full page.");
       return;
     }
     agent_->DispatchProtocolMessage(this, base::as_byte_span(json));
   }
+  void PdfFinished(uint64_t request, std::optional<std::vector<uint8_t>> pdf) {
+    auto keep_alive = weak_from_this().lock();
+    if (!completion_ || request != request_ || !pdf_pending_) return;
+    pdf_pending_ = false;
+    pdf_bytes_ = std::move(pdf);
+    if (!pending_png_) return;
+    EncodedCapture png = std::move(*pending_png_);
+    pending_png_.reset();
+    Deliver(request, std::move(png));
+  }
+  void ResetPdf() {
+    pdf_record_timer_.Stop();
+    pdf_.reset();
+    pdf_pending_ = false;
+    pdf_bytes_.reset();
+    pending_png_.reset();
+  }
   void StopProtocol(bool restore) {
     auto keep_alive = weak_from_this().lock();
+    screenshot_command_.clear();
     if (restoring_) return;
     restoring_ = true;
     if (agent_ && attached_) {
@@ -910,22 +957,30 @@ class PageCapture final : public content::WebContentsObserver,
   void Deliver(uint64_t request, EncodedCapture encoded) {
     if (!completion_ || request != request_) return;
     if (!Valid()) { Invalidate(true); return; }
+    if (pdf_pending_ && !encoded.png.empty()) {
+      pending_png_ = std::move(encoded);
+      return;
+    }
     timer_.Stop();
     ReleaseOperation();
     auto completion = completion_;
     completion_ = nil;
     NSData* data = encoded.png.empty() ? nil :
         [NSData dataWithBytes:encoded.png.data() length:encoded.png.size()];
+    NSData* pdf = data && pdf_bytes_ && !pdf_bytes_->empty() ?
+        [NSData dataWithBytes:pdf_bytes_->data() length:pdf_bytes_->size()] : nil;
+    ResetPdf();
     auto result = [[PCNativePageCaptureResult alloc] initWithData:data
         size:NSMakeSize(encoded.pixels.width(), encoded.pixels.height())
         error:data ? nil : @"The renderer returned no usable capture pixels."
-        layout:data ? capture_layout_ : nil];
+        layout:data ? capture_layout_ : nil pdf:pdf];
     completion(result);
   }
   void Fail(uint64_t request, NSString* error) {
     auto keep_alive = weak_from_this().lock();
     if (!completion_ || request != request_) return;
     StopProtocol(true);
+    ResetPdf();
     timer_.Stop();
     ReleaseOperation();
     auto completion = completion_;
@@ -933,6 +988,13 @@ class PageCapture final : public content::WebContentsObserver,
     PostFailure(completion, error);
   }
   void Timeout(uint64_t request) {
+    auto keep_alive = weak_from_this().lock();
+    if (completion_ && request == request_ && pending_png_) {
+      EncodedCapture png = std::move(*pending_png_);
+      ResetPdf();
+      Deliver(request, std::move(png));
+      return;
+    }
     Fail(request, @"The page capture did not finish in time.");
   }
   void DidStartNavigation(content::NavigationHandle* handle) override {
@@ -973,6 +1035,12 @@ class PageCapture final : public content::WebContentsObserver,
   bool original_hide_scrollbars_ = false;
   bool original_record_document_ = false;
   uint64_t request_ = 0;
+  std::string screenshot_command_;
+  std::unique_ptr<PagePdf> pdf_;
+  bool pdf_pending_ = false;
+  std::optional<std::vector<uint8_t>> pdf_bytes_;
+  std::optional<EncodedCapture> pending_png_;
+  base::OneShotTimer pdf_record_timer_;
   CaptureCompletion completion_ = nil;
   CaptureCompletion element_completion_ = nil;
   TargetCompletion target_completion_ = nil;
@@ -1333,7 +1401,7 @@ class EmbeddedPageSnapshot final : public std::enable_shared_from_this<EmbeddedP
     auto result = [[PCNativePageCaptureResult alloc] initWithData:data
         size:NSMakeSize(encoded.pixels.width(), encoded.pixels.height())
         error:data ? nil : @"The embedded page could not be captured."
-        layout:nil];
+        layout:nil pdf:nil];
     runner->PostTask(FROM_HERE, base::BindOnce(
         [](CaptureCompletion callback, PCNativePageCaptureResult* value) { callback(value); },
         completion, result));

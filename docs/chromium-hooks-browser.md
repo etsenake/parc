@@ -212,3 +212,11 @@ code that answers lives in `Engine/ParcNative/` unless a path says otherwise.
 - **`native-side-panel`**: extension side panels work in Parc's sidebar. There is no deregistration
   observer for a pending entry, no seam for the borrowed host and the load-time mark is private;
   seven side-panel coordinator, manager, entry, registry and interface files.
+- **`paint-preview-pdf`**: a long Full Page capture also carries a vector PDF of the whole page,
+  one page at one point per CSS pixel. It adds `PdfForMainFrame` to the Paint Preview compositor,
+  which writes the composited main-frame picture, subframes included, through Skia's PDF backend
+  in the sandboxed utility process. The compositor's mojom and implementation and the client
+  interface and implementation are its six files; the client's default answer keeps other clients
+  unchanged. The composited picture exists only inside the utility process and the interface
+  offers only bitmaps, so no extension point or Parc-owned code can reach it; recording Skia
+  pictures in the browser would duplicate Paint Preview's whole frame and image serialization.

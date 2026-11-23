@@ -353,6 +353,9 @@ decisions below explain the patches kept on purpose.
   Parc binds consent to the asking document and Browser when the prompt is created.
 - **App-modal JavaScript dialogs, intent picker and context-menu observer:** these keep patches until a lossless
   hook exists; the public routes run too late or lose the source page.
+- **Paint Preview PDF:** the compositor method stays. Printing paginates and reflows the page, and
+  a DevTools PDF goes through the same print path, so neither gives one unbroken page as the
+  screen shows it; only the compositor holds the composited picture.
 - **Parc-owned media player:** rejected. Chromium picks the player once, from the URL, before any CDM
   exists, so a separate player would mean forking WebMediaPlayerImpl.
 - **Upstream candidates:** the macOS system screen-picker fix, mp2t multi-audio, ipcm and fpcm in MP4,
