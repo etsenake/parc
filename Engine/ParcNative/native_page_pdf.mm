@@ -1,4 +1,3 @@
-// Copyright 2026 Parc contributors.
 #include "native_page_pdf.h"
 
 #include <utility>
@@ -121,7 +120,7 @@ class PagePdfService final : public PagePdf,
       Finish(std::nullopt);
       return;
     }
-    const base::span<const uint8_t> bytes = pdf->byte_span();
+    const base::span<const uint8_t> bytes = *pdf;
     Finish(std::vector<uint8_t>(bytes.begin(), bytes.end()));
   }
 

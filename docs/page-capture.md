@@ -48,7 +48,9 @@ any zoom. Before the screenshot, Paint Preview records the whole document, with
 its subframes, in memory and with no scrolling; the screenshot waits for that
 recording because it resizes the view. While the screenshot runs, a sandboxed
 Paint Preview compositor writes the recording through Skia's PDF backend. The
-result carries both the PNG and the PDF once both finish. A recording that takes
+PDF receiver copies either inline bytes or shared memory into owned bytes before
+delivery, so large PDFs keep the same capture path as small ones. The result
+carries both the PNG and the PDF once both finish. A recording that takes
 longer than 10 seconds, a failed recording or compositor, or a PDF still
 unfinished at the 30-second deadline leaves the PDF out and keeps the PNG.
 Ordinary pages stay image-only and keep their speed. Private windows record the
