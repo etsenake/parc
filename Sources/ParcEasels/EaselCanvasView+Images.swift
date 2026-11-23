@@ -505,7 +505,7 @@ extension EaselCanvasView {
         if drawing { drawing = false }
         stopImagePlayback()
         imageEditing.crop = EaselImageEditing.Crop(item: item, draft: EaselImageCropDraft(item: item, natural: natural), drag: nil)
-        artwork[item.id]?.needsDisplay = true
+        redrawObjectView(item.id)
         window?.makeFirstResponder(self)
         cropChanged()
         refreshDecorations()
@@ -521,7 +521,7 @@ extension EaselCanvasView {
         imageEditing.chrome?.hideCropBar(on: self)
         cropChanged()
         refreshDecorations()
-        artwork[crop.item.id]?.needsDisplay = true
+        redrawObjectView(crop.item.id)
         if save, let current = session.document.items.first(where: { $0.id == crop.item.id }), current == crop.item {
             let next = crop.draft.applying(to: current)
             if next != current {
@@ -661,6 +661,7 @@ extension EaselCanvasView {
             }
             document = EaselDependents.settle(document, previous: previous, moved: targets)
         }
+        targets.forEach(redrawObjectView)
     }
 
     func editImageAltText() {
@@ -723,6 +724,7 @@ extension EaselCanvasView {
             document.items[index] = next
         }
         selection = [id]
+        redrawObjectView(id)
         invalidateIncrementalDisplay(layout: true)
         refreshImagePlayback()
     }
@@ -848,7 +850,7 @@ extension EaselCanvasView {
         player.stop()
         if let item = session.document.items.first(where: { $0.id == player.itemID }) {
             setOverlayNeedsDisplay(turnedBounds(frameRect(item)))
-            artwork[item.id]?.needsDisplay = true
+            redrawObjectView(item.id)
         }
     }
 
@@ -860,7 +862,7 @@ extension EaselCanvasView {
             return
         }
         setOverlayNeedsDisplay(turnedBounds(frameRect(item)))
-        artwork[item.id]?.needsDisplay = true
+        redrawObjectView(item.id)
     }
 
     func addImageMenuItems(to menu: NSMenu, target: Any) {

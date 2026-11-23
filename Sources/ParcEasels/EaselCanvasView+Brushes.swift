@@ -235,7 +235,6 @@ extension EaselCanvasView {
         if straight { raw = [EaselPoint(x: first.x, y: first.y), raw[raw.count - 1]] }
         let painted = paintedLiveStroke()
         brushes.template = nil
-        setNeedsDisplay(painted)
         decoration.setNeedsDisplay(painted)
         guard var item = EaselDrawing.strokeItem(raw, like: template, straight: straight, strict: brush.alwaysStraight && flags.contains(.shift),
                                                  scale: canvasScale) else { return }
@@ -256,7 +255,6 @@ extension EaselCanvasView {
         if brushes.template != nil {
             let painted = paintedLiveStroke()
             brushes.template = nil
-            setNeedsDisplay(painted)
             decoration.setNeedsDisplay(painted)
         }
         guard !brushes.erasing.isEmpty else { return }
@@ -309,7 +307,6 @@ extension EaselCanvasView {
             brushes.preview = next
         }
         guard !region.isNull else { return }
-        setNeedsDisplay(region)
         decoration.setNeedsDisplay(region)
     }
 
@@ -411,8 +408,7 @@ extension EaselCanvasView {
 
     private func repaintDrawings(_ ids: Set<UUID>) {
         for item in session.document.items where ids.contains(item.id) {
-            setNeedsDisplay(displayBounds(of: item))
-            artwork[item.id]?.needsDisplay = true
+            redrawObjectView(item.id)
         }
     }
 
@@ -439,7 +435,6 @@ extension EaselCanvasView {
         brushes.trailBounds = next
         let dirty = previous.union(next)
         if !dirty.isNull {
-            setNeedsDisplay(dirty)
             decoration.setNeedsDisplay(dirty)
         }
         if brushes.trail.isEmpty || window == nil {

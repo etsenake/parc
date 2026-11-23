@@ -93,7 +93,6 @@ extension EaselCanvasView {
         if tool != .stamp { dismissStampPanels() }
         hoveredObjectID = nil
         clearQuickCreateHover(); clearMindMapHover()
-        needsDisplay = true
         decoration.needsDisplay = true
         refreshPlacementPreview()
         refreshToolCursor()

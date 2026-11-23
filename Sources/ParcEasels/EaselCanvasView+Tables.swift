@@ -156,7 +156,7 @@ extension EaselCanvasView {
         let hadPreview = tableState.preview != nil
         tableState.preview = nil
         if let id { invalidateTableChrome(id) }
-        if hadPreview { invalidateIncrementalDisplay(layout: true) }
+        if hadPreview { redrawObjectView(id); invalidateIncrementalDisplay(layout: true) }
     }
 
     private func tableItem(_ id: UUID) -> EaselItem? {
@@ -268,7 +268,7 @@ extension EaselCanvasView {
         let next = normalizedTable(session.document.items[index], table, hugging: rows, previous: original)
         let ids = Set(session.document.items.map(\.id))
         tableState.textCache = tableState.textCache.filter { ids.contains($0.key) }
-        return commit(name, coalescing: group) { document in
+        let committed = commit(name, coalescing: group) { document in
             guard let position = document.items.firstIndex(where: { $0.id == id }) else { return }
             let previous = document
             document.items[position] = next
@@ -276,6 +276,8 @@ extension EaselCanvasView {
                 document = EaselDependents.settle(document, previous: previous, moved: [id])
             }
         }
+        if committed { redrawObjectView(id) }
+        return committed
     }
 
     func drawTable(_ item: EaselItem, showsEditor: Bool) {
@@ -343,9 +345,12 @@ extension EaselCanvasView {
 
     func invalidateTableChrome(_ id: UUID?) {
         guard let id, let item = items.first(where: { $0.id == id }) else { return }
-        let area = tableChromeBounds(item)
-        setNeedsDisplay(area)
-        if usesObjectSurfaces { decoration.setNeedsDisplay(area) }
+        decoration.setNeedsDisplay(tableChromeBounds(item))
+    }
+
+    func redrawObjectView(_ id: UUID?) {
+        guard let id else { return }
+        artwork[id]?.needsDisplay = true
     }
 
     private func tableBands(_ item: EaselItem) -> (top: NSRect, left: NSRect, right: NSRect, bottom: NSRect) {
@@ -677,9 +682,7 @@ extension EaselCanvasView {
         guard let placement else { return }
         let layout = EaselTableGeometry.placement(from: EaselPoint(placement.start), to: EaselPoint(placement.end))
         let scale = CGFloat(max(canvasScale, 0.2))
-        let area = NSRect(layout.frame).insetBy(dx: -90 / scale, dy: -70 / scale)
-        setNeedsDisplay(area)
-        if usesObjectSurfaces { decoration.setNeedsDisplay(area) }
+        decoration.setNeedsDisplay(NSRect(layout.frame).insetBy(dx: -90 / scale, dy: -70 / scale))
     }
 
     @discardableResult
@@ -902,6 +905,7 @@ extension EaselCanvasView {
             if next != destination { tableState.drag = .rows(block, destination: next) }
         }
         autoscroll(with: event)
+        if tableState.preview?.id == id { redrawObjectView(id) }
         invalidateTableChrome(id)
         invalidateIncrementalDisplay(layout: true)
         return true
@@ -990,6 +994,7 @@ extension EaselCanvasView {
                 text.setSelectedRange(NSRange(location: length, length: 0))
             }
         }
+        redrawObjectView(current.id)
         invalidateTableChrome(current.id)
         invalidateIncrementalDisplay(layout: true)
         refreshTextControls()

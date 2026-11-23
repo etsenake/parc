@@ -201,6 +201,7 @@ extension EaselCanvasView {
     private func refreshStampDraft() {
         guard let press = stamps.press else { return }
         draft = [stampItem(press.face, at: press.point, side: press.side, tilt: press.tilt, id: press.id)]
+        redrawObjectView(press.id)
         invalidateIncrementalDisplay(layout: true)
     }
 
