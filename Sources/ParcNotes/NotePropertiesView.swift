@@ -45,6 +45,7 @@ final class NotePropertiesView: NSView {
     }
 
     func reload(_ next: [NotePageProperty]) {
+        if next != properties { cancelDrag() }
         let previousCount = properties.count
         properties = next
         if next.isEmpty && previousCount > 0 { isRevealed = false }
@@ -226,6 +227,12 @@ final class NotePropertiesView: NSView {
         } else {
             drag = current
         }
+    }
+
+    private func cancelDrag() {
+        guard let current = drag else { return }
+        drag = nil
+        current.row.setLifted(false)
     }
 
     func endDrag() {
