@@ -154,13 +154,16 @@ WriteResult WriteAutofill(std::vector<mojom::AutofillPtr> rows,
           } else if (row->kind == 1) {
             autofill::AutofillProfile profile(autofill::AddressCountryCode(""));
             for (const auto& [key, value] : row->fields) {
-              int type;
-              if (!base::StringToInt(key, &type) ||
-                  type <= autofill::UNKNOWN_TYPE ||
-                  type >= autofill::MAX_VALID_FIELD_TYPE)
+              int raw_type;
+              if (!base::StringToInt(key, &raw_type))
                 continue;
-              profile.SetRawInfo(static_cast<autofill::FieldType>(type),
-                                 base::UTF8ToUTF16(value));
+              const std::optional<autofill::FieldType> type =
+                  autofill::ToSafeFieldType(raw_type);
+              if (!type ||
+                  !autofill::AutofillProfile::kDatabaseStoredTypes.contains(
+                      *type))
+                continue;
+              profile.SetRawInfo(*type, base::UTF8ToUTF16(value));
             }
             if (!addresses->AddAutofillProfile(profile))
               return false;

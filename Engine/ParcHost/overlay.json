@@ -1384,7 +1384,7 @@
     {
       "source": "Engine/ParcNative/native_import_writer.mm",
       "target": "parc/native/native_import_writer.mm",
-      "sha256": "a12763c9db0e62d837c62a133c88c57336d86d861634a7564a6b67f920c9ba0b"
+      "sha256": "9042bff1229a67f878ddedf99c2630187fe72e874d016e1e85339b33b916c378"
     },
     {
       "source": "Engine/ParcNative/native_import_discovery.mm",
