@@ -313,9 +313,7 @@ extension EaselCanvasView {
         guard item.frame.width * scale >= size.width + 24 else { setCodeBarShown(false, animated: false); return }
         let header = EaselCodeBlock.headerHeight
         let y = header * scale >= size.height + 4 ? item.frame.y + (header - height) / 2 : item.frame.y + inset
-        bar.frame = NSRect(x: item.frame.x + item.frame.width - inset - width, y: y, width: width, height: height)
-        bar.bounds = NSRect(origin: .zero, size: size)
-        bar.needsLayout = true
+        EaselScreenChrome.place(bar, boardFrame: NSRect(x: item.frame.x + item.frame.width - inset - width, y: y, width: width, height: height), scale: scale)
         setCodeBarShown(true, animated: item.id != pinned?.id)
     }
 
