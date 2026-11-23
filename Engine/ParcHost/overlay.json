@@ -2124,7 +2124,7 @@
     {
       "source": "Engine/ParcChromium/BUILD.gn",
       "target": "parc/BUILD.gn",
-      "sha256": "d159232934093637476788e8c75a9682baec07d6c79ea59c3c589496dbe5d6fb"
+      "sha256": "8789b32d01bb87907bc6a854dc91e7e030b63e2405948c60e05277fccb0ebf98"
     },
     {
       "source": "Engine/ParcChromium/generate_product_name_strings.py",
@@ -2294,7 +2294,7 @@
     {
       "source": "Engine/ParcChromium/webui_branding.cc",
       "target": "parc/webui_branding.cc",
-      "sha256": "93aa43f6fac2e6ce9ca4e1b75a351f1afb8f0dbcb666b881273bfee43510d7fa"
+      "sha256": "e63cc04e519933ee5f3ed0f7e1a443fe7357f08f5605d607dc992a93d7825e05"
     },
     {
       "source": "Engine/ParcChromium/webui_branding.h",
@@ -2304,7 +2304,7 @@
     {
       "source": "Engine/ParcChromium/webui_branding_rules.h",
       "target": "parc/webui_branding_rules.h",
-      "sha256": "e4fa6ab78f97131b470d1057d014d0e2e3bd288525c9ae76fc1453d286477d9a"
+      "sha256": "2367806716818b4e1ddc7323444160a7b76fb03e51de4001239b374ac2635089"
     },
     {
       "source": "Engine/ParcChromium/parc_content_clients.h",

@@ -381,6 +381,7 @@ source_set("browser") {
     "//chrome/common/profiler",
     "//components/crash/core/app",
     "//components/memory_system",
+    "//components/crash/core/browser/resources:resources",
     "//components/metrics/debug:resources",
     "//components/policy:generated",
     "//components/resources:components_resources",

@@ -18,6 +18,7 @@ using parc::branding::EditOutcome;
 using parc::branding::FindEdit;
 using parc::branding::FindResourceEdits;
 using parc::branding::kAdaptiveLogoSvg;
+using parc::branding::kCrashesHeadingSvg;
 using parc::branding::kDarkLogoSvg;
 using parc::branding::kFlowerHeight;
 using parc::branding::kFlowerStrokes;
@@ -157,6 +158,15 @@ static void CheckAppearance(std::string_view text, NSString* box) {
 
 - (void)testACoordinateNeedsDigits {
   PARC_CHECK(!ParsePath("M1 2L.Z").has_value());
+}
+
+- (void)testTheCrashesHeadingDrawsEveryFlowerStroke {
+  PARC_CHECK(kCrashesHeadingSvg.starts_with("<svg") && kCrashesHeadingSvg.ends_with("</svg>"));
+  PARC_CHECK(Count(kCrashesHeadingSvg, "<path ") == std::size(kFlowerStrokes));
+  for (const auto& stroke : kFlowerStrokes) {
+    PARC_CHECK(Count(kCrashesHeadingSvg, std::string("d=\"") + std::string(stroke.path) + "\"") == 1);
+  }
+  PARC_CHECK(Count(kCrashesHeadingSvg, "viewBox=\"0 0 96 103\"") == 1);
 }
 
 - (void)testEveryFlowerStrokeIsOneOpenLineInsideItsCanvas {

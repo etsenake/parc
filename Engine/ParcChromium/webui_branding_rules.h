@@ -64,6 +64,18 @@ struct Stroke {
 inline constexpr float kFlowerWidth = 96;
 inline constexpr float kFlowerHeight = 103;
 
+inline constexpr std::string_view kCrashesHeadingSvg =
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"45\" height=\"48\" "
+    "viewBox=\"0 0 96 103\" fill=\"none\" stroke=\"#5f6368\" "
+    "stroke-linecap=\"round\" stroke-linejoin=\"round\">"
+    "<path stroke-width=\"8.5\" d=\"M16 68 L80 68\"/>"
+    "<path stroke-width=\"8.5\" d=\"M23 68 L30 97 L66 97 L73 68\"/>"
+    "<path stroke-width=\"8.5\" d=\"M44 68 C42 48 46 26 58 20 C70 14 82 22 80 38\"/>"
+    "<path stroke-width=\"6.8\" d=\"M43 54 C32 52 25 43 27 35 C36 36 42 44 43 54\"/>"
+    "<path stroke-width=\"6.8\" d=\"M80 40 C72 41 69 50 70 58 L74 54 L79 60 "
+    "L84 54 L88 58 C89 50 87 41 80 40\"/>"
+    "</svg>";
+
 inline constexpr Stroke kFlowerStrokes[] = {
     {"M16 68 L80 68", 8.5f},
     {"M23 68 L30 97 L66 97 L73 68", 8.5f},

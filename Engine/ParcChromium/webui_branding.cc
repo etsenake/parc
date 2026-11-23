@@ -17,6 +17,7 @@
 #include "chrome/grit/settings_resources.h"
 #include "chrome/grit/theme_resources.h"
 #include "components/grit/components_scaled_resources.h"
+#include "components/grit/crashes_resources.h"
 #include "components/grit/metrics_internals_resources.h"
 #include "components/grit/version_ui_resources.h"
 #include "parc/webui_branding_rules.h"
@@ -209,6 +210,10 @@ scoped_refptr<base::RefCountedMemory> LoadBrandedResource(
   if (resource_id == IDR_WEBUI_IMAGES_CHROME_LOGO_DARK_SVG) {
     return base::MakeRefCounted<base::RefCountedStaticMemory>(
         base::as_byte_span(branding::kDarkLogoSvg));
+  }
+  if (resource_id == IDR_CRASHES_SADTAB_SVG) {
+    return base::MakeRefCounted<base::RefCountedStaticMemory>(
+        base::as_byte_span(branding::kCrashesHeadingSvg));
   }
   if (resource_id == IDR_PRODUCT_LOGO_SVG) {
     return base::MakeRefCounted<base::RefCountedStaticMemory>(

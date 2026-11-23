@@ -33,9 +33,10 @@ Chromium's own pages that Parc opens show Parc's P, never Chromium's logo:
 - The first-run, profile picker, search engine choice and default browser pages
   show a P that turns white in dark mode.
 - The payment sheet's header shows the P, black in light mode and white in dark.
-- The crash list's tab icon is the wilting flower from Parc's crashed-page art
-  ([`SadTab.svg`](../Resources/SadTab/SadTab.svg)), stroked in black from the
-  same five lines.
+- The crash list shows the wilting flower from Parc's crashed-page art
+  ([`SadTab.svg`](../Resources/SadTab/SadTab.svg)) as its tab icon, stroked in
+  black from the same five lines, and in grey beside its heading in place of
+  Chromium's sad tab.
 
 Every one comes from `Marks/Monochrome.svg`, a trace of `Monochrome.png` in the
 24-unit icon box, 20 units tall and centred as the PNG is drawn. The same path is
