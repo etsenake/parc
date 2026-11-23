@@ -19,6 +19,7 @@ final class EaselCanvasObjectMotionState {
     static let handleGrowth: CGFloat = 1.35
     static let crowd = 40
     var frameTime: (() -> CFTimeInterval)?
+    var reducesMotion: (() -> Bool)?
     var timeline = EaselObjectMotion()
     var intent: EaselObjectMotionIntent?
     var pendingSurfaces: Set<UUID> = []
@@ -42,7 +43,7 @@ final class EaselCanvasObjectMotionState {
 }
 
 extension EaselCanvasView {
-    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    private var reduceMotion: Bool { objectMotion.reducesMotion?() ?? NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
     var motionTime: CFTimeInterval { objectMotion.frameTime?() ?? CACurrentMediaTime() }
 
@@ -156,6 +157,7 @@ extension EaselCanvasView {
         }
         guard !touched.isEmpty else { return }
         objectMotion.pendingSurfaces.formUnion(touched)
+        needsLayout = true
         startObjectMotionDriver()
         objectMotionFrame()
     }
@@ -309,7 +311,7 @@ extension EaselCanvasView {
         presentCarriedSurfaces(at: now)
         objectMotion.timeline.prune(at: now)
         let promoted = objectMotion.timeline.takePromoted()
-        if !promoted.isEmpty, usesObjectSurfaces { objectMotion.pendingSurfaces.formUnion(promoted); needsLayout = true }
+        if !promoted.isEmpty { objectMotion.pendingSurfaces.formUnion(promoted); needsLayout = true }
         if let start = objectMotion.chromeStart, now - start >= EaselCanvasObjectMotionState.chromeDuration {
             objectMotion.chromeStart = nil; objectMotion.chromeFading.removeAll()
         }
@@ -328,50 +330,20 @@ extension EaselCanvasView {
 
     private func presentObjectMotionDirty(_ rect: NSRect) {
         guard !rect.isNull, rect.width.isFinite, rect.height.isFinite else { return }
-        if usesObjectSurfaces { decoration.setNeedsDisplay(rect) } else { setNeedsDisplay(rect) }
+        decoration.setNeedsDisplay(rect)
     }
 
     private func objectMotionEnvelope() -> NSRect {
+        guard objectMotion.animatesChrome else { return .null }
+        var ids = objectMotion.chromeFading
+        if let hover = objectMotion.hoverID { ids.insert(hover) }
+        if !objectMotion.handleGrowth.isEmpty { ids.formUnion(displayedSelection) }
+        let chosen = items.filter { ids.contains($0.id) }
         var dirty = NSRect.null
-        if !usesObjectSurfaces, !objectMotion.timeline.isEmpty {
-            var lookup: [UUID: EaselItem] = [:]
-            for ghost in objectMotion.timeline.ghosts { lookup[ghost.id] = ghost }
-            for item in items { lookup[item.id] = item }
-            let now = motionTime
-            for id in objectMotion.timeline.ids {
-                guard let item = lookup[id] else { continue }
-                var box = displayBounds(of: item)
-                if let transition = objectMotion.timeline.transition(for: id), objectMotion.timeline.carry?.ids.contains(id) != true {
-                    switch transition.effect {
-                    case .glide(let from, _, let stretch, let turn, _) where !transition.reduced:
-                        let reach = max(abs(from.x), abs(from.y)) * 0.1 + 4
-                        let grow = max(0, max(stretch.x, stretch.y) - 1) * max(box.width, box.height) / 2 + abs(turn) / 90 * max(box.width, box.height) / 2
-                        box = box.union(box.offsetBy(dx: from.x, dy: from.y)).insetBy(dx: -reach - grow, dy: -reach - grow)
-                    case .appear(.slam):
-                        let grow = (EaselObjectTransition.slamScale - 1 + 0.3) * max(box.width, box.height) / 2 + 8
-                        box = box.insetBy(dx: -grow, dy: -grow)
-                    default:
-                        box = box.union(presentedBounds(of: item, objectMotion.timeline.presentation(for: id, at: now)))
-                        for look in objectMotion.timeline.fadingLooks(for: id, at: now) { box = box.union(displayBounds(of: look.item)) }
-                        let pad = max(box.width, box.height) * 0.06 + 4
-                        box = box.insetBy(dx: -pad, dy: -pad)
-                    }
-                } else {
-                    box = box.union(presentedBounds(of: item, objectMotion.timeline.presentation(for: id, at: now)))
-                }
-                dirty = dirty.union(box)
-            }
-        }
-        if objectMotion.animatesChrome {
-            var ids = objectMotion.chromeFading
-            if let hover = objectMotion.hoverID { ids.insert(hover) }
-            if !objectMotion.handleGrowth.isEmpty { ids.formUnion(displayedSelection) }
-            let chosen = items.filter { ids.contains($0.id) }
-            for item in chosen { dirty = dirty.union(displayBounds(of: item)) }
-            if let bounds = EaselGeometryEdit.bounds(of: chosen) {
-                let pad = 16 / max(canvasScale, 0.2) + 16
-                dirty = dirty.union(NSRect(x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height).insetBy(dx: -pad, dy: -pad))
-            }
+        for item in chosen { dirty = dirty.union(displayBounds(of: item)) }
+        if let bounds = EaselGeometryEdit.bounds(of: chosen) {
+            let pad = 16 / max(canvasScale, 0.2) + 16
+            dirty = dirty.union(NSRect(x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height).insetBy(dx: -pad, dy: -pad))
         }
         return dirty
     }
@@ -395,92 +367,7 @@ extension EaselCanvasView {
         editor.alphaValue = CGFloat(min(1, max(0, opacity)))
     }
 
-    func drawPresentedObjects(in dirtyRect: NSRect) {
-        let shown = items
-        guard !objectMotion.timeline.isEmpty else {
-            for item in shown where displayBounds(of: item).intersects(dirtyRect) { drawObject(item) }
-            return
-        }
-        let now = motionTime
-        var ordered = shown
-        for ghost in objectMotion.timeline.ghosts where !shown.contains(where: { $0.id == ghost.id }) {
-            let slot = ordered.firstIndex { $0.zIndex > ghost.zIndex } ?? ordered.endIndex
-            ordered.insert(ghost, at: slot)
-        }
-        for item in ordered {
-            let presentation = objectMotion.timeline.presentation(for: item.id, at: now)
-            guard presentedBounds(of: item, presentation).intersects(dirtyRect) else { continue }
-            let looks = objectMotion.timeline.fadingLooks(for: item.id, at: now)
-            if !looks.isEmpty, let context = NSGraphicsContext.current?.cgContext {
-                let mix = CGFloat(min(1, max(0, presentation.opacity)))
-                context.saveGState()
-                context.beginTransparencyLayer(auxiliaryInfo: nil)
-                for (index, look) in looks.enumerated() {
-                    if index > 0 { context.setBlendMode(.plusLighter) }
-                    context.setAlpha(CGFloat(look.weight))
-                    drawObject(look.item)
-                }
-                context.setBlendMode(.plusLighter)
-                context.setAlpha(mix)
-                drawObject(item)
-                context.endTransparencyLayer()
-                context.restoreGState()
-                continue
-            }
-            drawPresented(item, presentation)
-        }
-    }
-
-    private func presentedBounds(of item: EaselItem, _ presentation: EaselObjectPresentation) -> NSRect {
-        var box = displayBounds(of: item)
-        let grow = max(presentation.scaleX, presentation.scaleY) - 1
-        if grow > 0 { box = box.insetBy(dx: -box.width * grow / 2, dy: -box.height * grow / 2) }
-        if presentation.rotation != 0 {
-            let radians = abs(presentation.rotation) * Double.pi / 180
-            let width = box.width * cos(radians) + box.height * sin(radians)
-            let height = box.width * sin(radians) + box.height * cos(radians)
-            box = NSRect(x: box.midX - width / 2, y: box.midY - height / 2, width: width, height: height)
-        }
-        if presentation.shadow > 0 {
-            let pad = Self.shadowReach(presentation.shadow) / max(canvasScale, 0.2)
-            box = NSRect(x: box.minX - pad, y: box.minY - pad, width: box.width + pad * 2, height: box.height + pad * 3)
-        }
-        return box.offsetBy(dx: presentation.offset.x, dy: presentation.offset.y)
-    }
-
     private static func shadowReach(_ amount: Double) -> CGFloat { CGFloat(6 + 22 * min(1, amount)) }
-
-    private func shadowColor(_ amount: Double) -> NSColor {
-        let dark = NoteTheme.isDark(effectiveAppearance)
-        return NSColor.black.withAlphaComponent(CGFloat(min(1, amount) * (dark ? 0.5 : 0.24)))
-    }
-
-    private func drawPresented(_ item: EaselItem, _ presentation: EaselObjectPresentation) {
-        guard !presentation.isIdentity, let context = NSGraphicsContext.current?.cgContext else { drawObject(item); return }
-        guard presentation.opacity > 0.001 else { return }
-        context.saveGState(); defer { context.restoreGState() }
-        context.translateBy(x: presentation.offset.x, y: presentation.offset.y)
-        if presentation.scaleX != 1 || presentation.scaleY != 1 || presentation.rotation != 0 {
-            let box = EaselCanvasRotation.bounds(item)
-            context.translateBy(x: box.midX, y: box.midY)
-            if presentation.rotation != 0 { context.rotate(by: CGFloat(presentation.rotation * Double.pi / 180)) }
-            context.scaleBy(x: presentation.scaleX, y: presentation.scaleY)
-            context.translateBy(x: -box.midX, y: -box.midY)
-        }
-        let shadowed = presentation.shadow > 0.01
-        if shadowed {
-            let amount = min(1, presentation.shadow)
-            let zoom = CGFloat(max(canvasScale, 0.2)) * (window?.backingScaleFactor ?? 2) / 2
-            context.setShadow(offset: CGSize(width: 0, height: -CGFloat(2 + 8 * amount) * zoom), blur: CGFloat(4 + 16 * amount) * zoom,
-                              color: shadowColor(amount).cgColor)
-        }
-        let faded = presentation.opacity < 0.999
-        if faded { context.setAlpha(presentation.opacity) }
-        let layered = faded || shadowed
-        if layered { context.beginTransparencyLayer(auxiliaryInfo: nil) }
-        drawObject(item)
-        if layered { context.endTransparencyLayer() }
-    }
 
     private static let surfaceKey = "parc.easel.motion."
 
@@ -591,7 +478,7 @@ extension EaselCanvasView {
             view.layer?.removeAllAnimations(); view.removeFromSuperview()
             objectMotion.retiring.removeValue(forKey: id)
         }
-        guard usesObjectSurfaces, !objectMotion.pendingSurfaces.isEmpty else { return }
+        guard !objectMotion.pendingSurfaces.isEmpty else { return }
         let now = motionTime, key = Self.surfaceKey
         var lookup: [UUID: EaselItem] = [:]
         for item in items { lookup[item.id] = item }
@@ -713,7 +600,7 @@ extension EaselCanvasView {
         let held = (objectMotion.timeline.carry?.ids ?? []).union(objectMotion.timeline.raised.keys)
         let stale = objectMotion.carriedSurfaces.union(objectMotion.shadowedPages).subtracting(held)
         if !stale.isEmpty { resetHeldSurfaces(stale) }
-        guard usesObjectSurfaces, !held.isEmpty else { return }
+        guard !held.isEmpty else { return }
         var lookup: [UUID: EaselItem] = [:]
         for item in items where held.contains(item.id) { lookup[item.id] = item }
         let dark = NoteTheme.isDark(effectiveAppearance)
