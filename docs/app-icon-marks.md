@@ -59,8 +59,10 @@ its placeholder picture is Parc's private mark, Boo (a sheet ghost with the P's
 foot showing), which the browser's resource-bundle delegate loads from
 [Resources/PrivateMark](../Resources/PrivateMark/README.md).
 
-The task manager's Browser row still shows Chromium's small colour logo: a
-one-colour P would disappear on its dark table, so it waits for a colour vector.
+The task manager's Browser row shows the app icon the person chose, drawn at 16
+points; the browser's resource-bundle delegate serves it in place of Chromium's
+small colour logo and replaces it when the icon changes, so an open task manager
+picks up the new icon on its next redraw.
 
 ## Asset preservation
 

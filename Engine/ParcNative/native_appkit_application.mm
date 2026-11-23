@@ -134,6 +134,19 @@
   return self;
 }
 @end
+namespace parc {
+void RefreshApplicationIconResources();
+}
+@interface PCApplicationIconObserver : NSObject
+@end
+@implementation PCApplicationIconObserver
+- (void)observeValueForKeyPath:(NSString*)keyPath
+                      ofObject:(id)object
+                        change:(NSDictionary<NSKeyValueChangeKey, id>*)change
+                       context:(void*)context {
+  parc::RefreshApplicationIconResources();
+}
+@end
 
 namespace parc {
 bool IsNativeDownloadDialogProfile(Profile& profile);
@@ -597,6 +610,26 @@ void InitializeNativeProfile(Profile& profile) {
                                            std::move(document), nil);
           }, profile.GetWeakPtr()));
 }
+gfx::ImageSkia ApplicationIcon(CGFloat points) {
+  NSImage* icon = NSApp.applicationIconImage;
+  return icon ? gfx::ImageSkiaFromResizedNSImage(icon,
+                                                 NSMakeSize(points, points))
+              : gfx::ImageSkia();
+}
+gfx::Image ProductLogo16() {
+  static PCApplicationIconObserver* observer = [] {
+    PCApplicationIconObserver* created =
+        [[PCApplicationIconObserver alloc] init];
+    [NSApp addObserver:created
+            forKeyPath:@"applicationIconImage"
+               options:0
+               context:nullptr];
+    return created;
+  }();
+  (void)observer;
+  gfx::ImageSkia icon = ApplicationIcon(16);
+  return icon.isNull() ? gfx::Image() : gfx::Image(icon);
+}
 gfx::Image PrivateMediaArtwork() {
   NSURL* url = [NSBundle.mainBundle URLForResource:@"PrivateMark"
                                      withExtension:@"png"
@@ -619,6 +652,9 @@ class ProductBrandingDelegate final : public ui::ResourceBundle::Delegate {
   gfx::Image GetImageNamed(int resource_id) override {
     if (resource_id == IDR_INCOGNITO_WHITE_CIRCLE) {
       return PrivateMediaArtwork();
+    }
+    if (resource_id == IDR_PRODUCT_LOGO_16) {
+      return ProductLogo16();
     }
     return GetBrandedImage(resource_id);
   }
@@ -3368,5 +3404,21 @@ void ReleaseNativeProfileForRemoval(const base::FilePath& path) {
       downloads->Shutdown();
   }
   ReleaseNativeProfileRegistry(path);
+}
+
+void RefreshApplicationIconResources() {
+  CHECK(NSThread.isMainThread);
+  if (!ui::ResourceBundle::HasSharedInstance()) {
+    return;
+  }
+  gfx::ImageSkia next = ApplicationIcon(16);
+  gfx::ImageSkia* cached =
+      ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+          IDR_PRODUCT_LOGO_16);
+  if (!cached || next.isNull()) {
+    return;
+  }
+  next.MakeThreadSafe();
+  *cached = next;
 }
 }
