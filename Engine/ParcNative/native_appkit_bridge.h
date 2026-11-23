@@ -70,6 +70,7 @@ __attribute__((visibility("default")))
 @property(nonatomic, readonly) NSSize pixelSize;
 @property(nonatomic, readonly, copy, nullable) NSString* errorMessage;
 @property(nonatomic, readonly, nullable) PCNativeCaptureLayout* layout;
+@property(nonatomic, readonly, copy, nullable) NSData* pdfData;
 - (instancetype)init NS_UNAVAILABLE;
 + (instancetype)new NS_UNAVAILABLE;
 @end

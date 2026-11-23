@@ -149,7 +149,7 @@ bool BoundedFinite(double value) { return std::isfinite(value) && std::abs(value
 @implementation PCNativePageCaptureResult
 @synthesize pngData = _pngData, image = _image, pixelSize = _pixelSize;
 @synthesize errorMessage = _errorMessage;
-@synthesize layout = _layout;
+@synthesize layout = _layout, pdfData = _pdfData;
 - (instancetype)initWithData:(NSData*)data size:(NSSize)size error:(NSString*)error
                      layout:(PCNativeCaptureLayout*)layout {
   if ((self = [super init])) {
@@ -314,6 +314,17 @@ EncodedCapture DecodeProtocolPNG(std::string encoded) {
   if (bitmap.drawsNothing()) return {};
   return {std::vector<uint8_t>(span.begin(), span.end()),
           gfx::Size(bitmap.width(), bitmap.height())};
+}
+constexpr double kFullPageMaxSide = 16384;
+constexpr double kFullPageMaxPixels = 80000000;
+double FullPageScale(double width, double height, double density) {
+  if (!std::isfinite(width) || !std::isfinite(height) || !std::isfinite(density) ||
+      width < 1 || height < 1 || density <= 0) return 0;
+  const double device_width = width * density, device_height = height * density;
+  const double scale = std::min({1.0, (kFullPageMaxSide - 1) / device_width,
+      (kFullPageMaxSide - 1) / device_height,
+      std::sqrt(kFullPageMaxPixels * 0.999 / (device_width * device_height))});
+  return std::ceil(device_width * scale) >= 1 && std::ceil(device_height * scale) >= 1 ? scale : 0;
 }
 void PostFailure(CaptureCompletion completion, NSString* error) {
   auto result = [[PCNativePageCaptureResult alloc]
@@ -778,9 +789,49 @@ class PageCapture final : public content::WebContentsObserver,
     original_hide_scrollbars_ = prefs.hide_scrollbars;
     original_record_document_ = prefs.record_whole_document;
     protocol_inflight_ = true;
-    constexpr std::string_view command =
-        R"({"id":1,"method":"Page.captureScreenshot","params":{"format":"png","fromSurface":true,"captureBeyondViewport":true}})";
+    constexpr std::string_view command = R"({"id":1,"method":"Page.getLayoutMetrics"})";
     agent_->DispatchProtocolMessage(this, base::as_byte_span(command));
+  }
+  void FullPageMeasured(uint64_t request, double width, double height,
+                        double viewport_width, double viewport_height) {
+    auto keep_alive = weak_from_this().lock();
+    if (!completion_ || request != request_) return;
+    if (!Valid()) { Invalidate(true); return; }
+    auto* view = web_contents()->GetRenderWidgetHostView();
+    const double density = view ? view->GetDeviceScaleFactor() : 0;
+    const double scale = FullPageScale(width, height, density);
+    if (!agent_ || !attached_ || scale <= 0) {
+      Fail(request, @"The renderer could not measure the full page.");
+      return;
+    }
+    if (std::isfinite(viewport_width) && std::isfinite(viewport_height) &&
+        viewport_width >= 1 && viewport_height >= 1 &&
+        viewport_width <= kFullPageMaxSide && viewport_height <= kFullPageMaxSide) {
+      capture_layout_ = [[PCNativeCaptureLayout alloc]
+          initWithViewport:NSMakeSize(viewport_width, viewport_height) scroll:NSZeroPoint
+          region:NSMakeRect(0, 0, viewport_width, viewport_height) scrollContainers:@[]];
+    }
+    base::DictValue clip;
+    clip.Set("x", 0);
+    clip.Set("y", 0);
+    clip.Set("width", width);
+    clip.Set("height", height);
+    clip.Set("scale", scale);
+    base::DictValue params;
+    params.Set("format", "png");
+    params.Set("fromSurface", true);
+    params.Set("captureBeyondViewport", true);
+    params.Set("clip", std::move(clip));
+    base::DictValue command;
+    command.Set("id", 2);
+    command.Set("method", "Page.captureScreenshot");
+    command.Set("params", std::move(params));
+    std::string json;
+    if (!base::JSONWriter::Write(command, &json)) {
+      Fail(request, @"The renderer could not capture the full page.");
+      return;
+    }
+    agent_->DispatchProtocolMessage(this, base::as_byte_span(json));
   }
   void StopProtocol(bool restore) {
     auto keep_alive = weak_from_this().lock();
@@ -820,8 +871,19 @@ class PageCapture final : public content::WebContentsObserver,
     auto parsed = base::JSONReader::Read(base::as_string_view(message),
                                         base::JSON_PARSE_RFC);
     const base::DictValue* value = parsed ? parsed->GetIfDict() : nullptr;
-    if (!value || value->FindInt("id") != 1) return;
+    const std::optional<int> id = value ? value->FindInt("id") : std::nullopt;
+    if (!id || (*id != 1 && *id != 2)) return;
     const uint64_t request = request_;
+    if (*id == 1) {
+      auto read = [value](std::string_view path) {
+        return value->FindDoubleByDottedPath(path).value_or(0);
+      };
+      runner_->PostTask(FROM_HERE, base::BindOnce(&PageCapture::FullPageMeasured,
+          weak_factory_.GetWeakPtr(), request, read("result.cssContentSize.width"),
+          read("result.cssContentSize.height"), read("result.cssLayoutViewport.clientWidth"),
+          read("result.cssLayoutViewport.clientHeight")));
+      return;
+    }
     const std::string* data = value->FindStringByDottedPath("result.data");
     std::string encoded = data ? *data : std::string();
     runner_->PostTask(FROM_HERE, base::BindOnce(&PageCapture::ProtocolResult,

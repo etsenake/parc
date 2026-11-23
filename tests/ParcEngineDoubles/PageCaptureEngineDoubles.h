@@ -19,6 +19,7 @@ NS_SWIFT_UI_ACTOR
 @property(nonatomic, copy) NSString *pageTitle;
 @property(nonatomic, strong, nullable) NSColor *pageThemeColor;
 @property(nonatomic, copy, nullable) NSData *pngData;
+@property(nonatomic, copy, nullable) NSData *pdfData;
 @property(nonatomic, copy, nullable) NSString *errorMessage;
 @property(nonatomic) BOOL deliversImmediately;
 @property(nonatomic) BOOL includesLayout;

@@ -18,6 +18,7 @@
 @property(nonatomic, copy, nullable) NSData *fixturePNG;
 @property(nonatomic, copy, nullable) NSString *fixtureError;
 @property(nonatomic, strong, nullable) PCNativeCaptureLayout *fixtureLayout;
+@property(nonatomic, copy, nullable) NSData *fixturePDF;
 @end
 
 @implementation PageCaptureTestResult
@@ -26,6 +27,7 @@
 - (NSSize)pixelSize { return NSZeroSize; }
 - (NSString *)errorMessage { return self.fixtureError; }
 - (PCNativeCaptureLayout *)layout { return self.fixtureLayout; }
+- (NSData *)pdfData { return self.fixturePDF; }
 @end
 
 @interface PageCaptureTestNativeLease : PCNativePageCapture
@@ -108,6 +110,7 @@
 - (PCNativePageCaptureResult *)makeResult {
     PageCaptureTestResult *result = (PageCaptureTestResult *)[(NSObject *)[PageCaptureTestResult alloc] init];
     result.fixturePNG = self.pngData;
+    result.fixturePDF = self.pdfData;
     result.fixtureError = self.errorMessage;
     if (self.includesLayout) {
         PageCaptureTestLayout *layout = (PageCaptureTestLayout *)[(NSObject *)[PageCaptureTestLayout alloc] init];
