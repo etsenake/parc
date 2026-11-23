@@ -1135,7 +1135,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   }
 
   void SetRate(double rate) {
-    status_.rate = static_cast<float>(rate);
+    status_.rate = rate > 0 ? static_cast<float>(rate) : 0.f;
     UpdatePitchAlgorithm();
     if (!clock_held_) {
       RunClock();
