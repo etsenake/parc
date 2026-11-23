@@ -799,12 +799,12 @@ class PreCommitChecks(RepositoryFixture):
         self.assertFalse((Path(runner.state['run']) / 'swift-check' / head / 'source').exists())
         self.assertEqual(self.git('log', '-1', '--format=%s', 'origin/main'), 'chore(release): 1.1.0')
 
-    def test_failed_compile_names_its_log_commits_nothing_and_a_fixed_main_passes(self):
+    def test_failed_compile_points_to_the_central_log_commits_nothing_and_a_fixed_main_passes(self):
         self.commit('fix: Keep tabs'); head = self.git('rev-parse', 'HEAD')
         runner = self.runner(); self.failing = True
         with self.watched(runner), self.assertRaisesRegex(
-                release.Failure, '^The release-mode Swift compile of ' + head + ' failed; see /.*/swift-check/' + head
-                + '/[^/]+/compiler.log. Nothing was committed or pushed.$'):
+                release.Failure, '^The release-mode Swift compile of ' + head + ' failed; the compiler output is above in '
+                + '/.*/build/master-release-development/nightly-release.log. Nothing was committed or pushed.$'):
             runner.prepare()
         self.assertEqual(self.kinds(), ['swift'])
         self.assertEqual(self.git('rev-parse', 'origin/main'), head)

@@ -93,8 +93,11 @@ def settings(app):
 def build(app, image, log, cache=CACHE):
     dmgbuild = load(cache)[0]
     with log.open("a") as stream:
-        dmgbuild.build_dmg(str(image), VOLUME, settings=settings(app),
-                           callback=lambda info: stream.write(json.dumps(info, default=str) + "\n"))
+        def record(info):
+            line = json.dumps(info, default=str) + "\n"
+            stream.write(line)
+            print(line, end="", flush=True)
+        dmgbuild.build_dmg(str(image), VOLUME, settings=settings(app), callback=record)
 
 
 def window_options():

@@ -152,13 +152,18 @@ def main(argv: list[str] | None = None) -> int:
         record.update(started=utc(), executed=True)
         write_json(output / "start.json", record)
         started = time.monotonic()
-        print(f"{args.mode}: {record['source_count']} Swift sources; log: {output / 'compiler.log'}", flush=True)
+        print(f"{args.mode}: compiling {record['source_count']} Swift sources", flush=True)
         error = None
         compiler_exit = None
         with (output / "compiler.log").open("x") as log:
             try:
-                compiler_exit = subprocess.run(command, cwd=repo, stdout=log,
-                                               stderr=subprocess.STDOUT).returncode
+                with subprocess.Popen(command, cwd=repo, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                      text=True, bufsize=1) as child:
+                    for line in child.stdout:
+                        log.write(line)
+                        sys.stdout.write(line)
+                        sys.stdout.flush()
+                    compiler_exit = child.wait()
             except OSError as exc:
                 error = str(exc)
             finally:

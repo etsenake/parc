@@ -36,17 +36,18 @@ def save(path, value):
 def command(args, log):
     result = subprocess.run([str(arg) for arg in args], capture_output=True, text=True)
     log.write_text(result.stdout + result.stderr)
+    print(result.stdout + result.stderr, end='', flush=True)
     if result.returncode:
-        raise Refusal(f'{args[0]} failed; see {log}')
+        raise Refusal(f'{args[0]} failed; its output is above')
     return result.stdout
 
 
 def notarytool(args, log):
     kind, result = service.call(args, log)
     if kind == service.CREDENTIALS:
-        raise Refusal('notarytool could not use its Keychain profile with Apple; see ' + str(log))
+        raise Refusal('notarytool could not use its Keychain profile with Apple; its output is above')
     if kind != service.OK:
-        raise Refusal(f'{args[0]} failed; see {log}')
+        raise Refusal(f'{args[0]} failed; its output is above')
     return result.stdout
 
 

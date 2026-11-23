@@ -91,8 +91,8 @@ published tag still refuses.
    checksum. It stops naming the file and the
    version needed, and never bumps it. Then the release-mode Swift compile
    (`check-swift.py --mode release --source-archive`) runs on a Git archive of
-   that commit under the run's `swift-check/`; a failure stops and names its
-   `compiler.log`. A passed compile is recorded against the commit's Swift
+   that commit under the run's `swift-check/`. Its compiler output streams into
+   the release log, and a failure stops there. A passed compile is recorded against the commit's Swift
    inputs (`Sources`, `Engine/ParcNative`, the source lock and `scripts`), so a
    resumed run, or a newer main that changed none of them, skips it; a different
    Swift compiler compiles again. If main moves or a local edit appears during
@@ -181,8 +181,10 @@ No shell redirection is needed, and a new run never truncates the log.
 
 `build/releases/current.json` identifies the active run/stage/version/source and
 command PID. Each `build/releases/<run>/` contains atomic `state.json`, an
-`events.jsonl` stage journal and individual command logs. Swift/compiler detail
-is in `package/package-output.log`. Final publication metadata is in
+`events.jsonl` stage journal and per-command copies of the same output. Every
+step, including the Swift compile, notarization and disk image, writes its full
+output to the release log, and no message points anywhere else. Final
+publication metadata is in
 `delivery.json` and `build/releases/latest.json`, including source, engine,
 package, signing, notarization, update-feed and tap identities.
 

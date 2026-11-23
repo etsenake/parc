@@ -667,9 +667,8 @@ class Release:
             self.command([sys.executable, source / 'scripts/check-swift.py', '--repo', source, '--source-archive',
                           '--mode', 'release', '--output-dir', folder, '--label', label], name='swift-check')
         except Failure:
-            log = folder / label / 'compiler.log'
-            raise Failure('The release-mode Swift compile of ' + commit + ' failed; see '
-                          + str(log if log.exists() else Path(self.state['run']) / 'swift-check.log') + '. ' + untouched) from None
+            raise Failure('The release-mode Swift compile of ' + commit + ' failed; the compiler output is above in '
+                          + str(self.log) + '. ' + untouched) from None
         shutil.rmtree(source)
         self.checkpoint(swift_checked=key)
 

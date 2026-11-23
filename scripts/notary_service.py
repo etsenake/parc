@@ -110,6 +110,7 @@ def run(args, log=None, timeout=300):
         result = subprocess.CompletedProcess(args, 124, "", "notarytool timed out after " + str(timeout) + " seconds\n")
     if log:
         log.write_text(result.stdout + result.stderr)
+        print(result.stdout + result.stderr, end="", flush=True)
     return result
 
 
@@ -171,7 +172,7 @@ def submit(path, profile, log, receipt, record, unconfirmed, report=announce):
             if result.returncode == 0:
                 return identity
             raise Refusal("notarytool submit failed after Apple confirmed submission " + identity
-                          + "; see " + str(log) + ". Rerun to resume it without uploading again")
+                          + "; its output is above. Rerun to resume it without uploading again")
         kind, reason = classify(result.returncode, result.stdout + result.stderr)
         if kind not in (UNAVAILABLE, CREDENTIALS, AGREEMENT):
             raise Refusal(unconfirmed)
@@ -180,8 +181,8 @@ def submit(path, profile, log, receipt, record, unconfirmed, report=announce):
         if kind == AGREEMENT:
             raise Agreement()
         if kind == CREDENTIALS:
-            raise Refusal("notarytool could not use its Keychain profile for the upload; see " + str(log)
-                          + ". Fix the profile and rerun; the rerun checks notarytool history before uploading again")
+            raise Refusal("notarytool could not use its Keychain profile for the upload; its output is above."
+                          + " Fix the profile and rerun; the rerun checks notarytool history before uploading again")
         waited = time.monotonic() - started
         if waited >= LIMIT:
             raise Unavailable(reason)
