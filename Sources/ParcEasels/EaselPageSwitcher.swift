@@ -276,7 +276,7 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
         entries.indices.compactMap { frames.indices.contains($0) ? (entries[$0], frames[$0], $0) : nil }
     }
     fileprivate var highlightIndex: Int? { highlighted }
-    fileprivate var renamingIndex: Int? { renaming }
+    var renamingIndex: Int? { renaming }
     fileprivate var dropLineY: CGFloat? {
         guard dragging != nil, let dropIndex else { return nil }
         let pageFrames = entries.indices.filter { entries[$0].row != nil && frames.indices.contains($0) }.map { frames[$0] }
@@ -298,7 +298,14 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
         rows = newRows
         if let renaming, entries.indices.contains(renaming), let id = entries[renaming].row?.id,
            !newRows.contains(where: { $0.id == id }) { endRename(commit: false) }
+        let renamingKey = renaming.flatMap { entries.indices.contains($0) ? key(of: entries[$0]) : nil }
+        let pressedKey = pressed.flatMap { entries.indices.contains($0) ? key(of: entries[$0]) : nil }
+        let wasDragging = dragging != nil
         rebuild()
+        renaming = renamingKey.flatMap { wanted in entries.firstIndex { key(of: $0) == wanted } }
+        pressed = pressedKey.flatMap { wanted in entries.firstIndex { key(of: $0) == wanted } }
+        dragging = wasDragging ? pressed : nil
+        if pressed == nil { pressPoint = nil; dropIndex = nil }
         if let keep {
             let index = entries.firstIndex { entry in
                 if let keepID { return entry.row?.id == keepID }
@@ -719,7 +726,7 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
         setHighlight(nil, animated: true)
     }
 
-    fileprivate func pointerDown(at point: NSPoint, clickCount: Int) {
+    func pointerDown(at point: NSPoint, clickCount: Int) {
         if renaming != nil, entryIndex(at: point) != renaming { endRename(commit: true) }
         guard let index = entryIndex(at: point), isEnabled(index) else { pressed = nil; return }
         if let more = moreButtonFrame(for: index), more.contains(point), showsMoreButton(index) {
@@ -738,7 +745,7 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
         refreshPlate()
     }
 
-    fileprivate func pointerDragged(to point: NSPoint) {
+    func pointerDragged(to point: NSPoint) {
         guard let pressed, let start = pressPoint else { return }
         if dragging == nil {
             guard canReorder, entries[pressed].row != nil, hypot(point.x - start.x, point.y - start.y) > 4 else { return }
@@ -751,7 +758,7 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
         redrawRows()
     }
 
-    fileprivate func pointerUp(at point: NSPoint) {
+    func pointerUp(at point: NSPoint) {
         defer {
             pressed = nil
             pressPoint = nil
