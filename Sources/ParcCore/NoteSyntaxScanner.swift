@@ -230,7 +230,10 @@ struct NoteSyntaxScanner {
     }
 
     func text(_ start: Int, _ stop: Int) -> String {
-        String(decoding: units[max(0, start)..<min(units.count, stop)], as: UTF16.self)
+        let lower = max(0, start)
+        let upper = min(units.count, stop)
+        guard upper > lower else { return "" }
+        return String(decoding: units[lower..<upper], as: UTF16.self)
     }
 
     mutating func emit(_ start: Int, _ stop: Int, _ kind: NoteSyntaxKind) {

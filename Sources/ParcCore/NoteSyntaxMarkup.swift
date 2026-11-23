@@ -98,9 +98,10 @@ extension NoteSyntaxScanner {
                 let valueStart = pos
                 let quote = at(pos)
                 if quote == Ch.quote || quote == Ch.apostrophe {
-                    let stop = find([quote], from: pos + 1).map { $0 + 1 } ?? end
+                    let closing = find([quote], from: pos + 1)
+                    let stop = closing.map { $0 + 1 } ?? end
                     lexAttributeValue(from: valueStart, to: stop)
-                    if lastAttribute == "type" { typeValue = text(valueStart + 1, stop - 1).lowercased() }
+                    if lastAttribute == "type" { typeValue = text(valueStart + 1, closing ?? stop).lowercased() }
                     pos = stop
                 } else {
                     while pos < end && !Ch.isSpaceOrNewline(units[pos]) && units[pos] != Ch.greater { pos += 1 }

@@ -24,6 +24,7 @@ struct NoteSyntaxMarkupTestsTokenRangeTests {
     private static let trickySnippets = [
         "\"unterminated", "/* open", "`${`${`${", "<div <span", "'''", "#{", "${", "$(", "<<EOF", "@\"", "r#\"",
         "[[", "--[[", "{-", "```", "<!--", "\\", "\u{1F600}\"\u{1F600}", "a /b/ c", "\n\n\t ", "%w(", "~r/", "<?php",
+        "<a type=\"", "<a type='", "<script type=\"", "<script type=\"text/x", "<a type=",
     ]
 
     @Test(arguments: languageIDs, trickySnippets)
@@ -45,5 +46,12 @@ struct NoteSyntaxMarkupTestsTokenRangeTests {
     @Test(arguments: languageIDs)
     func anAdversarialBlockOfCodeStaysWellFormed(language: String) {
         SyntaxProbe(language, String(repeating: "( / [ * _ ` < ${ #{ \" ' ", count: 4_000)).expectWellFormed()
+    }
+
+    @Test
+    func anUnclosedTypeAttributeAtTheEndOfAnHTMLBlockDoesNotCrash() {
+        let probe = SyntaxProbe("html", "<script type=\"")
+        probe.expectWellFormed()
+        #expect(probe.kind("script") == .tag)
     }
 }
