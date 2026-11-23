@@ -77,6 +77,7 @@ struct EaselPagePoolTestsCapture {
         #expect(area.page == area.visible)
         #expect(area.visible.width == 480 && area.visible.height == 320 - NoteEmbedSurface.headerHeight)
         #expect(surface.liveAddress.absoluteString == board.item.url)
+        #expect(engine.liveDisplayZoom == 480.0 / 1280.0)
     }
 
     @MainActor @Test

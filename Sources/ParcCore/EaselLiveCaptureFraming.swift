@@ -29,8 +29,14 @@ package enum EaselCaptureGeometry {
         return layout.isValid ? layout : nil
     }
 
-    package static func liveFrame(_ frame: EaselRect, layout: EaselCaptureLayout) -> EaselRect {
-        EaselRect(x: frame.x, y: frame.y, width: frame.width, height: max(1, frame.width * layout.screenAspect))
+    package static func liveFrame(_ frame: EaselRect, layout: EaselCaptureLayout, chrome: Double) -> EaselRect {
+        EaselRect(x: frame.x, y: frame.y, width: frame.width,
+                  height: max(1, frame.width * layout.screenAspect + max(0, chrome)))
+    }
+
+    package static func fullPageZoom(width: Double, layout: EaselCaptureLayout) -> Double? {
+        guard layout.isFullPage, width.isFinite, width > 0, layout.viewport.x >= 1 else { return nil }
+        return width / layout.viewport.x
     }
 
     package static func snapshotFrame(_ frame: EaselRect, imageWidth: Double, imageHeight: Double) -> EaselRect {
@@ -38,12 +44,12 @@ package enum EaselCaptureGeometry {
         return EaselRect(x: frame.x, y: frame.y, width: frame.width, height: max(1, frame.width * imageHeight / imageWidth))
     }
 
-    package static func settingLive(_ item: EaselItem, enabled: Bool, imageSize: CGSize?) -> EaselItem {
+    package static func settingLive(_ item: EaselItem, enabled: Bool, imageSize: CGSize?, chrome: Double = 0) -> EaselItem {
         var next = item
         next.liveCapture = enabled
         guard let layout = item.captureLayout, layout.isFullPage, (item.liveCapture == true) != enabled else { return next }
         if enabled {
-            next.frame = liveFrame(item.frame, layout: layout)
+            next.frame = liveFrame(item.frame, layout: layout, chrome: chrome)
         } else if let imageSize {
             next.frame = snapshotFrame(item.frame, imageWidth: Double(imageSize.width), imageHeight: Double(imageSize.height))
         }

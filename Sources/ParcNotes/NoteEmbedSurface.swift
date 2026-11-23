@@ -7,7 +7,7 @@ import ParcKit
 package final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
     package enum Host: Equatable { case note, easel }
 
-    static let headerHeight: CGFloat = 38
+    package static let headerHeight: CGFloat = 38
     package let browser: PCBrowserView
     let address: URL
     let liveAddress: URL
@@ -313,6 +313,7 @@ package final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
             positionCapture()
         } else {
             browser.frame = clip.bounds
+            applyDisplayZoom()
         }
         cover.frame = pageRect
         fallback.frame = pageRect
@@ -501,8 +502,16 @@ package final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
         }
     }
 
+    private func applyDisplayZoom() {
+        guard let layout = captureLayout, layout.isFullPage, let page = browser.nativePage, !page.isClosed,
+              page.embeddedOwnerValid, let zoom = EaselCaptureGeometry.fullPageZoom(width: Double(clip.bounds.width), layout: layout)
+        else { return }
+        page.setLiveCaptureDisplayZoom(zoom)
+    }
+
     package func positionCapture(force: Bool = false) {
-        guard positioningAllowed, framesCapture, let layout = captureLayout, let page = browser.nativePage, !page.isClosed,
+        if !framesCapture { applyDisplayZoom(); return }
+        guard positioningAllowed, let layout = captureLayout, let page = browser.nativePage, !page.isClosed,
               page.embeddedOwnerValid, window != nil else { return }
         let zoom = page.liveCaptureZoomFactor
         let width = min(clip.bounds.width, clip.bounds.height * layout.region.width / layout.region.height)

@@ -1591,6 +1591,7 @@ __attribute__((visibility("default")))
 NS_SWIFT_UI_ACTOR
 @interface PCNativePage (LiveCapture)
 @property(nonatomic, readonly) double liveCaptureZoomFactor;
+- (void)setLiveCaptureDisplayZoom:(double)factor NS_SWIFT_NAME(setLiveCaptureDisplayZoom(_:));
 - (nullable PCNativeLiveCapturePosition*)positionLiveCapture:(NSRect)region
     scrollOffset:(NSPoint)scrollOffset
     scrollContainers:(NSArray<PCNativeCaptureScrollContainer*>*)scrollContainers

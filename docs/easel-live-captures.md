@@ -49,10 +49,14 @@ geometry.
 ## Full-page captures
 
 A full-page capture has no region to frame, so Make live turns its tall card
-into a screen-shaped live window: the card keeps its width and top edge and its
-height becomes the width times the captured viewport's height over its width.
-The page loads at its top with no framing transform, no lining-up cover and no
-couldn't-line-up path. While the card is selected, wheel scrolling scrolls the
+into a screen-shaped live window: the card keeps its width and top edge, and
+its page area below the 38-point header becomes the width times the captured
+viewport's height over its width. The page loads at its top with no framing
+transform, no lining-up cover and no couldn't-line-up path. It keeps the
+captured desktop layout: the live page gets a temporary zoom of the card's
+width over the captured viewport width, applied again after each load, so a
+narrow card shows the same layout as the capture rather than the site's narrow
+one (`setLiveCaptureDisplayZoom`, clamped to Chromium's zoom range). While the card is selected, wheel scrolling scrolls the
 page inside it, as for a webpage object; clicks and typing follow the same
 selected-object rules as region captures. Back to snapshot restores the tall
 card at the live card's current width and the image's shape. The live flag and

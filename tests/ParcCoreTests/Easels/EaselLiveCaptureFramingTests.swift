@@ -231,6 +231,18 @@ struct EaselLiveCaptureFramingTests {
         #expect(live.frame == EaselRect(x: 40, y: 60, width: 320, height: 200))
     }
 
+    @Test func theLiveWindowAddsItsHeaderBelowTheScreenShape() {
+        let live = EaselCaptureGeometry.settingLive(Self.card(Self.fullPage, frame: .init(x: 40, y: 60, width: 320, height: 2400)),
+                                                    enabled: true, imageSize: CGSize(width: 1280, height: 9600), chrome: 38)
+        #expect(live.frame == EaselRect(x: 40, y: 60, width: 320, height: 238))
+    }
+
+    @Test func aFullPageLivePageZoomsToTheCapturedWidth() {
+        #expect(EaselCaptureGeometry.fullPageZoom(width: 320, layout: Self.fullPage) == 320 / Self.fullPage.viewport.x)
+        #expect(EaselCaptureGeometry.fullPageZoom(width: 0, layout: Self.fullPage) == nil)
+        #expect(EaselCaptureGeometry.fullPageZoom(width: 320, layout: Self.windowOnly()) == nil)
+    }
+
     @Test func backToSnapshotUsesTheLiveWidthAndTheImageShape() {
         let snapshot = EaselCaptureGeometry.settingLive(Self.card(Self.fullPage, frame: .init(x: 40, y: 60, width: 500, height: 312.5), live: true),
                                                         enabled: false, imageSize: CGSize(width: 1280, height: 9600))

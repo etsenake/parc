@@ -1215,6 +1215,16 @@ class LiveCapturePosition final : public std::enable_shared_from_this<LiveCaptur
   return contents && self.embeddedOwnerValid ?
       blink::ZoomLevelToZoomFactor(content::HostZoomMap::GetZoomLevel(contents)) : 1;
 }
+- (void)setLiveCaptureDisplayZoom:(double)factor {
+  auto* contents = parc::ContentsForNativePage(self);
+  auto* frame = contents ? contents->GetPrimaryMainFrame() : nullptr;
+  if (!frame || !self.embeddedOwnerValid || !std::isfinite(factor) || factor <= 0) return;
+  const double level = blink::ZoomFactorToZoomLevel(
+      std::clamp(factor, blink::kMinimumBrowserZoomFactor, blink::kMaximumBrowserZoomFactor));
+  if (blink::ZoomValuesEqual(content::HostZoomMap::GetZoomLevel(contents), level)) return;
+  if (auto* map = content::HostZoomMap::GetForWebContents(contents))
+    map->SetTemporaryZoomLevel(frame->GetGlobalId(), level);
+}
 - (PCNativeLiveCapturePosition*)positionLiveCapture:(NSRect)region scrollOffset:(NSPoint)scroll
     scrollContainers:(NSArray<PCNativeCaptureScrollContainer*>*)containers
     displayWidth:(double)width completion:(void (^)(BOOL))completion {

@@ -2358,7 +2358,8 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
         var next = session.document
         guard let index = next.items.firstIndex(where: { $0.id == id }) else { return }
         next.items[index] = EaselCaptureGeometry.settingLive(next.items[index], enabled: enabled,
-                                                             imageSize: item.assetID.flatMap { image($0)?.size })
+                                                             imageSize: item.assetID.flatMap { image($0)?.size },
+                                                             chrome: Double(NoteEmbedSurface.headerHeight))
         prepareReplacement(session.merged(next)) { [weak self] in
             guard let self else { return }
             self.commit(enabled ? "Make captured region live" : "Show captured image") { $0 = next }

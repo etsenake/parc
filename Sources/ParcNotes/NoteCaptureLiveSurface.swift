@@ -161,7 +161,14 @@ final class NoteCaptureLiveSurface: NSView, NoteEmbeddedPageInputSurface {
     func cancelPositioning() { positioner.cancel() }
 
     func positionCapture(force: Bool) {
-        guard positioningAllowed, framesCapture else { return }
+        guard framesCapture else {
+            if let page = browser.nativePage, !page.isClosed, page.embeddedOwnerValid,
+               let zoom = EaselCaptureGeometry.fullPageZoom(width: Double(clip.bounds.width), layout: captureLayout) {
+                page.setLiveCaptureDisplayZoom(zoom)
+            }
+            return
+        }
+        guard positioningAllowed else { return }
         positioner.position(browser: browser, clip: clip, force: force) { [weak self] text, retry in
             self?.setStatus(text, retry: retry)
         }
