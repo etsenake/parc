@@ -1174,13 +1174,13 @@ class HlsMediaSelection::Impl : public std::enable_shared_from_this<HlsMediaSele
     // Set the end of every open cue before adding new ones.
     double earliest = kInfinity;
     for (AVMetadataItem* item in items) {
-      if (CMTIME_IS_VALID(item.time)) {
+      if (CMTIME_IS_NUMERIC(item.time)) {
         earliest = std::min(earliest, std::max(CMTimeGetSeconds(item.time), 0.0));
       }
     }
     UpdatePendingDataCueEndTimes(track, earliest, cues);
     for (AVMetadataItem* item in items) {
-      double start = CMTIME_IS_VALID(item.time) ? std::max(CMTimeGetSeconds(item.time), 0.0) : 0;
+      double start = CMTIME_IS_NUMERIC(item.time) ? std::max(CMTimeGetSeconds(item.time), 0.0) : 0;
       double end = kInfinity;
       CMTime duration = item.duration;
       if (CMTIME_IS_VALID(duration) && CMTimeGetSeconds(duration) > 0.001) {
@@ -1223,7 +1223,7 @@ class HlsMediaSelection::Impl : public std::enable_shared_from_this<HlsMediaSele
       NSMutableArray* copies = [NSMutableArray array];
       for (AVMetadataItem* item in group.items) {
         AVMutableMetadataItem* copy = [item mutableCopy];
-        if (!CMTIME_IS_VALID(copy.time)) {
+        if (!CMTIME_IS_NUMERIC(copy.time)) {
           copy.time = CMTimeMakeWithSeconds(group_start, 1000000);
         }
         if (!CMTIME_IS_VALID(copy.duration)) {
