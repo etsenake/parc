@@ -122,9 +122,9 @@ enum EaselInlineText {
             if piece == "\u{FFFC}", value.attribute(.attachment, at: range.location, effectiveRange: nil) == nil { orphans.append(range) }
         }
         for range in orphans.reversed() { result.deleteCharacters(in: range) }
-        for (range, inline) in places.reversed() {
-            let range = NSRange(location: range.location - orphans.filter { $0.location < range.location }.count, length: range.length)
-            var attrs = value.attributes(at: range.location, effectiveRange: nil)
+        for (original, inline) in places.reversed() {
+            let range = NSRange(location: original.location - orphans.filter { $0.location < original.location }.count, length: original.length)
+            var attrs = value.attributes(at: original.location, effectiveRange: nil)
             attrs.removeValue(forKey: .attachment)
             if inline.kind == .note, let url = inline.noteURL { attrs[.link] = url }
             result.replaceCharacters(in: range, with: NSAttributedString(string: inline.readable(now: now), attributes: attrs))
