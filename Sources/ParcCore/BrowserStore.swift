@@ -2815,7 +2815,8 @@ package final class BrowserStore: ObservableObject {
                Set(layout.tabIDs).count == layout.tabIDs.count,
                BrowserSplitLayout.normalized(layout.widthFactors, count: layout.tabIDs.count) != nil {
                 let members = layout.tabIDs.compactMap { id in
-                    tabs.first { $0.id == id && $0.archivedAt == tab.archivedAt && $0.archiveProvenance?.groupID == group }
+                    tabs.first { $0.id == id && $0.archivedAt == tab.archivedAt && $0.archiveProvenance?.groupID == group
+                        && $0.archiveProvenance?.split == layout }
                 }
                 if members.count == layout.tabIDs.count {
                     consumed.formUnion(members.map(\.id))
