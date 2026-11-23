@@ -30,7 +30,8 @@ package final class NoteImageContentView: NoteMediaContentView, NoteMediaResizin
     private let moreChip = NoteToolbarButton(icon: .symbol("ellipsis"), label: "More")
     private var source: NoteMediaSource = .empty
     private var props = NoteBlockProps()
-    private var natural: CGSize?
+    private var pictureNatural: CGSize?
+    private var natural: CGSize? { NoteMediaLayout.naturalSize(picture: pictureNatural, snapshot: snapshotLayer?.snapshot?.size) }
     private var image: NoteMediaImage?
     private var requestedPixels = 0
     private var liveWidth: CGFloat?
@@ -116,9 +117,9 @@ package final class NoteImageContentView: NoteMediaContentView, NoteMediaResizin
             requestedPixels = 0
             NoteMediaMotion.instant { picture.contents = nil; picture.opacity = 0 }
             picture.removeAllAnimations()
-            natural = source.url.flatMap { NoteMediaImageLoader.shared.naturalSize(of: $0) }
+            pictureNatural = source.url.flatMap { NoteMediaImageLoader.shared.naturalSize(of: $0) }
             if let url = source.url, let cached = NoteMediaImageLoader.shared.bestCached(url) {
-                natural = cached.pointSize
+                pictureNatural = cached.pointSize
                 show(cached, animated: false)
             }
         } else if framingChanged, window != nil, image != nil {
@@ -133,6 +134,8 @@ package final class NoteImageContentView: NoteMediaContentView, NoteMediaResizin
     private func refreshSnapshot() {
         let url = host?.snapshotSource.url
         guard url != snapshotURL else { return }
+        let before = natural
+        defer { if natural != before, before != nil { host?.invalidateMeasuredHeight() } }
         snapshotURL = url
         snapshotLayer?.removeFromSuperlayer()
         snapshotLayer = nil
@@ -316,8 +319,9 @@ package final class NoteImageContentView: NoteMediaContentView, NoteMediaResizin
             switch result {
             case .success(let loaded):
                 let first = self.image == nil
-                let aspectChanged = self.natural.map { abs(NoteMediaLayout.aspect(of: $0) - NoteMediaLayout.aspect(of: loaded.pointSize)) > 0.001 } ?? true
-                self.natural = loaded.pointSize
+                let before = self.natural
+                self.pictureNatural = loaded.pointSize
+                let aspectChanged = before.map { abs(NoteMediaLayout.aspect(of: $0) - NoteMediaLayout.aspect(of: self.natural)) > 0.001 } ?? true
                 self.show(loaded, animated: first && self.window != nil)
                 if aspectChanged { self.host?.invalidateMeasuredHeight() }
                 self.needsLayout = true
@@ -329,8 +333,8 @@ package final class NoteImageContentView: NoteMediaContentView, NoteMediaResizin
     }
 
     private var maxNaturalPixels: Int {
-        guard let natural else { return .max }
-        return NoteMediaImageLoader.bucket(for: Int(max(natural.width, natural.height) * 2))
+        guard let pictureNatural else { return .max }
+        return NoteMediaImageLoader.bucket(for: Int(max(pictureNatural.width, pictureNatural.height) * 2))
     }
 
     private func show(_ loaded: NoteMediaImage, animated: Bool) {

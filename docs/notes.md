@@ -53,9 +53,13 @@ capture stays sharp at the note's width instead of being squeezed. A full page t
 long for full Retina sharpness also brings the engine's vector PDF of the page,
 saved beside the PNG and named in the block's `snapshot` attribute; the block draws
 it in 512-pixel tiles at the note's width and backing scale, over the PNG until
-they land. Replacing the picture drops the PDF, a copy pasted into another note
-keeps only the PNG (pasted onto an Easel it keeps both), and an unreadable PDF
-quietly leaves the PNG. Their header
+they land, and the full-screen zoom draws it the same way. The block takes its
+natural size from the PDF page (1 point per CSS pixel), so a long capture fills
+the column like any capture of a page that wide. Replacing the picture drops the
+PDF. Copy, cut, paste and drag into another note copy the PDF into that note's
+Attachments with the PNG, an import landing rewrites both paths, and HTML or
+Markdown export copies both. Pasted onto an Easel it keeps both, and an
+unreadable PDF quietly leaves the PNG. Their header
 shows the page's favicon, title and domain with an Easel-style label such as
 "Snapshot · captured today" and Make live, which frames the live page to the
 captured region in the note's Profile. A full-page capture goes live as a

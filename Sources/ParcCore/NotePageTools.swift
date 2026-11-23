@@ -667,6 +667,7 @@ package enum NotePageExport {
         if let icon = page.settings.icon, isImageSource(icon) { sources.append(icon) }
         for block in page.allBlocks() where block.kind.isMedia {
             if let source = block.props.source { sources.append(source) }
+            if block.kind == .image, let snapshot = block.props.capture?.snapshot { sources.append(snapshot) }
         }
         var seen = Set<String>()
         return sources.filter { source in

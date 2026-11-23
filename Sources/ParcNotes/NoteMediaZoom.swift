@@ -8,6 +8,7 @@ package final class NoteMediaZoomOverlay: NSView {
     private let picture = CALayer()
     private let content = CALayer()
     private let shape = CAShapeLayer()
+    private let snapshotLayer: NoteCaptureSnapshotLayer?
     private var crop = NoteImageCrop.full
     private var mask: NoteImageMask?
     private var image: NoteMediaImage
@@ -19,9 +20,10 @@ package final class NoteMediaZoomOverlay: NSView {
     private var onClose: (() -> Void)?
     private static let margin: CGFloat = 36
 
-    private init(image: NoteMediaImage, source: URL?, origin: NSRect) {
+    private init(image: NoteMediaImage, source: URL?, snapshot: URL?, origin: NSRect) {
         self.image = image
         self.source = source
+        snapshotLayer = snapshot.flatMap { url in CaptureSnapshotPDF(url: url).map { NoteCaptureSnapshotLayer(snapshot: $0, url: url) } }
         originRect = origin
         super.init(frame: .zero)
         addCursorUpdateArea()
@@ -34,6 +36,7 @@ package final class NoteMediaZoomOverlay: NSView {
         shape.anchorPoint = .zero
         shape.fillColor = NSColor.black.cgColor
         picture.addSublayer(content)
+        if let snapshotLayer { picture.addSublayer(snapshotLayer) }
         picture.anchorPoint = CGPoint(x: 0.5, y: 0.5)
         picture.cornerCurve = .continuous
         picture.cornerRadius = NoteMediaStyle.imageRadius
@@ -54,12 +57,12 @@ package final class NoteMediaZoomOverlay: NSView {
     package override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     @discardableResult
-    package static func present(image: NoteMediaImage, source: URL?, from rect: NSRect, of view: NSView,
+    package static func present(image: NoteMediaImage, source: URL?, snapshot: URL? = nil, from rect: NSRect, of view: NSView,
                         in canvas: NSView, overlay host: NSView, onClose: (() -> Void)? = nil,
                         crop: NoteImageCrop? = nil, mask: NoteImageMask? = nil) -> NoteMediaZoomOverlay {
         let visible = canvas.visibleRect.isEmpty ? canvas.bounds : canvas.visibleRect
         let frame = host.convert(visible, from: canvas)
-        let overlay = NoteMediaZoomOverlay(image: image, source: source, origin: .zero)
+        let overlay = NoteMediaZoomOverlay(image: image, source: source, snapshot: snapshot, origin: .zero)
         overlay.frame = frame
         overlay.originRect = overlay.convert(rect, from: view)
         overlay.onClose = onClose
@@ -83,10 +86,12 @@ package final class NoteMediaZoomOverlay: NSView {
             backdrop.frame = bounds
             content.contents = image.first
             content.contentsScale = scale
+            snapshotLayer?.contentsScale = scale
             picture.bounds = CGRect(origin: .zero, size: originRect.size)
             picture.position = CGPoint(x: originRect.midX, y: originRect.midY)
             placeInner(for: originRect.size)
         }
+        snapshotLayer?.refreshOrientation()
         startAnimating()
         let target = fittedRect()
         animate(to: target, spring: .settle)
@@ -98,7 +103,8 @@ package final class NoteMediaZoomOverlay: NSView {
     private func fittedRect() -> NSRect {
         let area = bounds.insetBy(dx: Self.margin, dy: Self.margin)
         guard area.width > 0, area.height > 0 else { return bounds }
-        let whole = image.pointSize.width > 0 ? image.pointSize : CGSize(width: image.first.width, height: image.first.height)
+        let whole = snapshotLayer?.snapshot?.size
+            ?? (image.pointSize.width > 0 ? image.pointSize : CGSize(width: image.first.width, height: image.first.height))
         let natural = crop.croppedSize(of: whole)
         let fit = min(area.width / natural.width, area.height / natural.height)
         let current = originRect.width / max(1, natural.width)
@@ -144,6 +150,10 @@ package final class NoteMediaZoomOverlay: NSView {
         content.add(NoteAnimation.spring("bounds", spring, from: NSValue(rect: fromContentBounds), to: NSValue(rect: content.bounds)), forKey: "zoom.content.bounds")
         content.add(NoteAnimation.spring("position", spring, from: NSValue(point: fromContentPosition), to: NSValue(point: content.position)),
                     forKey: "zoom.content.position")
+        snapshotLayer?.add(NoteAnimation.spring("bounds", spring, from: NSValue(rect: fromContentBounds), to: NSValue(rect: content.bounds)),
+                           forKey: "zoom.content.bounds")
+        snapshotLayer?.add(NoteAnimation.spring("position", spring, from: NSValue(point: fromContentPosition), to: NSValue(point: content.position)),
+                           forKey: "zoom.content.position")
         if mask != nil, let fromPath, let toPath = shape.path {
             shape.add(NoteAnimation.spring("path", spring, from: fromPath, to: toPath), forKey: "zoom.shape.path")
         }
@@ -163,7 +173,7 @@ package final class NoteMediaZoomOverlay: NSView {
     }
 
     private func upgradeResolution(for rect: NSRect) {
-        guard let source else { return }
+        guard let source, snapshotLayer == nil else { return }
         let pixels = NoteMediaImageLoader.pixels(for: rect.size, scale: window?.backingScaleFactor ?? 2)
         guard pixels > image.decodedPixels else { return }
         NoteMediaImageLoader.shared.load(source, pixels: pixels) { [weak self] result in
@@ -212,6 +222,8 @@ package final class NoteMediaZoomOverlay: NSView {
         let full = crop.fullRect(forFrame: local)
         content.bounds = CGRect(origin: .zero, size: full.size)
         content.position = full.origin
+        snapshotLayer?.bounds = content.bounds
+        snapshotLayer?.position = full.origin
         shape.frame = local
         shape.path = mask?.path(in: local)
     }

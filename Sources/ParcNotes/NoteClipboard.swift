@@ -215,6 +215,10 @@ extension NoteClipboard {
             guard let base, let mediaFolder, mayImportMedia(url, from: base, trusted: mediaFolder) else { return nil }
             return try? NoteMediaImport.source(importing: url, environment: environment)
         }
+        func movedMedia(_ source: String) -> String? {
+            if let carried = NoteMediaImport.carriedSource(source, environment: environment) { return carried }
+            return absolute(source).flatMap(importedMedia)
+        }
         func relink(_ target: String) -> String {
             guard let url = absolute(target) else { return target }
             return environment.linkTarget(for: url)
@@ -246,7 +250,10 @@ extension NoteClipboard {
                     else if !block.kind.isMedia { copy.props.source = relink(source) }
                 }
             }
-            if copy.props.source != block.props.source { copy.props.capture?.snapshot = nil }
+            if let snapshot = block.props.capture?.snapshot {
+                let kept = copy.props.source == block.props.source ? snapshot : nil
+                copy.props.capture?.snapshot = movedMedia(snapshot) ?? kept
+            }
             if let target = block.props.target, absolute(target) != nil { copy.props.target = relink(target) }
             if var table = block.props.table {
                 table.rows = table.rows.map { $0.map(fix) }
@@ -260,8 +267,10 @@ extension NoteClipboard {
 
     @MainActor
     private static func carriesImport(_ block: NoteBlock, imports: NoteAttachmentImports) -> Bool {
-        if block.kind.isMedia, let source = block.props.source, let url = URL(string: source), url.isFileURL,
-           imports.mayImport(url) { return true }
+        if block.kind.isMedia, [block.props.source, block.props.capture?.snapshot].contains(where: { source in
+            guard let source, let url = URL(string: source), url.isFileURL else { return false }
+            return imports.mayImport(url)
+        }) { return true }
         return block.children.contains { carriesImport($0, imports: imports) }
     }
 

@@ -638,8 +638,8 @@ final class NoteMediaBlockView: NoteCaptionedBlockView, NotePageHostObserving {
 
     func zoom(image: NoteMediaImage, from rect: NSRect, in view: NSView, crop: NoteImageCrop? = nil, mask: NoteImageMask? = nil) {
         guard let canvas = editor?.canvas else { return }
-        NoteMediaZoomOverlay.present(image: image, source: source.url, from: rect, of: view, in: canvas, overlay: canvas.overlayView,
-                                     crop: crop, mask: mask)
+        NoteMediaZoomOverlay.present(image: image, source: source.url, snapshot: snapshotSource.url, from: rect, of: view, in: canvas,
+                                     overlay: canvas.overlayView, crop: crop, mask: mask)
     }
 
     var imageContent: NoteImageContentView? { content as? NoteImageContentView }

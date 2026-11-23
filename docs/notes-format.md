@@ -379,7 +379,7 @@ the file's path on its own line. HTML export shows the PDF in an `<object>`
 A **capture** is an image sent from Parc's capture tool, flagged with its page:
 `![Story](Attachments/Story.png) <!-- parc capture="https://…" captured="2026-11-20T15:04:05Z" viewport="1280,800" scroll="0,1200" region="10,20,400,300" -->`.
 `viewport`, `scroll`, `region` (CSS pixels) and, inside a scrolled panel, `scrollers` let it go
-live; `fullpage` makes it go live as a scrollable page, not a framed region; `live` marks it live. Exports show the image with a "Captured from" link.
+live; `fullpage` makes it go live as a scrollable page, not a framed region; `live` marks it live; `snapshot` names the page's vector PDF in Attachments. Exports show the image with a "Captured from" link.
 
 A **bookmark** is a link on its own line plus its cached preview:
 

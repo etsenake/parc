@@ -318,10 +318,13 @@ package final class NoteAttachmentImports {
         guard !replacements.isEmpty else { return }
         let page = session.page
         for id in page.documentOrder(includingCollapsed: true) {
-            guard let block = page.block(id), block.kind.isMedia, let source = block.props.source,
-                  let path = replacements[source] else { continue }
+            guard let block = page.block(id), block.kind.isMedia else { continue }
+            let source = block.props.source, snapshot = block.props.capture?.snapshot
+            let path = source.flatMap { replacements[$0] }, snapshotPath = snapshot.flatMap { replacements[$0] }
+            guard path != nil || snapshotPath != nil else { continue }
             session.updateBlockMetadata(id, kind: .structure) { block in
-                if block.props.source == source { block.props.source = path }
+                if let path, block.props.source == source { block.props.source = path }
+                if let snapshotPath, block.props.capture?.snapshot == snapshot { block.props.capture?.snapshot = snapshotPath }
             }
         }
         session.updateSettingsMetadata { settings in

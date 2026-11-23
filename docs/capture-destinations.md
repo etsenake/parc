@@ -107,7 +107,8 @@ render; unused tiles age out of the cache. PDF, PNG, Copy as
 Image and print draw the PDF itself as vectors in the card's frame; HTML export
 embeds the full-resolution PNG. Copy, paste, Send and Copy to
 Easel and moving an Easel between Profiles carry the PDF with the card. In a
-note the PDF sits in Attachments beside the PNG, as [Notes](notes.md) describes.
+note the PDF sits in Attachments beside the PNG, sizes the block, draws in the
+zoom view and travels with the block, as [Notes](notes.md) describes.
 
 ## Ownership and checks
 

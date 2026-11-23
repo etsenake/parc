@@ -40,6 +40,10 @@ enum NoteMediaLayout {
         return CGSize(width: size.width * scale, height: size.height * scale)
     }
 
+    static func naturalSize(picture: CGSize?, snapshot: CGSize?) -> CGSize? {
+        snapshot.flatMap(plausibleSize) ?? picture
+    }
+
     static func aspect(of size: CGSize?) -> CGFloat {
         guard let size, size.width > 0, size.height > 0 else { return fallbackAspect }
         return size.height / size.width

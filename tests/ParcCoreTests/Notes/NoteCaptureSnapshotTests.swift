@@ -28,6 +28,11 @@ struct NoteCaptureSnapshotTests {
         let html = NotePageHTML.fragment([block])
         #expect(html.contains("data-snapshot=\"Attachments/Long.pdf\""))
     }
+
+    @Test func exportingANoteCopiesTheCapturesPDFWithItsPicture() {
+        let block = NoteCapture.block(source: "Attachments/Long.png", title: "Long", capture: capture)
+        #expect(NotePageExport.relativeAssetSources(in: NotePage(blocks: [block])) == ["Attachments/Long.png", "Attachments/Long.pdf"])
+    }
 }
 
 @MainActor final class NoteCaptureSnapshotDeliveryTests {
