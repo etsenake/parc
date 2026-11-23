@@ -102,6 +102,29 @@ struct CaptureDestinationTests {
     }
 
     @MainActor @Test
+    func placementLandsBelowTheContentOfThePageBeingShown() throws {
+        try withStore { store in
+            let input = EaselImageInput(pngData: try png(), sourceURL: url, pageTitle: "Page", valid: { true })
+            let session = try store.create(title: "Pages")
+            try session.perform("Seed") { $0.items = [EaselItem(kind: .text, frame: .init(x: 0, y: 0, width: 100, height: 900), text: "First")] }
+            let added = try #require(EaselPages.adding(to: session.document))
+            let second = try #require(added.page)
+            var withSecond = added.document
+            withSecond.items.append(EaselItem(kind: .text, frame: .init(x: 0, y: 0, width: 100, height: 60), text: "Second", page: second))
+            try session.perform("Add page") { $0 = withSecond }
+            let first = try #require(EaselPages.contentPages(session.document).first?.id)
+
+            let shown = try EaselImagePlacement.place(input, in: store, destinationID: session.document.id, newTitle: "Ignored", page: second)
+            let onSecond = try #require(session.document.items.first { $0.id == shown.itemID })
+            #expect(onSecond.page == second && onSecond.frame.y == 92)
+
+            let unopened = try EaselImagePlacement.place(input, in: store, destinationID: session.document.id, newTitle: "Ignored")
+            let onFirst = try #require(session.document.items.first { $0.id == unopened.itemID })
+            #expect(onFirst.page == first && onFirst.frame.y == 932)
+        }
+    }
+
+    @MainActor @Test
     func aPageCaptureRetainsItsOriginalGeometryAndBytes() throws {
         try withStore { store in
             let data = try png()

@@ -22,4 +22,10 @@ extension BrowserWindowController {
             MainActor.assumeIsolated { self?.revealEaselObject(object, in: easel, attempt: attempt + 1) }
         }
     }
+
+    func shownEaselPage(_ easel: UUID, profileID: UUID) -> UUID? {
+        let order = [documentInputTabID].compactMap { $0 } + store.state.tabs.filter { $0.archivedAt == nil }.map(\.id)
+        return order.lazy.compactMap { self.easelEditors[$0] }
+            .first { $0.documentID == easel && $0.profileID == profileID }?.editor.canvas.currentPage
+    }
 }

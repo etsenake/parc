@@ -132,10 +132,16 @@ page.
 - **HTML** keeps the title, then one section per page with the page's name as
   a heading over its own drawing. An Easel without pages exports exactly as
   before.
-- **Thumbnails, Easel blocks in notes and previews** show page one. Captures
-  sent to an Easel land on page one, below what's there.
+- **Thumbnails, Easel blocks in notes and previews** show page one.
 
 Dividers and empty pages are left out of exports, unless every page is empty.
+
+## Sending captures and images
+
+A capture or webpage image sent to an Easel lands below what's on the page that
+Easel is showing in the window, or on page one when it isn't open there. The
+Easel then opens on that page with the new card selected and scrolled into
+view, the way an object link reveals its object.
 
 ## Saved format
 

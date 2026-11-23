@@ -28,7 +28,7 @@ package enum EaselPageAddress {
 
 @MainActor
 extension EaselCanvasView {
-    var currentPage: UUID? { session.currentPage }
+    package var currentPage: UUID? { session.currentPage }
     var currentPageName: String { EaselPages.page(session.page, in: session.fullDocument)?.name ?? EaselPages.firstPageName }
     var visitablePages: [EaselPage] { EaselPages.contentPages(session.fullDocument) }
 

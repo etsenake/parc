@@ -308,9 +308,11 @@ extension BrowserWindowController {
                                 && (self.selectedTabIDs.contains(id) || self.peekedDocumentTabID == id)
                             || self.activePagePeek.map { $0.parentPage == nil && $0.browser === view } == true)
                         && !self.transferringTabIDs.contains(id) && image.isValid
-                }, saved: { [weak self] documentID, title in
+                }, shownPage: { [weak self] easel in self?.shownEaselPage(easel, profileID: profileID)
+                }, saved: { [weak self] result in
                     guard let self, self.activeProfileID == profileID, !self.isClosing else { return }
-                    self.openEasel(id: documentID, title: title)
+                    self.openEasel(id: result.id, title: result.title)
+                    self.revealEaselObject(result.itemID, in: result.id)
                 }, finished: { [weak self] in self?.easelImageDestination = nil })
             easelImageDestination = controller
             controller.present(on: window)

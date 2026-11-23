@@ -617,9 +617,11 @@ extension BrowserWindowController {
                 let destinationStore = try EaselEditorViewController.sharedStore(directory:
                     self.store.easelsDirectory(for: profileID))
                 let result = try EaselImagePlacement.place(image, in: destinationStore,
-                    destinationID: destinationID, newTitle: image.pageTitle)
+                    destinationID: destinationID, newTitle: image.pageTitle,
+                    page: destinationID.flatMap { self.shownEaselPage($0, profileID: profileID) })
                 self.pageCapture?.dismiss(restoreFocus: false)
                 withExtendedLifetime(result) { self.openEasel(id: result.id, title: result.title) }
+                self.revealEaselObject(result.itemID, in: result.id)
             }, noteDestinations: allowsCaptureNoteDestinations ? { [weak self] in
                 guard let self, valid() else { throw CocoaError(.userCancelled) }
                 return try self.captureNoteDestinations(profileID: profileID)

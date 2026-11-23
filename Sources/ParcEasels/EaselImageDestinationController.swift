@@ -90,29 +90,31 @@ package final class EaselImageDestinationController {
     private let defaultName: String
     private let view: EaselImageDestinationView
     private let valid: () -> Bool
-    private let saved: (UUID, String) -> Void
+    private let saved: (EaselImagePlacement.Result) -> Void
+    private let shownPage: (UUID) -> UUID?
     private let finished: () -> Void
     private var popover: NotePagePopover?
     private var edited = false
     private var committing = false
 
     package convenience init(image: PCNativeContextImage, directory: URL, valid: @escaping () -> Bool,
-         saved: @escaping (UUID, String) -> Void, finished: @escaping () -> Void) throws {
+         shownPage: @escaping (UUID) -> UUID?, saved: @escaping (EaselImagePlacement.Result) -> Void,
+         finished: @escaping () -> Void) throws {
         if let message = image.errorMessage {
             throw NSError(domain: "Parc.EaselCapture", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: message])
         }
         try self.init(image: EaselImageInput(pngData: image.pngData, sourceURL: image.sourceURL,
             pageTitle: image.pageTitle, valid: { image.isValid }), directory: directory,
-            valid: valid, saved: saved, finished: finished)
+            valid: valid, shownPage: shownPage, saved: saved, finished: finished)
     }
 
-    init(image: EaselImageInput, directory: URL, valid: @escaping () -> Bool,
-         saved: @escaping (UUID, String) -> Void, finished: @escaping () -> Void) throws {
+    init(image: EaselImageInput, directory: URL, valid: @escaping () -> Bool, shownPage: @escaping (UUID) -> UUID?,
+         saved: @escaping (EaselImagePlacement.Result) -> Void, finished: @escaping () -> Void) throws {
         let data = image.pngData
         _ = try EaselImagePlacement.pixelSize(data)
         guard let preview = NSImage(data: data) else { throw EaselStoreError.invalidImage }
-        self.image = image; self.valid = valid; self.saved = saved; self.finished = finished
+        self.image = image; self.valid = valid; self.shownPage = shownPage; self.saved = saved; self.finished = finished
         store = try EaselEditorViewController.sharedStore(directory: directory)
         destinations = try store.list()
         defaultName = image.pageTitle.isEmpty ? "Untitled Easel" : image.pageTitle
@@ -191,8 +193,9 @@ package final class EaselImageDestinationController {
         }
         committing = true
         do {
-            let result = try EaselImagePlacement.place(image, in: store, destinationID: destinationID, newTitle: newName)
-            withExtendedLifetime(result) { dismiss(); saved(result.id, result.title) }
+            let result = try EaselImagePlacement.place(image, in: store, destinationID: destinationID, newTitle: newName,
+                                                       page: destinationID.flatMap(shownPage))
+            dismiss(); saved(result)
         } catch {
             view.show(error: error.localizedDescription)
             committing = false
