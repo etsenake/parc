@@ -377,7 +377,13 @@ package final class EaselEditorViewController: NSViewController, NSTextFieldDele
         titleIcon.titleTextWidth = { [weak self] in self?.titleField.attributedStringValue.size().width ?? 0 }
         root.addSubview(titleIcon)
     }
-    func show(_ error: Error) { status.stringValue = error.localizedDescription; NSSound.beep() }
+    func show(_ error: Error) {
+        let message = error.localizedDescription
+        status.stringValue = message
+        NSSound.beep()
+        guard (error as? LocalizedError)?.errorDescription != nil else { return }
+        showExportToast(.standard(message, icon: "exclamationmark.triangle"))
+    }
     @objc private func undoChange() { canvas.undo(nil) }
     @objc private func redoChange() { canvas.redo(nil) }
     @objc private func showPageMenu(_ sender: NSButton) {

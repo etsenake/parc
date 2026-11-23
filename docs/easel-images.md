@@ -60,9 +60,14 @@ Every picture is copied into the Easel's own storage, never linked by path:
 still pictures are stored as PNG with the camera's rotation already applied, so
 a portrait iPhone photo stands up straight, and animated GIFs keep their own
 bytes so they can still play. The store checks each file's first bytes against
-its type before writing it and refuses anything over 30 MB, pictures larger
-than 16,384 pixels on a side or 80 million pixels in all, and anything it can't
-decode. A new picture lands in the middle of the view, or where it was dropped,
+its type before writing it and keeps each stored file within 30 MB, 16,384
+pixels on a side and 80 million pixels in all. Every way a picture arrives
+(paste, drop, Upload, swap, a link, a page capture and Add Image to Easel) goes
+through one fitter: a picture within those limits keeps its pixels, and a bigger
+one, such as a long full-page capture or a photo whose PNG would pass 30 MB, is
+scaled down just enough to fit instead of being refused. Picture files up to
+512 MB are read; only a picture that can't be decoded is refused, and board
+errors show as a toast with a warning icon. A new picture lands in the middle of the view, or where it was dropped,
 at up to 480 points wide. Pasting prefers GIF data over PNG or TIFF when an app offers both, so a
 GIF copied from a web page stays animated.
 

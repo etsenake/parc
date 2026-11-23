@@ -99,7 +99,8 @@ extension EaselCanvasView {
         let asFile = kind == .file
         let probable = asFile ? .file : EaselMediaImportPlan.classify(sniffed: nil, fileExtension: ext, isImage: image, isMovie: movie, byteCount: size)
         guard let probable else { throw EaselStoreError.invalidFile }
-        guard size <= EaselStore.maximumAssetBytes else { throw EaselMediaImportPlan.tooLargeError(for: probable) }
+        let limit = probable == .image ? EaselImagePlacement.maximumPictureInputBytes : EaselStore.maximumAssetBytes
+        guard size <= limit else { throw EaselMediaImportPlan.tooLargeError(for: probable) }
         let data = try Data(contentsOf: url, options: .mappedIfSafe)
         let classified = asFile ? .file : EaselMediaImportPlan.classify(sniffed: EaselAssetType.sniff(data), fileExtension: ext, isImage: image,
                                                                          isMovie: movie, byteCount: data.count)

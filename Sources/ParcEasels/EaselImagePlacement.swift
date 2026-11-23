@@ -47,27 +47,40 @@ package enum EaselImagePlacement {
         return NSSize(width: width, height: height)
     }
 
+    package nonisolated static let maximumPictureInputBytes = 512 * 1024 * 1024
+
     package static func fitted(_ data: Data) throws -> Data {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+        if let size = try? pixelSize(data), EaselAssetType.sniff(data) == .png, size.width > 0 { return data }
+        return try fittedPicture(data).data
+    }
+
+    package static func fittedPicture(_ data: Data) throws -> (data: Data, size: CGSize) {
+        guard !data.isEmpty, data.count <= maximumPictureInputBytes,
+              let source = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceGetCount(source) > 0,
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = properties[kCGImagePropertyPixelWidth] as? Int,
               let height = properties[kCGImagePropertyPixelHeight] as? Int,
               width > 0, height > 0 else { throw EaselStoreError.invalidImage }
-        let pixels = Double(width) * Double(height)
-        var scale = min(1, Double(maximumSide) / Double(max(width, height)), (Double(maximumPixels) / pixels).squareRoot())
-        if scale >= 1, data.count <= EaselStore.maximumAssetBytes { return data }
-        for _ in 0..<12 {
-            let side = max(1, Int((Double(max(width, height)) * scale).rounded(.down)))
+        let longest = Double(max(width, height))
+        var scale = min(1, Double(maximumSide) / longest, (Double(maximumPixels) / (Double(width) * Double(height))).squareRoot())
+        for _ in 0..<16 {
+            let side = max(1, Int((longest * scale).rounded(.down)))
             let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
                                             kCGImageSourceCreateThumbnailWithTransform: true,
+                                            kCGImageSourceShouldCacheImmediately: true,
                                             kCGImageSourceThumbnailMaxPixelSize: side]
-            guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { break }
+            guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
+                  image.width > 0, image.height > 0 else { throw EaselStoreError.invalidImage }
             let output = NSMutableData()
-            guard let destination = CGImageDestinationCreateWithData(output, "public.png" as CFString, 1, nil) else { break }
+            guard let destination = CGImageDestinationCreateWithData(output, "public.png" as CFString, 1, nil) else {
+                throw EaselStoreError.invalidImage
+            }
             CGImageDestinationAddImage(destination, image, nil)
-            guard CGImageDestinationFinalize(destination) else { break }
+            guard CGImageDestinationFinalize(destination) else { throw EaselStoreError.invalidImage }
             if output.length <= EaselStore.maximumAssetBytes, image.width <= maximumSide, image.height <= maximumSide,
-               Int64(image.width) * Int64(image.height) <= Int64(maximumPixels) { return output as Data }
+               Int64(image.width) * Int64(image.height) <= Int64(maximumPixels) {
+                return (output as Data, CGSize(width: image.width, height: image.height))
+            }
             scale *= 0.85
         }
         throw EaselStoreError.assetImageTooLarge

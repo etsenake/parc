@@ -803,7 +803,7 @@ package enum EaselStoreError: Error, LocalizedError {
         case .invalidDocument(let reason): return "The Easel is invalid: \(reason)."
         case .unsupportedVersion(let version): return "This Easel uses unsupported format version \(version)."
         case .unsafePath: return "The Easel storage path is unsafe."
-        case .invalidImage: return "The image could not be imported."
+        case .invalidImage: return "Parc couldn’t read that picture, so it wasn’t added."
         case .imageTooLarge(let megabytes): return "That picture is a bit big for an Easel. Pictures up to \(megabytes) MB fit."
         case .easelTooLarge(let megabytes): return "This Easel is a bit big to save. Easels up to \(megabytes) MB fit."
         case .tooMuch(let sentence): return sentence

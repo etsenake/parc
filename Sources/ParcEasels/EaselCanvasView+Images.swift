@@ -698,7 +698,7 @@ extension EaselCanvasView {
                 guard let self, let window, self.window === window else { return }
                 do {
                     let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-                    guard values.isRegularFile == true, let size = values.fileSize, size <= EaselStore.maximumAssetBytes else { throw EaselStoreError.assetImageTooLarge }
+                    guard values.isRegularFile == true, let size = values.fileSize, size <= EaselImagePlacement.maximumPictureInputBytes else { throw EaselStoreError.assetImageTooLarge }
                     try self.replaceImage(id: item.id, data: Data(contentsOf: url, options: .mappedIfSafe))
                 } catch { self.onError?(error) }
             }
@@ -748,35 +748,24 @@ extension EaselCanvasView {
         guard reading.files.isEmpty else {
             guard reading.files.count == 1, let url = reading.files.first,
                   let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentTypeKey]), values.isRegularFile == true,
-                  values.contentType?.conforms(to: .image) == true, let size = values.fileSize, size <= EaselStore.maximumAssetBytes else { return nil }
+                  values.contentType?.conforms(to: .image) == true, let size = values.fileSize, size <= EaselImagePlacement.maximumPictureInputBytes else { return nil }
             return try? Data(contentsOf: url, options: .mappedIfSafe)
         }
         return pasteboard.data(forType: Self.gifPasteboardType) ?? reading.image
     }
 
     func preparedImageAsset(_ data: Data) throws -> (data: Data, type: EaselAssetType, pixelSize: CGSize) {
-        guard data.count <= EaselStore.maximumAssetBytes else { throw EaselStoreError.assetImageTooLarge }
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceGetCount(source) > 0,
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int,
-              width > 0, height > 0, width <= 16_384, height <= 16_384, Int64(width) * Int64(height) <= 80_000_000 else {
-            throw EaselStoreError.invalidImage
-        }
-        let frames = CGImageSourceGetCount(source)
-        if EaselAssetType.sniff(data) == .gif, frames > 1, frames <= EaselGIFDecoder.maximumFrames, width * height <= EaselGIFDecoder.maximumAnimatedPixels {
-            guard CGImageSourceCreateImageAtIndex(source, 0, nil) != nil else { throw EaselStoreError.invalidImage }
+        if EaselAssetType.sniff(data) == .gif, data.count <= EaselStore.maximumAssetBytes,
+           let source = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceGetCount(source) > 1,
+           CGImageSourceGetCount(source) <= EaselGIFDecoder.maximumFrames,
+           let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+           let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int,
+           width > 0, height > 0, width <= EaselImagePlacement.maximumSide, height <= EaselImagePlacement.maximumSide,
+           width * height <= EaselGIFDecoder.maximumAnimatedPixels, CGImageSourceCreateImageAtIndex(source, 0, nil) != nil {
             return (data, .gif, CGSize(width: width, height: height))
         }
-        let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true,
-                                        kCGImageSourceShouldCacheImmediately: true, kCGImageSourceThumbnailMaxPixelSize: max(width, height)]
-        let output = NSMutableData()
-        guard let oriented = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary), oriented.width > 0, oriented.height > 0,
-              let destination = CGImageDestinationCreateWithData(output as CFMutableData, UTType.png.identifier as CFString, 1, nil) else {
-            throw EaselStoreError.invalidImage
-        }
-        CGImageDestinationAddImage(destination, oriented, nil)
-        guard CGImageDestinationFinalize(destination) else { throw EaselStoreError.invalidImage }
-        return (output as Data, .png, CGSize(width: oriented.width, height: oriented.height))
+        let picture = try EaselImagePlacement.fittedPicture(data)
+        return (picture.data, .png, picture.size)
     }
 
     func insertImageData(_ data: Data, at point: NSPoint? = nil) throws {

@@ -88,6 +88,7 @@ private final class CaptureControllerFixture {
         let note = CaptureNoteDestination(url: noteURL, title: "Packing", icon: nil,
                                           lastActive: Date(timeIntervalSince1970: 1_700_000_000), modifiedAt: Date(timeIntervalSince1970: 1_650_000_000))
         let overlay = PageCaptureOverlay(frame: .zero, now: { 0 }, reduceMotion: { true }, scheduleFrames: { _ in })
+        overlay.alertSound = {}
         let lease = try #require(engine.lease as? PCNativePageCapture)
         controller = PageCaptureController(lease: lease, sourceView: source, containerView: container, host: host, parent: window,
             valid: { [weak self] in self?.isValid == true }, destination: destination,

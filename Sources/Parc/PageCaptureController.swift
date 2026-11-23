@@ -776,9 +776,10 @@ final class PageCaptureOverlay: NSView {
         setPaletteShown(shown); updateKeyLoop()
         needsLayout = true; needsDisplay = true; window?.invalidateCursorRects(for: self)
     }
+    var alertSound: () -> Void = { NSSound.beep() }
     func showError(_ message: String, alert: Bool = true) {
         palette.setError(message)
-        if alert { NSSound.beep() }
+        if alert { alertSound() }
         CaptureMotion.announce(message, from: self)
     }
     func clearError() { palette.setError(nil) }
