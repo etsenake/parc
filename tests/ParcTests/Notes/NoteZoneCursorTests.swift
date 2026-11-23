@@ -29,7 +29,7 @@ struct NoteZoneCursorTests {
         }
     }
 
-    private struct Fixture {
+    @MainActor private struct Fixture {
         let window = KeyedWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100), styleMask: .borderless, backing: .buffered, defer: false)
         let owner = Owner(frame: NSRect(x: 0, y: 0, width: 200, height: 100))
 
