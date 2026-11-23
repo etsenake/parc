@@ -30,6 +30,8 @@ NS_SWIFT_UI_ACTOR
 @property(nonatomic, readonly) NSUInteger snapshotRequests;
 - (void)replyWithSnapshot:(nullable NSImage *)image NS_SWIFT_NAME(reply(withSnapshot:));
 @property(nonatomic, readonly) double liveDisplayZoom;
+@property(nonatomic) double siteZoom;
+@property(nonatomic, readonly) double positionedWidth;
 @property(nonatomic, readonly) NSUInteger positionRequests;
 @property(nonatomic, readonly) NSRect positionedRegion;
 @property(nonatomic, readonly) NSPoint positionedScroll;

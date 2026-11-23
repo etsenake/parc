@@ -1283,6 +1283,14 @@ class LiveCapturePosition final : public std::enable_shared_from_this<LiveCaptur
   return contents && self.embeddedOwnerValid ?
       blink::ZoomLevelToZoomFactor(content::HostZoomMap::GetZoomLevel(contents)) : 1;
 }
+- (double)liveCaptureSiteZoomFactor {
+  auto* contents = parc::ContentsForNativePage(self);
+  auto* map = contents && self.embeddedOwnerValid ?
+      content::HostZoomMap::GetForWebContents(contents) : nullptr;
+  if (!map) return 1;
+  const GURL& url = contents->GetLastCommittedURL();
+  return blink::ZoomLevelToZoomFactor(map->GetZoomLevelForHostAndScheme(std::string(url.scheme()), std::string(url.host())));
+}
 - (void)setLiveCaptureDisplayZoom:(double)factor {
   auto* contents = parc::ContentsForNativePage(self);
   auto* frame = contents ? contents->GetPrimaryMainFrame() : nullptr;

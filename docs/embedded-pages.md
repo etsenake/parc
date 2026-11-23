@@ -102,13 +102,17 @@ history-swipe handler. Note shortcuts stay out of a focused page: Find, Find
 Next, Find Previous and Use Selection for Find search the page with its own find
 bar, as in an Easel, and Find and Replace is off.
 
-An Easel page keeps its layout at every canvas zoom. Chromium sizes it from the object's own
-bounds, so it lays out at the object's size, scales with the canvas and takes clicks where it is
-drawn; zooming never reflows it into a smaller viewport. Chromium also resizes a page's renderer
-view to its container's size in window coordinates each time a main frame is created or swapped
-in, which a zoomed canvas shrinks by its magnification; the page's state observer sets that view
-back to its container's bounds at each of those points, so a page loaded or navigated while the
-canvas is zoomed fills its object too.
+An Easel page keeps its layout at every canvas zoom and renders sharp. Its surface is
+placed in board units but measures itself in screen points: its bounds are its frame times
+the board's zoom, so the header, chips, status card, popovers and the page itself keep their
+screen size, and Chromium sizes the renderer to the pixels it really covers. A webpage
+object then zooms its page by the board's zoom times the site's own zoom level, so its CSS
+layout width stays the object's width; full-page and region live captures get their own
+framing below. The surface follows its scroll view by itself: during a pinch macOS stretches
+the existing pixels, and once the zoom settles (the end of a pinch, or a short pause after
+an animated zoom) it updates its bounds and page zoom, and it re-applies the page zoom
+after every load. Chromium sizes the renderer from window coordinates, which the holder makes
+equal to its bounds, so a page loaded on a zoomed board fills its object with no correction.
 
 Easel blocks in notes reuse this scroll latch for their canvas. Their webpage
 objects and live captures are pages in the note's own pool, so they share the

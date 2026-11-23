@@ -74,6 +74,7 @@ static char easelWindowAssociation;
 @property(nonatomic, readwrite) NSUInteger snapshotRequests;
 @property(nonatomic, readwrite) NSUInteger loads;
 @property(nonatomic) double displayZoom;
+@property(nonatomic) double positionedWidth;
 @end
 
 @implementation EaselTestBinding
@@ -159,6 +160,7 @@ static char easelWindowAssociation;
 - (NSUInteger)loads { return self.fixturePage.loads; }
 - (NSUInteger)snapshotRequests { return self.fixturePage.snapshotRequests; }
 - (double)liveDisplayZoom { return self.fixturePage.displayZoom; }
+- (double)positionedWidth { return self.fixturePage.positionedWidth; }
 - (void)replyWithSnapshot:(NSImage *)image {
     void (^reply)(PCNativePageCaptureResult *) = self.fixturePage.snapshotReply;
     self.fixturePage.snapshotReply = nil;
@@ -205,6 +207,7 @@ static char easelWindowAssociation;
 - (BOOL)canPerformNavigationAction:(PCNativeNavigationAction)action { (void)action; return !self.isClosed; }
 - (BOOL)rendererCrashDidPresent:(PCNativeRendererCrash *)crash { return crash == self.fixture.fixtureCrash; }
 - (double)liveCaptureZoomFactor { return 1; }
+- (double)liveCaptureSiteZoomFactor { return self.fixture.siteZoom > 0 ? self.fixture.siteZoom : 1; }
 - (void)setLiveCaptureDisplayZoom:(double)factor { self.displayZoom = factor; }
 - (BOOL)respondsToSelector:(SEL)selector {
     if (selector == @selector(snapshotEmbeddedPageWithCompletion:)) return self.fixture.supportsSnapshot;
@@ -219,7 +222,7 @@ static char easelWindowAssociation;
 - (PCNativeLiveCapturePosition *)positionLiveCapture:(NSRect)region
     scrollOffset:(NSPoint)scrollOffset scrollContainers:(NSArray<PCNativeCaptureScrollContainer *> *)containers
     displayWidth:(double)displayWidth completion:(void (^)(BOOL))completion {
-    (void)displayWidth;
+    self.positionedWidth = displayWidth;
     EaselTestPosition *position = (EaselTestPosition *)[(NSObject *)[EaselTestPosition alloc] init];
     position.reply = completion;
     [self.positions addObject:position];

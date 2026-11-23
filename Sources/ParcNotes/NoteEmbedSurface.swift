@@ -76,6 +76,12 @@ package final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
     private var moreMenu: NotePagePopover?
     private var addressPopover: NotePagePopover?
     private var lastSearch: (query: String, category: EaselWebNavigation.Category)?
+    package private(set) var boardScale: CGFloat = 1
+    private var boardZoomApplied = false
+    private weak var observedScroll: NSScrollView?
+    private var zoomObservers: [NSObjectProtocol] = []
+    private var pinching = false
+    private var settleGeneration: UInt64 = 0
 
     package init(address: URL, profilePath: String, host: Host = .note, captureLayout: EaselCaptureLayout? = nil,
          loadsLinkPreview: Bool = true) {
@@ -164,13 +170,94 @@ package final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
 
     package override var isFlipped: Bool { true }
 
+    package override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        fitBoardBounds()
+    }
+
+    package override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        observeBoardZoom()
+    }
+
+    package override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        observeBoardZoom()
+    }
+
+    package func setBoardScale(_ scale: CGFloat) {
+        guard host == .easel, scale.isFinite, scale > 0, scale != boardScale else { return }
+        boardScale = scale
+        fitBoardBounds()
+        needsLayout = true
+    }
+
+    private func fitBoardBounds() {
+        guard host == .easel else { return }
+        let size = NSSize(width: frame.width * boardScale, height: frame.height * boardScale)
+        if bounds.size != size || bounds.origin != .zero { bounds = NSRect(origin: .zero, size: size) }
+    }
+
+    private func observeBoardZoom() {
+        guard host == .easel else { return }
+        let scroll = window == nil ? nil : enclosingScrollView
+        guard scroll !== observedScroll || (scroll != nil && zoomObservers.isEmpty) else { settleBoardZoom(); return }
+        zoomObservers.forEach(NotificationCenter.default.removeObserver)
+        zoomObservers = []
+        observedScroll = scroll
+        pinching = false
+        guard let scroll else { return }
+        let center = NotificationCenter.default
+        scroll.contentView.postsBoundsChangedNotifications = true
+        zoomObservers = [
+            center.addObserver(forName: NSScrollView.willStartLiveMagnifyNotification, object: scroll, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.pinching = true }
+            },
+            center.addObserver(forName: NSScrollView.didEndLiveMagnifyNotification, object: scroll, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.pinching = false
+                    self?.settleBoardZoom()
+                }
+            },
+            center.addObserver(forName: NSView.boundsDidChangeNotification, object: scroll.contentView, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.scheduleBoardZoomSettle() }
+            },
+        ]
+        settleBoardZoom()
+    }
+
+    private func scheduleBoardZoomSettle() {
+        guard !pinching, let scroll = observedScroll, scroll.magnification != boardScale else { return }
+        settleGeneration &+= 1
+        let generation = settleGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.settleGeneration == generation else { return }
+                self.settleBoardZoom()
+            }
+        }
+    }
+
+    package func settleBoardZoom() {
+        guard host == .easel, !pinching else { return }
+        let scale = observedScroll?.magnification ?? 1
+        setBoardScale(scale.isFinite && scale > 0 ? scale : 1)
+    }
+
     package var inputAvailable: Bool {
         interactive && (browser.nativePage?.isClosed != false || browser.nativePage?.embeddedOwnerValid == true)
     }
 
     package var showsRecovery: Bool { status != nil || browser.nativePage?.rendererCrash != nil }
 
-    package var pageArea: (page: NSRect, visible: NSRect) { (convert(browser.bounds, from: browser), clip.frame) }
+    package var pageArea: (page: NSRect, visible: NSRect) {
+        (boardRect(convert(browser.bounds, from: browser)), boardRect(clip.frame))
+    }
+
+    private func boardRect(_ rect: NSRect) -> NSRect {
+        let scale = host == .easel ? boardScale : 1
+        return NSRect(x: rect.minX / scale, y: rect.minY / scale, width: rect.width / scale, height: rect.height / scale)
+    }
 
     var pageRect: NSRect {
         if host == .easel {
@@ -503,8 +590,14 @@ package final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
     }
 
     private func applyDisplayZoom() {
-        guard let layout = captureLayout, layout.isFullPage, let page = browser.nativePage, !page.isClosed,
-              page.embeddedOwnerValid, let zoom = EaselCaptureGeometry.fullPageZoom(width: Double(clip.bounds.width), layout: layout)
+        guard let page = browser.nativePage, !page.isClosed, page.embeddedOwnerValid else { return }
+        guard let layout = captureLayout else {
+            guard host == .easel, boardZoomApplied || boardScale != 1 else { return }
+            boardZoomApplied = true
+            page.setLiveCaptureDisplayZoom(Double(boardScale) * page.liveCaptureSiteZoomFactor)
+            return
+        }
+        guard layout.isFullPage, let zoom = EaselCaptureGeometry.fullPageZoom(width: Double(clip.bounds.width), layout: layout)
         else { return }
         page.setLiveCaptureDisplayZoom(zoom)
     }
