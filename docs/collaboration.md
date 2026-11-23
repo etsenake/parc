@@ -18,6 +18,22 @@ disjoint files. Tell them they share the checkout and must preserve others' edit
 The task owner integrates results and remains responsible for completion. A
 helper finishing an increment does not finish the overall task.
 
+Parallel work follows one workflow. The task owner first works out the design
+and writes it down as a short contract in ignored `work/`. The contract says
+what changes, the one mechanism every piece uses, and which files each piece
+owns; no file has two owners. Serial work on the critical path the owner does
+directly. Every other piece goes out at once, defined at code level (the
+functions to change, the exact change and the tests to write), so a Sonnet or
+Haiku helper can carry it out without designing anything. If a piece needs a
+larger model to work out what to do, it isn't defined well enough yet. Helpers
+write code and tests, commit and report within about fifteen minutes. They never
+compile, build or run tests, so nobody queues on the shared build lock. The
+owner merges finished pieces, runs one combined build and test pass, and sends
+each failure back as an exact instruction to a helper owning that file, or
+fixes it directly when it's a line or two. While a build runs, the next pieces
+and fresh read-only reviewers work in their own checkouts, so no time is spent
+waiting.
+
 Use the existing checkout unless another workspace is explicitly authorized.
 Never retarget the conversation with Cursor migration tools. Do not claim shared
 engine, signing or packaging ownership without a concrete handoff from root.
