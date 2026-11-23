@@ -1,5 +1,30 @@
 # Changelog
 
+## 2.18.0 (2026-11-23)
+
+### New
+
+- **captures:** Full-page captures go live as a scrollable screen-sized window on Easels and in notes, and live pages open in Peek
+- **capture:** Long Full Page captures also come with a vector PDF of the whole page that stays sharp at any zoom
+- **capture:** Long Full Page captures stay sharp on Easels and in notes by drawing the page's vector PDF instead of the scaled-down picture
+- **easels:** Long capture cards reuse cached tiles from nearby zoom levels while sharper ones render and size from the page PDF
+
+### Fixed
+
+- **capture:** Visible Area and Full Page captures lift into a card on the dimmed page with the output palette beside it
+- **easels:** Deleting a live capture or webpage, or sending it back to its snapshot, no longer leaves the rest of the Easel blank until you zoom
+- **capture:** Portrait frames keep every captured pixel pin-sharp at any size, and the live preview stops squinting at you
+- **capture:** Sending a capture to an Easel or note always goes through instead of freezing on a dead menu
+- **easels:** Pictures and captured pages stay sharp at every zoom instead of going soft or shimmery when shown smaller than their pixels
+- **capture:** Captures too big for an Easel land scaled to fit, any send that can't go through says why in a red banner, and the capture card dims the page like Peek
+- **easels:** Big pictures and long captures land on an Easel scaled to fit from every route instead of being refused, and Easel errors show as a toast
+- **notes:** Long captures in notes stay sharp at the note's width instead of being squeezed and stretched, and an open capture only reloads its Easel list for its own profile
+- **capture:** Full Page captures scroll and stitch the page as you see it, so long pages stop repeating their top and lists that load as you scroll fill in
+- **capture:** Full Page renders in one pass at the largest scale that fits, so long pages stop repeating their top, and records the page's screen for Make live
+- **captures:** A live full-page card keeps the captured desktop layout scaled to the card and gives the page its full screen height below the header
+- **notes:** Long capture PDFs draw sharp in the zoom view, size the block from the page and travel with the block across notes, imports and exports
+- **notes:** Move to another note brings pictures, files and capture PDFs along when the note lives in another folder
+
 ## 2.17.1 (2026-11-23)
 
 ### Fixed
