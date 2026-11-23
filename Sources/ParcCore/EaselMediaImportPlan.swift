@@ -92,7 +92,7 @@ package enum EaselMediaImportPlan {
 
     package static func pageSize(width: Double, height: Double, rotation: Int) -> (width: Double, height: Double)? {
         guard width.isFinite, height.isFinite, width > 0, height > 0 else { return nil }
-        return abs(rotation) % 180 == 90 ? (height, width) : (width, height)
+        return rotation.magnitude % 180 == 90 ? (height, width) : (width, height)
     }
 
     package static func layout(_ sizes: [(width: Double, height: Double)], centre: EaselPoint) -> [EaselRect] {

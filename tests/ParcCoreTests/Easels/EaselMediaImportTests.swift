@@ -121,6 +121,15 @@ struct EaselMediaImportTests {
         #expect(Plan.pageSize(width: 100, height: 200, rotation: 0)?.width == 100)
     }
 
+    @Test(arguments: [-90, 270, -270, 450])
+    func anyQuarterTurnSwapsItsSides(rotation: Int) {
+        #expect(Plan.pageSize(width: 100, height: 200, rotation: rotation)?.width == 200)
+    }
+
+    @Test func aPageWithAnOutlandishRotationStillGetsASize() {
+        #expect(Plan.pageSize(width: 100, height: 200, rotation: Int.min)?.width == 100)
+    }
+
     @Test func anEmptyPageHasNoSize() {
         #expect(Plan.pageSize(width: 0, height: 200, rotation: 0) == nil)
     }
