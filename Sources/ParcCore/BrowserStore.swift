@@ -2812,13 +2812,14 @@ package final class BrowserStore: ObservableObject {
             guard consumed.insert(tab.id).inserted else { return nil }
             if let group = tab.archiveProvenance?.groupID,
                let layout = tab.archiveProvenance?.split,
+               layout.tabIDs.contains(tab.id),
                Set(layout.tabIDs).count == layout.tabIDs.count,
                BrowserSplitLayout.normalized(layout.widthFactors, count: layout.tabIDs.count) != nil {
                 let members = layout.tabIDs.compactMap { id in
                     tabs.first { $0.id == id && $0.archivedAt == tab.archivedAt && $0.archiveProvenance?.groupID == group
                         && $0.archiveProvenance?.split == layout }
                 }
-                if members.count == layout.tabIDs.count {
+                if members.count == layout.tabIDs.count, members.allSatisfy({ $0.id == tab.id || !consumed.contains($0.id) }) {
                     consumed.formUnion(members.map(\.id))
                     return BrowserArchivedItem(tabs: members)
                 }
