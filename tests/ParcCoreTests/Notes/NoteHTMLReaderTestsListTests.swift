@@ -73,6 +73,15 @@ struct NoteHTMLReaderTestsListTests {
         #expect(blocks[10].text.string == "Heading" && blocks[10].children.isEmpty, "headings never take children")
     }
 
+    @Test(arguments: [("9223372036854775807", 999_999_999), ("-9223372036854775808", 0), ("-3", 0), ("42", 42)])
+    func listStartsStayWithinWhatAListCanCount(start: String, expected: Int) throws {
+        let blocks = Fixture.read("<ol start=\"\(start)\"><li>First</li><li>Second</li><li>Third</li></ol>")
+        try #require(blocks.count == 3)
+        #expect(blocks[0].props.listStart == expected)
+        let page = NotePage(blocks: blocks)
+        #expect(page.listNumber(for: blocks[2].id)?.value == expected + 2)
+    }
+
     private static let blockIndices = 0..<12
 
     @Test(arguments: blockIndices)

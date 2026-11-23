@@ -517,7 +517,8 @@ final class NoteHTMLConversion {
                 }
             }
         }
-        if ordered, let start = Int(node["start"] ?? ""), start != 1, let first = items.firstIndex(where: { $0.kind == .numberedItem }) {
+        if ordered, let start = Int(node["start"] ?? "").map({ min(max($0, 0), 999_999_999) }), start != 1,
+           let first = items.firstIndex(where: { $0.kind == .numberedItem }) {
             items[first].props.listStart = start
         }
         if let indent = Int(node["data-indent"] ?? "") {
