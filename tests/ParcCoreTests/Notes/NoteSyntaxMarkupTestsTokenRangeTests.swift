@@ -54,4 +54,9 @@ struct NoteSyntaxMarkupTestsTokenRangeTests {
         probe.expectWellFormed()
         #expect(probe.kind("script") == .tag)
     }
+
+    @Test
+    func deeplyNestedStyleInterpolationStaysWellFormed() {
+        SyntaxProbe("scss", String(repeating: "#{", count: 200_000)).expectWellFormed()
+    }
 }

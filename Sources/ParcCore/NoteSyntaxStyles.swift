@@ -120,7 +120,9 @@ extension NoteSyntaxScanner {
     }
 
     private mutating func lexStyleInterpolation(scss: Bool) -> Bool {
-        guard scss && units[pos] == Ch.hash && peek() == Ch.openBrace else { return false }
+        guard scss && units[pos] == Ch.hash && peek() == Ch.openBrace && depth < Self.depthLimit else { return false }
+        depth += 1
+        defer { depth -= 1 }
         emit(pos, pos + 2, .punctuation)
         pos += 2
         while pos < end && units[pos] != Ch.closeBrace {
