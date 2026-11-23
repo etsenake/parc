@@ -213,4 +213,15 @@ extension NumberRowTests {
                                      kHISymbolicHotKeyModifiers as String: controlKey]
         #expect(KeyboardShortcut.systemShortcuts(records: [hotKey], layout: Self.qwerty) == [KeyboardShortcut(key: "1", flags: .control)])
     }
+
+    @Test(arguments: [("US", "}", Set(["]"])), ("German", "(", Set(["8"])), ("French", "%", Set(["ù"]))])
+    @MainActor func aShiftedSymbolMapsToTheKeyThatTypesItOnASystemLayout(layout: String, symbol: String, keys: Set<String>) throws {
+        let source = try Self.layoutSource(layout)
+        let typing: KeyboardShortcut.LayoutTyping = { KeyboardShortcut.layoutCharacter(forPhysicalCode: $0, modifiers: $1, in: source) }
+        #expect(KeyboardShortcut.physicalKeys(producingShifted: symbol, layout: typing) == keys)
+    }
+
+    @Test func aShiftedSymbolNoLayoutTypesHasNoPhysicalKey() {
+        #expect(KeyboardShortcut.physicalKeys(producingShifted: "}") { _, _ in nil }.isEmpty)
+    }
 }

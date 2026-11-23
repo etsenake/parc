@@ -108,22 +108,10 @@ package struct KeyboardShortcut: Codable, Equatable, Hashable {
         return names.joined(separator: " ").lowercased()
     }
 
-    static func physicalKeys(producingShifted symbol: String) -> Set<String> {
-        guard let source = TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue(),
-              let property = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { return [] }
-        let data = Unmanaged<CFData>.fromOpaque(property).takeUnretainedValue()
-        guard let bytes = CFDataGetBytePtr(data) else { return [] }
-        let layout = UnsafeRawPointer(bytes).assumingMemoryBound(to: UCKeyboardLayout.self)
-        func translated(_ code: UInt16, shifted: Bool) -> String? {
-            var dead: UInt32 = 0, length = 0
-            var characters = [UniChar](repeating: 0, count: 4)
-            let result = UCKeyTranslate(layout, code, UInt16(kUCKeyActionDisplay),
-                shifted ? UInt32(shiftKey >> 8) : 0, UInt32(LMGetKbdType()), 0, &dead,
-                characters.count, &length, &characters)
-            return result == noErr && length > 0 ? String(utf16CodeUnits: characters, count: length).lowercased() : nil
-        }
+    static func physicalKeys(producingShifted symbol: String, layout: LayoutTyping? = nil) -> Set<String> {
+        let layout = layout ?? currentLayout()
         return Set((UInt16(0)..<128).compactMap { code in
-            translated(code, shifted: true) == symbol ? translated(code, shifted: false) : nil
+            layout(code, shiftKey)?.lowercased() == symbol ? layout(code, 0)?.lowercased() : nil
         })
     }
 
@@ -190,16 +178,18 @@ package struct KeyboardShortcut: Codable, Equatable, Hashable {
     }
     static func layoutCharacter(forPhysicalCode keyCode: UInt16) -> String? { currentLayout()(keyCode, 0) }
     static func layoutCharacter(forPhysicalCode keyCode: UInt16, modifiers: Int = 0, in source: TISInputSource) -> String? {
-        guard let property = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { return nil }
-        let data = Unmanaged<CFData>.fromOpaque(property).takeUnretainedValue()
-        guard let bytes = CFDataGetBytePtr(data) else { return nil }
-        let layout = UnsafeRawPointer(bytes).assumingMemoryBound(to: UCKeyboardLayout.self)
-        var dead: UInt32 = 0, length = 0
-        var characters = [UniChar](repeating: 0, count: 4)
-        let result = UCKeyTranslate(layout, keyCode, UInt16(kUCKeyActionDisplay), UInt32((modifiers >> 8) & 0xFF),
-            UInt32(LMGetKbdType()), 0, &dead,
-            characters.count, &length, &characters)
-        return result == noErr && length > 0 ? String(utf16CodeUnits: characters, count: length) : nil
+        withExtendedLifetime(source) {
+            guard let property = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { return nil }
+            let data = Unmanaged<CFData>.fromOpaque(property).takeUnretainedValue()
+            guard let bytes = CFDataGetBytePtr(data) else { return nil }
+            let layout = UnsafeRawPointer(bytes).assumingMemoryBound(to: UCKeyboardLayout.self)
+            var dead: UInt32 = 0, length = 0
+            var characters = [UniChar](repeating: 0, count: 4)
+            let result = UCKeyTranslate(layout, keyCode, UInt16(kUCKeyActionDisplay), UInt32((modifiers >> 8) & 0xFF),
+                UInt32(LMGetKbdType()), 0, &dead,
+                characters.count, &length, &characters)
+            return result == noErr && length > 0 ? String(utf16CodeUnits: characters, count: length) : nil
+        }
     }
     @MainActor package static func systemShortcuts() -> Set<KeyboardShortcut> {
         var result: Unmanaged<CFArray>?
