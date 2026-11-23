@@ -1,6 +1,67 @@
 {
   "releases": [
     {
+      "version": "2.17.0",
+      "build": 53,
+      "date": "2026-11-23",
+      "changes": [
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Webpages in an Easel keep their size and layout at every zoom instead of shrinking into a corner",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Pasting a copied picture, file or note block into an Easel makes the real picture, file, bookmark or webpage, as in a note",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "media",
+          "summary": "macOS Now Playing shows Parc's icon instead of Chromium's logo, in regular and private windows",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "media",
+          "summary": "Private windows show Boo, Parc's own private mark, in macOS Now Playing",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "capture",
+          "summary": "Bring back the watermark toggle, keep every capture Retina-sharp, let the picture fill more of its frame and sign it Captured in with Parc's P",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "media",
+          "summary": "The Task Manager's Browser row shows your chosen Parc icon instead of Chromium's logo",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "start-page",
+          "summary": "Chromium's New Tab page shows Parc's start page in its tab, and private windows greet you with Boo",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "branding",
+          "summary": "The crash list wilts with Parc's own flower icon, and the payment sheet's light-mode header finally shows the P",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "branding",
+          "summary": "The crash list's heading shows Parc's wilting flower instead of Chromium's sad tab",
+          "breaking": false
+        }
+      ]
+    },
+    {
       "version": "2.16.0",
       "build": 52,
       "date": "2026-11-22",

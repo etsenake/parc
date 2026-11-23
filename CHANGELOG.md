@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.17.0 (2026-11-23)
+
+### New
+
+- **media:** Private windows show Boo, Parc's own private mark, in macOS Now Playing
+- **start-page:** Chromium's New Tab page shows Parc's start page in its tab, and private windows greet you with Boo
+
+### Fixed
+
+- **easels:** Webpages in an Easel keep their size and layout at every zoom instead of shrinking into a corner
+- **easels:** Pasting a copied picture, file or note block into an Easel makes the real picture, file, bookmark or webpage, as in a note
+- **media:** macOS Now Playing shows Parc's icon instead of Chromium's logo, in regular and private windows
+- **capture:** Bring back the watermark toggle, keep every capture Retina-sharp, let the picture fill more of its frame and sign it Captured in with Parc's P
+- **media:** The Task Manager's Browser row shows your chosen Parc icon instead of Chromium's logo
+- **branding:** The crash list wilts with Parc's own flower icon, and the payment sheet's light-mode header finally shows the P
+- **branding:** The crash list's heading shows Parc's wilting flower instead of Chromium's sad tab
+
 ## 2.16.0 (2026-11-22)
 
 ### New
