@@ -28,7 +28,8 @@ extension CapturePortraitTestsSupport {
         @MainActor @Test func anAcceptedEditReplacesTheSourceButNotTheOriginal() throws {
             let edited = try EditedPortraitFixture()
             try edited.capture.applyEditedOriginal(edited.editedSource)
-            #expect(edited.capture.originalPNG == edited.fixture.original && edited.capture.sourcePNG != edited.fixture.original)
+            #expect(edited.capture.originalPNG == CapturedImage.declaringDensity(edited.fixture.original, backingScale: 2)
+                && edited.capture.sourcePNG != edited.capture.originalPNG)
         }
 
         @MainActor @Test func anAcceptedEditKeepsTheCropAndTheFrame() throws {
@@ -78,7 +79,7 @@ extension CapturePortraitTestsSupport {
             let edited = try EditedPortraitFixture()
             try edited.capture.applyEditedOriginal(edited.editedSource)
             try edited.capture.crop(to: CGRect(x: 0, y: 0, width: 320, height: 160))
-            #expect(edited.capture.originalPNG == edited.fixture.original && edited.capture.backingScale == 2)
+            #expect(edited.capture.originalPNG == CapturedImage.declaringDensity(edited.fixture.original, backingScale: 2) && edited.capture.backingScale == 2)
         }
     }
 }

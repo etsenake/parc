@@ -12,7 +12,10 @@ live preview of the framed result at page size, rendered up to 1,600 pixels on
 its longest side and blended on each change. The page offers Color, Website and
 Wallpaper as picture tiles, the chosen one ringed in the Notes accent; the
 12-point color track with its 24-point white knob sits under them, and moving it
-picks Color; a Parc watermark checkbox follows. Cancel and Apply are Parc's
+picks Color. The header's trailing toolbar toggle draws Parc's P: filled in the
+Notes checked colour while the "Captured in" line is on, struck through when
+off. Its choice is remembered (`parc.capture.portrait.hideWatermark`) and is
+a change Apply can commit. Cancel and Apply are Parc's
 dialog buttons. Apply is the primary blue button only while there is a change to
 apply: always when adding a frame, and after a change when editing one;
 otherwise it stays muted. Return applies a pending change or goes back when
@@ -21,16 +24,23 @@ the palette. Latest color changes are throttled at 50 ms. `CaptureFrameApply`
 holds the Apply rule.
 
 Composition uses logical points: the source is bounded by
-`min(1, 2160 / width, 2160 / height)`, rounded upward, and the canvas adds
-384 points. Export retains the capture window's backing factor: a 2× capture
+`min(1, 2160 / width, 2160 / height)`, rounded upward, and an even margin of
+`round(0.08 × √(width × height))`, clamped to 40–160 points, surrounds it, so
+frames of any shape keep the same share of background and a 1440 × 900 capture
+fills about 89% of the frame's width. Export retains the capture window's backing factor: a 2× capture
 has 2× radii/shadow/frame pixels and 144-DPI PNG metadata. Source content is
 not enlarged before integral rounding. Preview and every destination use the
 same result and source RGB profile; unsupported non-RGB sources use sRGB.
 
-The Parc watermark chooses black at 0.45 or white at 0.75 around a 0.75
-brightness threshold using sRGB coefficients 0.299, 0.587 and 0.114. Desktop
-backgrounds are sampled beneath the actual mark footprint. Thumbnail and final
-bitmap follow the same policy.
+The watermark reads "Captured in" followed by Parc's P, centred in the bottom
+margin. The text is the system semibold face at 30% of the margin (10–28
+points); the P is the `Marks/Monochrome.svg` vector, compiled into
+`ParcBrandMark`, 1.3 cap heights tall and standing on the text's baseline. Both
+share one ink: black at 0.45 or white at 0.75 around a 0.75 brightness
+threshold using sRGB coefficients 0.299, 0.587 and 0.114. Desktop backgrounds
+are sampled beneath the whole line. Turning the toggle off omits the line, so
+every output renders exactly as a frame without it. Thumbnail and final bitmap
+follow the same policy.
 
 ## Live desktop and lifetime
 
@@ -62,9 +72,12 @@ missing desktop pixels never silently render a different background.
 ## Checks and boundaries
 
 The compositor/CapturedImage checks cover original/cropped PNG preservation,
-reversible framing, tall images, 2× density, Display P3 conversion, watermark
-thresholds, desktop candidate filtering, async cancellation and failure controls
-with isolated preferences. A missing desktop image remains a visible error;
+reversible framing, tall images, 2× and 3× density declared in every PNG,
+margin geometry across shapes, Display P3 conversion, the watermark toggle's
+output and remembered choice, caption and mark placement, watermark thresholds,
+desktop candidate filtering, async cancellation and failure controls with
+isolated preferences (`CapturePortrait*`, `CaptureDensityTests`,
+`CaptureFrameGeometryTests`). A missing desktop image remains a visible error;
 tests must not simulate permission success to bypass that path.
 
 [Capture motion](capture-motion.md) owns preview transitions and focus return;

@@ -42,6 +42,13 @@ deadline; the full operation has a 30-second deadline. Cancellation invalidates
 protocol and worker callbacks. Results contain genuine PNG bytes or an error;
 missing pixels never become a placeholder.
 
+The engine's PNG carries device pixels but no density, so every app would open
+a Retina capture at twice its size with each pixel stretched over four.
+`CapturedImage` writes the window's backing density (144 DPI at 2×) into the
+PNG's `pHYs` chunk without touching a pixel, and crops, edits and frames encode
+the same density. Copy, Save, Library, Easel, Note and Messages all take that
+one PNG, so every output opens at screen size with full device sharpness.
+
 ## Ownership and output
 
 `PageCaptureController` adds a sibling over the real viewport without reparenting
@@ -86,14 +93,15 @@ Reduce Motion and focus belong to the same session; see
 
 Portrait capture shares the normal capture/edit/output session. Frame, Edit
 Frame and Remove Frame are reversible transformations of the original image
-and accepted crop. Removing a frame restores exact unframed bytes; repeated
+and accepted crop. Removing a frame restores the exact unframed capture; repeated
 framing cannot stack a frame on an already framed image. Saving updates the
 same Library identity and its actual capture kind.
 
 Desktop framing uses the actual wallpaper/display and its permission owner.
-Page framing uses the actual webpage theme color, not the Space theme. Optional
-branding is composited into the frame. Logical source sizing is bounded at 2160
-with 384 points of framing and 192-point inset, scaled to the selected density.
+Page framing uses the actual webpage theme color, not the Space theme. An
+optional "Captured in" line with Parc's P is composited under the picture.
+Logical source sizing is bounded at 2160; an even margin of 8% of the picture's
+mean side (40–160 points) surrounds it, scaled to the selected density.
 See [portrait fidelity](portrait-capture-fidelity.md).
 
 ## Gesture and private-window boundaries

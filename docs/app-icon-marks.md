@@ -12,10 +12,11 @@ The welcome animation and browser-import header use the color mark. The Safari
 access illustration uses the full app tile because it represents the installed
 application in System Settings. These images remain decorative beside text.
 
-Portrait capture uses the monochrome alpha with its background-dependent ink.
-The bowl and outside remain transparent; drawing preserves aspect ratio.
-If the mark cannot load, the wordmark remains centered without an empty icon
-slot. App, Dock and Finder icons continue using the selected tile artwork.
+Portrait capture's "Captured in" line and its watermark toggle draw the
+`Monochrome.svg` path, compiled into `ParcBrandMark` like the engine's copy, so
+the P never depends on loading a file. The bowl and outside remain transparent;
+drawing preserves aspect ratio. App, Dock and Finder icons continue using the
+selected tile artwork.
 Packaging copies both marks with `Resources`; no runtime generation is needed.
 
 ## Parc's mark on Chromium's pages

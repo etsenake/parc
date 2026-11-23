@@ -22,6 +22,7 @@ package final class CapturedImage {
         self.backingScale = backingScale
         guard let source = CGImageSourceCreateWithData(pngData as CFData, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { throw PortraitCaptureError.encoding }
+        let pngData = Self.declaringDensity(pngData, backingScale: backingScale)
         originalPixels = image; originalPNG = pngData
         sourcePixels = image; sourcePNG = pngData
         unframedPixels = image; unframedPNG = pngData; pixels = image; self.pngData = pngData
@@ -64,6 +65,44 @@ package final class CapturedImage {
         let encoded = frame == nil ? data : try Self.png(rendered, backingScale: frame?.backingScale ?? backingScale)
         cropRect = crop == bounds ? nil : crop
         unframedPixels = image; unframedPNG = data; pixels = rendered; pngData = encoded
+    }
+
+    package static func declaringDensity(_ png: Data, backingScale: CGFloat) -> Data {
+        let signature: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+        let bytes = [UInt8](png)
+        guard backingScale > 1, bytes.count > 33, Array(bytes[0..<8]) == signature else { return png }
+        func length(at offset: Int) -> Int {
+            bytes[offset..<offset + 4].reduce(0) { $0 << 8 | Int($1) }
+        }
+        func type(at offset: Int) -> String { String(decoding: bytes[offset + 4..<offset + 8], as: UTF8.self) }
+        let perMetre = UInt32((72 * backingScale / 0.0254).rounded())
+        let wanted = withUnsafeBytes(of: perMetre.bigEndian, Array.init) + withUnsafeBytes(of: perMetre.bigEndian, Array.init) + [1]
+        var output = Array(bytes[0..<8])
+        var offset = 8, inserted = false
+        while offset + 12 <= bytes.count {
+            let size = length(at: offset), name = type(at: offset)
+            let end = offset + 12 + size
+            guard end <= bytes.count else { return png }
+            if name == "pHYs" {
+                if size == 9 && Array(bytes[offset + 8..<offset + 17]) == wanted { return png }
+            } else {
+                output += bytes[offset..<end]
+                if name == "IHDR" { output += chunk("pHYs", wanted); inserted = true }
+            }
+            offset = end
+        }
+        return inserted && offset == bytes.count ? Data(output) : png
+    }
+
+    private static func chunk(_ name: String, _ body: [UInt8]) -> [UInt8] {
+        let typed = Array(name.utf8) + body
+        var crc: UInt32 = 0xFFFF_FFFF
+        for byte in typed {
+            crc ^= UInt32(byte)
+            for _ in 0..<8 { crc = crc & 1 == 1 ? (crc >> 1) ^ 0xEDB8_8320 : crc >> 1 }
+        }
+        crc ^= 0xFFFF_FFFF
+        return withUnsafeBytes(of: UInt32(body.count).bigEndian, Array.init) + typed + withUnsafeBytes(of: crc.bigEndian, Array.init)
     }
 
     private static func png(_ image: CGImage, backingScale: CGFloat) throws -> Data {

@@ -42,7 +42,7 @@ extension CapturePortraitTestsSupport {
         @MainActor @Test func theLivePreviewRendersAtTheFullPageSizedImage() throws {
             let page = try PortraitViewFixture()
             let preview = try #require(page.view.previewImage)
-            #expect(preview.width == 704 && preview.height == 544)
+            #expect(preview.width == 400 && preview.height == 240)
         }
 
         struct BackgroundTile: CustomTestStringConvertible, Sendable {

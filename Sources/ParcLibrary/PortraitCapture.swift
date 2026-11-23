@@ -71,10 +71,25 @@ enum PortraitCaptureRenderer {
         let position = min(1, max(0, fraction)) * 8, lower = Int(position)
         return palette[lower].blended(withFraction: position - Double(lower), of: palette[min(8, lower + 1)])
     }
-    static func outputSize(source: CGSize) -> CGSize {
+    static func contentSize(source: CGSize) -> CGSize {
         guard source.width.isFinite, source.height.isFinite, source.width > 0, source.height > 0 else { return .zero }
         let ratio = min(1, 2160 / max(source.width, source.height))
-        return CGSize(width: ceil(source.width * ratio) + 384, height: ceil(source.height * ratio) + 384)
+        return CGSize(width: ceil(source.width * ratio), height: ceil(source.height * ratio))
+    }
+    static func margin(content: CGSize) -> CGFloat {
+        guard content.width > 0, content.height > 0 else { return 0 }
+        return min(160, max(40, (sqrt(content.width * content.height) * 0.08).rounded()))
+    }
+    static func outputSize(source: CGSize) -> CGSize {
+        let content = contentSize(source: source)
+        guard content.width > 0 else { return .zero }
+        let margin = margin(content: content)
+        return CGSize(width: content.width + margin * 2, height: content.height + margin * 2)
+    }
+    static func contentRect(source: CGSize) -> CGRect {
+        let content = contentSize(source: source)
+        let margin = margin(content: content)
+        return CGRect(x: margin, y: margin, width: content.width, height: content.height)
     }
     static func render(source: CGImage, options: PortraitCaptureOptions, palette: [NSColor],
                        pageColor: NSColor?, desktop: NSImage?, backingScale: CGFloat = 1, preview: Bool = false,
@@ -84,7 +99,8 @@ enum PortraitCaptureRenderer {
         guard let selected = blendedColor(options.fraction, palette: palette),
               let fallback = blendedColor(0.95, palette: palette) else { throw PortraitCaptureError.resources }
         let color = options.background == .page ? (pageColor?.usingColorSpace(.sRGB) ?? fallback) : selected
-        let size = outputSize(source: CGSize(width: CGFloat(source.width) / backingScale, height: CGFloat(source.height) / backingScale))
+        let logical = CGSize(width: CGFloat(source.width) / backingScale, height: CGFloat(source.height) / backingScale)
+        let size = outputSize(source: logical)
         let scale = preview ? min(backingScale, previewSide / max(size.width, size.height)) : backingScale
         let width = max(1, Int(ceil(size.width * scale))), height = max(1, Int(ceil(size.height * scale)))
         let space = source.colorSpace?.model == .rgb ? source.colorSpace! : CGColorSpace(name: CGColorSpace.sRGB)!
@@ -93,7 +109,7 @@ enum PortraitCaptureRenderer {
         context.scaleBy(x: scale, y: scale)
         context.interpolationQuality = .high
         let canvas = CGRect(origin: .zero, size: size)
-        let content = canvas.insetBy(dx: 192, dy: 192)
+        let content = contentRect(source: logical)
         let frame = content.insetBy(dx: -8, dy: -8)
         let priorContext = NSGraphicsContext.current
         NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
@@ -118,9 +134,9 @@ enum PortraitCaptureRenderer {
         context.draw(source, in: content)
         context.restoreGState()
         if options.watermark {
-            let center = CGPoint(x: size.width / 2, y: 96)
-            let backdrop = options.background == .desktop ? sampledBackdrop(context, rect: watermarkRect(center: center), scale: scale) : nil
-            drawWatermark(in: context, center: center, color: backdrop ?? color)
+            let mark = Watermark(center: CGPoint(x: size.width / 2, y: content.minY / 2), margin: content.minY)
+            let backdrop = options.background == .desktop ? sampledBackdrop(context, rect: mark.bounds, scale: scale) : nil
+            mark.draw(in: context, ink: watermarkInk(on: backdrop ?? color))
         }
         guard let result = context.makeImage() else { throw PortraitCaptureError.encoding }
         return result
@@ -163,10 +179,6 @@ enum PortraitCaptureRenderer {
         gradient(pale ? .black : .white, alpha: pale ? 0.07 : 0.95,
                  from: CGPoint(x: 0, y: size.height), to: .zero, blend: pale ? .normal : .softLight)
     }
-    private static func watermarkRect(center: CGPoint) -> CGRect {
-        let width = ("Parc" as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 28, weight: .semibold)]).width + 36
-        return CGRect(x: center.x - width / 2, y: center.y - 18, width: width, height: 36)
-    }
     private static func sampledBackdrop(_ context: CGContext, rect: CGRect, scale: CGFloat) -> NSColor? {
         guard let image = context.makeImage() else { return nil }
         let pixels = CGRect(x: rect.minX * scale, y: CGFloat(image.height) - rect.maxY * scale,
@@ -189,18 +201,53 @@ enum PortraitCaptureRenderer {
         let light = 0.299 * rgb.redComponent + 0.587 * rgb.greenComponent + 0.114 * rgb.blueComponent
         return light >= 0.75 ? NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.45) : NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.75)
     }
-    private static func drawWatermark(in context: CGContext, center: CGPoint, color: NSColor) {
-        let ink = watermarkInk(on: color)
-        let word = NSAttributedString(string: "Parc", attributes: [.font: NSFont.systemFont(ofSize: 28, weight: .semibold), .foregroundColor: ink])
-        let mark = ParcBrandMark.image(.monochrome)
-        let leading = mark == nil ? 0.0 : 36.0
-        let total = word.size().width + leading
-        if let mark {
-            ParcBrandMark.drawMonochrome(mark,
-                in: CGRect(x: center.x - total / 2, y: center.y - 18, width: 26, height: 36),
-                color: ink, context: context)
+    @MainActor struct Watermark {
+        static let caption = "Captured in"
+        let font: NSFont
+        let textWidth: CGFloat
+        let markSize: CGSize
+        let gap: CGFloat
+        let origin: CGPoint
+
+        init(center: CGPoint, margin: CGFloat) {
+            font = NSFont.systemFont(ofSize: min(28, max(10, margin * 0.3)), weight: .semibold)
+            let line = CTLineCreateWithAttributedString(NSAttributedString(string: Self.caption, attributes: [.font: font]))
+            textWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+            let outline = ParcBrandMark.monochromeBounds
+            let height = font.capHeight * 1.3
+            markSize = CGSize(width: height * outline.width / outline.height, height: height)
+            gap = font.pointSize * 0.3
+            let width = textWidth + gap + markSize.width
+            origin = CGPoint(x: center.x - width / 2, y: center.y - font.capHeight / 2)
         }
-        word.draw(at: CGPoint(x: center.x - total / 2 + leading, y: center.y - word.size().height / 2))
+
+        var markRect: CGRect {
+            CGRect(x: origin.x + textWidth + gap, y: origin.y, width: markSize.width, height: markSize.height)
+        }
+
+        var bounds: CGRect {
+            CGRect(x: origin.x, y: origin.y + font.descender, width: markRect.maxX - origin.x,
+                   height: max(markSize.height, font.ascender) - font.descender).insetBy(dx: -4, dy: -2)
+        }
+
+        func draw(in context: CGContext, ink: NSColor) {
+            context.saveGState()
+            context.setFillColor(ink.cgColor)
+            context.textMatrix = .identity
+            context.textPosition = origin
+            let colored = NSAttributedString(string: Self.caption, attributes: [.font: font, .foregroundColor: ink])
+            CTLineDraw(CTLineCreateWithAttributedString(colored), context)
+            let outline = ParcBrandMark.monochromeBounds
+            let rect = markRect
+            let scale = rect.height / outline.height
+            var transform = CGAffineTransform(translationX: rect.minX, y: rect.maxY)
+                .scaledBy(x: scale, y: -scale)
+                .translatedBy(x: -outline.minX, y: -outline.minY)
+            if let path = ParcBrandMark.monochromePath.copy(using: &transform) {
+                context.addPath(path); context.fillPath()
+            }
+            context.restoreGState()
+        }
     }
 }
 
@@ -227,7 +274,6 @@ enum PortraitCaptureLayout {
     static let tileHeight: CGFloat = 70
     static let swatchCorner: CGFloat = 7
     static let sliderHeight: CGFloat = 24
-    static let watermarkHeight: CGFloat = 26
     static let buttonHeight: CGFloat = 38
     static let buttonGap: CGFloat = 8
     static let previewSide: CGFloat = 1600
@@ -235,7 +281,7 @@ enum PortraitCaptureLayout {
     static var contentWidth: CGFloat { width - padding * 2 }
     static var tileWidth: CGFloat { floor((contentWidth - tileGap * 2) / 3) }
     static var height: CGFloat {
-        headerHeight + tileHeight + spacing + sliderHeight + spacing + watermarkHeight + spacing * 1.5 + buttonHeight + padding
+        headerHeight + tileHeight + spacing + sliderHeight + spacing * 2.5 + buttonHeight + padding
     }
 }
 
@@ -253,8 +299,7 @@ package final class PortraitCaptureView: NSView {
     private let websiteTile = PortraitBackgroundTile(title: "Website", label: "Use Website Color")
     private let wallpaperTile = PortraitBackgroundTile(title: "Wallpaper", label: "Use Desktop Wallpaper")
     private let slider = NSSlider(value: 0.95, minValue: 0, maxValue: 1, target: nil, action: nil)
-    private let watermark = ParcSelectionCheckbox(title: "Parc watermark", tint: NoteTheme.accent,
-                                                  labelAttributes: [.font: NoteTheme.menuTitleFont(), .foregroundColor: NoteTheme.menuInk])
+    private let watermark = PortraitWatermarkToggle()
     private let status = NSTextField(wrappingLabelWithString: "")
     private var options: PortraitCaptureOptions
     private let committed: CaptureFrameSettings?
@@ -306,8 +351,7 @@ package final class PortraitCaptureView: NSView {
         slider.cell = sliderCell; slider.minValue = 0; slider.maxValue = 1
         slider.target = self; slider.action = #selector(changeColor); slider.doubleValue = options.fraction; slider.isContinuous = true
         slider.setAccessibilityLabel("Portrait background color")
-        watermark.target = self; watermark.action = #selector(changeWatermark)
-        watermark.setAccessibilityLabel("Parc watermark")
+        watermark.onPress = { [weak self] in self?.toggleWatermark() }
         watermark.setAccessibilityIdentifier("Portrait Capture Watermark Toggle")
         status.font = NoteTheme.menuSubtitleFont(); status.textColor = NoteTheme.menuSecondaryInk
         status.isHidden = true
@@ -316,8 +360,8 @@ package final class PortraitCaptureView: NSView {
         }
         nextKeyView = colorTile
         colorTile.nextKeyView = websiteTile; websiteTile.nextKeyView = wallpaperTile; wallpaperTile.nextKeyView = slider
-        slider.nextKeyView = watermark; watermark.nextKeyView = cancelButton; cancelButton.nextKeyView = captureButton
-        captureButton.nextKeyView = back; back.nextKeyView = colorTile
+        slider.nextKeyView = cancelButton; cancelButton.nextKeyView = captureButton
+        captureButton.nextKeyView = back; back.nextKeyView = watermark; watermark.nextKeyView = colorTile
         if options.background == .desktop && desktop == nil {
             wantsSavedDesktop = true; options.background = .color; desktopError = "Loading desktop wallpaper…"
         }
@@ -342,7 +386,8 @@ package final class PortraitCaptureView: NSView {
         super.layout()
         let L = PortraitCaptureLayout.self
         back.frame = NSRect(x: 8, y: (L.headerHeight - 28) / 2, width: 28, height: 28)
-        titleLabel.frame = NSRect(x: back.frame.maxX + 4, y: (L.headerHeight - 20) / 2, width: bounds.width - back.frame.maxX - 4 - L.padding, height: 20)
+        watermark.frame = NSRect(x: bounds.width - 8 - 28, y: (L.headerHeight - 28) / 2, width: 28, height: 28)
+        titleLabel.frame = NSRect(x: back.frame.maxX + 4, y: (L.headerHeight - 20) / 2, width: watermark.frame.minX - back.frame.maxX - 8, height: 20)
         var y = L.headerHeight
         for (index, tile) in [colorTile, websiteTile, wallpaperTile].enumerated() {
             tile.frame = NSRect(x: L.padding + CGFloat(index) * (L.tileWidth + L.tileGap), y: y, width: L.tileWidth, height: L.tileHeight)
@@ -350,9 +395,6 @@ package final class PortraitCaptureView: NSView {
         y += L.tileHeight + L.spacing
         slider.frame = NSRect(x: L.padding, y: y, width: L.contentWidth, height: L.sliderHeight)
         y += L.sliderHeight + L.spacing
-        let mark = watermark.fittedSize(maxWidth: L.contentWidth)
-        watermark.frame = NSRect(x: L.padding, y: y + (L.watermarkHeight - mark.height) / 2, width: mark.width, height: mark.height)
-        y += L.watermarkHeight + L.spacing
         if !status.isHidden {
             let height = statusHeight - L.spacing
             status.frame = NSRect(x: L.padding, y: y, width: L.contentWidth, height: height)
@@ -461,8 +503,8 @@ package final class PortraitCaptureView: NSView {
             self.previewTask = nil; self.refresh()
         }
     }
-    @objc private func changeWatermark() {
-        options.watermark = watermark.state == .on; options.saveWatermark(to: defaults); refresh()
+    private func toggleWatermark() {
+        options.watermark.toggle(); options.saveWatermark(to: defaults); refresh()
     }
 
     private func updateTiles() {
@@ -470,7 +512,7 @@ package final class PortraitCaptureView: NSView {
         websiteTile.isChecked = options.background == .page
         wallpaperTile.isChecked = options.background == .desktop
         colorTile.swatch = PortraitCaptureRenderer.blendedColor(options.fraction, palette: palette)
-        watermark.state = options.watermark ? .on : .off
+        watermark.isChecked = options.watermark
     }
 
     private func updateApply() {
@@ -494,6 +536,44 @@ package final class PortraitCaptureView: NSView {
         }
         updateApply()
         onPreview?(previewImage)
+    }
+}
+
+@MainActor
+final class PortraitWatermarkToggle: NoteControlButton {
+    override var isChecked: Bool { didSet { describe() } }
+
+    init() {
+        super.init(frame: NSRect(origin: .zero, size: NoteTheme.toolbarButtonSize))
+        acceptsKeyboardFocus = true; focusRingType = .exterior
+        setAccessibilityRole(.checkBox); setAccessibilityLabel("Parc watermark")
+        describe()
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    private func describe() {
+        setAccessibilityValue(isChecked ? 1 : 0)
+        toolTip = isChecked ? "Hide “Captured in Parc”" : "Show “Captured in Parc”"
+    }
+
+    override func drawContent(in bounds: NSRect, ink: NSColor) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        let outline = ParcBrandMark.monochromeBounds
+        guard outline.height > 0 else { return }
+        let height: CGFloat = 16, scale = height / outline.height
+        let width = outline.width * scale
+        var transform = CGAffineTransform(translationX: (bounds.midX - width / 2).rounded(), y: (bounds.midY - height / 2).rounded())
+            .scaledBy(x: scale, y: scale).translatedBy(x: -outline.minX, y: -outline.minY)
+        guard let path = ParcBrandMark.monochromePath.copy(using: &transform) else { return }
+        context.saveGState()
+        context.addPath(path); context.setFillColor(ink.cgColor); context.fillPath()
+        if !isChecked {
+            context.setStrokeColor(ink.cgColor); context.setLineWidth(1.5); context.setLineCap(.round)
+            context.move(to: CGPoint(x: bounds.midX - 8, y: bounds.midY + 8))
+            context.addLine(to: CGPoint(x: bounds.midX + 8, y: bounds.midY - 8))
+            context.strokePath()
+        }
+        context.restoreGState()
     }
 }
 

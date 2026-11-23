@@ -15,7 +15,7 @@ extension CapturePortraitTestsSupport {
         @MainActor @Test func applyingAFrameGrowsTheImageToTheFramedSize() throws {
             let fixture = try PortraitFixture()
             let (capture, _) = try fixture.framed()
-            #expect(capture.pixels.width == 704 && capture.pixels.height == 544)
+            #expect(capture.pixels.width == 400 && capture.pixels.height == 240)
         }
 
         @MainActor @Test func editingAFrameNeverFramesItsPreviousOutput() throws {
@@ -24,7 +24,7 @@ extension CapturePortraitTestsSupport {
             var edited = style
             edited.options.background = .color
             try capture.applyFrame(edited)
-            #expect(capture.pixels.width == 704 && capture.pixels.height == 544)
+            #expect(capture.pixels.width == 400 && capture.pixels.height == 240)
         }
 
         @MainActor @Test func removingTheFrameRestoresTheOriginalBytes() throws {
@@ -39,14 +39,14 @@ extension CapturePortraitTestsSupport {
             let (capture, _) = try fixture.framed()
             try capture.crop(to: CGRect(x: 160, y: 0, width: 160, height: 160))
             #expect(capture.originalPNG == fixture.original && capture.unframedPixels.width == 160)
-            #expect(capture.pixels.width == 544 && capture.pixels.height == 544)
+            #expect(capture.pixels.width == 240 && capture.pixels.height == 240)
         }
 
         @MainActor @Test func theFramedCropShowsTheCroppedColor() throws {
             let fixture = try PortraitFixture()
             let (capture, _) = try fixture.framed()
             try capture.crop(to: CGRect(x: 160, y: 0, width: 160, height: 160))
-            #expect(PortraitFixture.sample(capture.pixels, x: 240, y: 240)[2] > 245)
+            #expect(PortraitFixture.sample(capture.pixels, x: 120, y: 120)[2] > 245)
         }
 
         @MainActor @Test func removingTheFrameFromACropLeavesTheCroppedBytes() throws {
@@ -94,7 +94,7 @@ extension CapturePortraitTestsSupport {
             let tallPNG = try PortraitFixture.png(tall.makeImage()!)
             let capture = try CapturedImage(pngData: tallPNG)
             try capture.applyFrame(fixture.composition())
-            #expect(capture.pixels.height == 2544 && capture.unframedPixels.height == 4000)
+            #expect(capture.pixels.height == 2254 && capture.unframedPixels.height == 4000)
         }
 
         @MainActor @Test func removingATallSourceFrameRestoresTheFullHeight() throws {
@@ -121,11 +121,11 @@ extension CapturePortraitTestsSupport {
             #expect(abs((properties[kCGImagePropertyDPIWidth] as! Double) - 144) < 0.1)
         }
 
-        @MainActor @Test func removingARetinaFrameRestoresTheOriginalBytes() throws {
+        @MainActor @Test func removingARetinaFrameRestoresTheOriginalCapture() throws {
             let fixture = try PortraitFixture()
             let (capture, _) = try fixture.framed(.page, backingScale: 2)
             capture.removeFrame()
-            #expect(capture.pngData == fixture.original)
+            #expect(capture.pngData == capture.originalPNG && capture.pixels === capture.originalPixels)
         }
     }
 }
