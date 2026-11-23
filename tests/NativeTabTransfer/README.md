@@ -4,7 +4,7 @@
 
 The shared `tab_transfer` source set is consumed by both //parc:browser and the test-only target, avoiding a //parc:browser dependency from chrome/test:unit_tests. Run `unit_tests --gtest_filter='NativeTabTransferTest.*'`. The overlay maps the production source set and the test target into the pinned engine; the target installs at //parc/tests/parc_native_tab_transfer and joins //chrome/test:unit_tests on macOS when `enable_parc` is set.
 
-`NativePageCaptureTest.*` pins the window rules for the frozen picture a moved tab leaves behind. The placeholder copy may come from a window that isn't in front, while a person's own capture still needs the front window; every other rule (active app, visible unminimized window, no sheet or security prompt) refuses both, and the placeholder copy takes only the whole visible page. The same suite drives the full-page stitch planner through a long document, top and bottom bars, an inner panel with a header and footer, a narrower panel beside a sidebar, last-frame overlap, a snapped offset, Retina and zoomed rounding, the Easel size cap and a page that doesn't scroll, checking that every output row comes from exactly one frame.
+`NativePageCaptureTest.*` pins the window rules for the frozen picture a moved tab leaves behind. The placeholder copy may come from a window that isn't in front, while a person's own capture still needs the front window; every other rule (active app, visible unminimized window, no sheet or security prompt) refuses both, and the placeholder copy takes only the whole visible page.
 
 ## Native shell contract
 

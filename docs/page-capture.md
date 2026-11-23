@@ -31,53 +31,16 @@ is provenance and is never replayed to obtain pixels. See
 ## Native capture mechanism
 
 Region and viewport capture copy the original compositor surface at device
-scale. Full Page scrolls the page and stitches real viewport frames taken with
-that same surface copy, so what lands in the image is what a person scrolling
-the page would see, including rows a windowed list only creates once they are
-on screen. It never grows the page into one giant surface (anything past the
-GPU's 16,384-pixel texture limit came back as a copy of the top).
-
-An isolated-world query picks what to scroll: the document when it scrolls,
-otherwise the largest visible scrolling panel covering at least a third of the
-page, preferring one under its centre, found again each frame by the same
-locator live captures use. A panel inside a closed shadow root, or a page with
-nothing to scroll, gets a plain visible-area frame; a pinch-zoomed page is
-refused with a hint to pinch back out. While it works it hides that scroller's
-scrollbar and turns off its scroll snapping, so neither shows up or moves the
-frames. The pure planner in `native_page_capture.h` turns the measurements into
-scroll offsets and source-to-output row copies: the first frame keeps
-everything above the bottom bar, middle frames keep only the scrolling band
-between fixed or stuck-sticky bars, and the last frame clamps to the end, takes
-only its new rows and keeps the bottom bar, so a top bar and a player bar each
-appear once, at their ends. Columns beside a narrower panel or a fixed sidebar
-come from the first frame and continue down only where that frame's last rows
-were plain background; otherwise they stay transparent. After the first frame,
-other fixed floaters over the band (chat bubbles, a stuck contents list,
-back-to-top buttons) are hidden so they appear once instead of every viewport.
-
-Each frame scrolls with `behavior: 'instant'`, waits for two submitted frames
-through `InsertVisualStateCallback` so a windowed list can render the new rows,
-then settles for up to 0.6 seconds while the offset, content height or
-in-view images are still changing. The offset the page actually reached is
-re-read before and after the copy and the plan follows it, retrying once when
-the page lands past the rows it still needs. Frames must match the first
-frame's size, zoom and device scale. The scroller's offset, styles and hidden
-elements are put back on every exit: success, failure, the deadline and
-invalidation. The Swift side first takes a visible-area capture and shows it as
-a still cover under the busy wash, so the page never seems to scroll.
-
-Output is capped at what an Easel accepts: 16,384 pixels tall and 80 million
-pixels in all. A longer page stops at the cap (on a Retina screen that is
-8,192 points of page), as does a page that would need more than 64 frames or
-18 seconds of frames; an endless feed stops at the length it had when the
-capture began.
+scale. Full-page capture uses the page-owned DevTools screenshot route with
+`fromSurface` and `captureBeyondViewport`. It refuses an attached debugger and
+restores only its own temporary document preferences and renderer geometry.
 
 One operation per WebContents owns the original document, Profile/private
 context, native window and screenshot-policy lease. Bounds round outward and
 respect Chromium's current dimension limits. Surface capture has a 10-second
 deadline; the full operation has a 30-second deadline. Cancellation invalidates
-script, frame and worker callbacks. Results contain genuine PNG bytes or an
-error; missing pixels never become a placeholder.
+protocol and worker callbacks. Results contain genuine PNG bytes or an error;
+missing pixels never become a placeholder.
 
 The engine's PNG carries device pixels but no density, so every app would open
 a Retina capture at twice its size with each pixel stretched over four.
@@ -158,8 +121,6 @@ remain in memory. Private captures deliberately offer no Easel destination; see
 ## Checks and limits
 
 Component checks cover geometry, invalidation, crop/frame identity, output
-transactions and real image bytes. `NativePageCaptureTest.*` covers the
-full-page planner; `swift test --filter CaptureController` covers the still
-cover.
+transactions and real image bytes.
 Capture is still-image output; website recording/stream controls and discovered
 external videos are described in [capture capabilities](capture-capabilities.md).
