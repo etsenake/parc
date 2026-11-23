@@ -57,7 +57,7 @@ package enum NotePageHTML {
                 + NotePageHTMLStyle.maskRules(for: page) + "</style>\n</head>\n"
             html += "<body class=\"" + classes.joined(separator: " ") + "\">\n"
             if let cover = settings.cover {
-                let position = Int((min(max(cover.position, 0), 1) * 100).rounded())
+                let position = NotePageHTMLWriter.pixels(cover.position.isFinite ? min(max(cover.position, 0), 1) * 100 : 50)
                 let image = "<img class=\"page-cover\" alt=\"\" src=\"" + NotePageHTMLWriter.attribute(writer.source(cover.source))
                     + "\" style=\"object-position:center " + String(position) + "%\">"
                 if let credit = cover.credit, !credit.name.isEmpty {
@@ -140,6 +140,11 @@ struct NotePageHTMLWriter {
                 equationAnchors[key] = anchor
             }
         }
+    }
+
+    static func pixels(_ value: Double) -> Int {
+        guard value.isFinite else { return 0 }
+        return Int(min(max(value, -1e9), 1e9).rounded())
     }
 
     static func slug(_ title: String) -> String {
@@ -536,7 +541,7 @@ struct NotePageHTMLWriter {
         if mode == .document, block.kind == .image, block.props.alignment != .center { classes.append("align-" + block.props.alignment.rawValue) }
         var style = mode == .fragment ? "margin:1em 0;" : ""
         if mode == .document, block.kind == .image, let width = block.props.width, width > 0 {
-            style += width <= 1 ? "width:" + String(Int((width * 100).rounded())) + "%;" : "width:" + String(Int(width.rounded())) + "px;"
+            style += width <= 1 ? "width:" + String(Self.pixels(width * 100)) + "%;" : "width:" + String(Self.pixels(width)) + "px;"
         }
         output += "<figure" + colorClass(block.color, adding: classes) + (style.isEmpty ? "" : " style=\"" + style + "\"") + ">"
         switch block.kind {
@@ -582,7 +587,7 @@ struct NotePageHTMLWriter {
         case .document:
             if block.props.alignment != .center { classes.append("align-" + block.props.alignment.rawValue) }
             if let width = block.props.width, width > 0 {
-                style = width <= 1 ? "width:" + String(Int((width * 100).rounded())) + "%" : "width:" + String(Int(width.rounded())) + "px"
+                style = width <= 1 ? "width:" + String(Self.pixels(width * 100)) + "%" : "width:" + String(Self.pixels(width)) + "px"
             }
         case .fragment:
             style = "margin:1em 0"
@@ -631,7 +636,7 @@ struct NotePageHTMLWriter {
                 let size = crop.croppedSize(of: natural)
                 classes.append("cropped")
                 frameStyle.append("aspect-ratio:" + NoteImageCrop.format(Double(size.width)) + "/" + NoteImageCrop.format(Double(size.height)))
-                if block.props.width == nil { frameStyle.append("width:" + String(Int(size.width.rounded())) + "px") }
+                if block.props.width == nil { frameStyle.append("width:" + String(Self.pixels(Double(size.width))) + "px") }
                 imageStyle.append("width:" + percent(1 / crop.width))
                 imageStyle.append("left:" + percent(-crop.x / crop.width))
                 imageStyle.append("top:" + percent(-crop.y / crop.height))
@@ -833,7 +838,7 @@ struct NotePageHTMLWriter {
         let areas = art.links.compactMap { link -> String? in
             guard let anchor = equationAnchors[link.key] else { return nil }
             let corners = [link.rect.minX.rounded(.down), link.rect.minY.rounded(.down), link.rect.maxX.rounded(.up), link.rect.maxY.rounded(.up)]
-            return "<area shape=\"rect\" coords=\"" + corners.map { String(Int($0)) }.joined(separator: ",") + "\" href=\"#"
+            return "<area shape=\"rect\" coords=\"" + corners.map { String(Self.pixels($0)) }.joined(separator: ",") + "\" href=\"#"
                 + Self.attribute(anchor) + "\" alt=\"" + Self.attribute(referenceDescription(link.key)) + "\">"
         }
         guard !areas.isEmpty else { return image + ">" }

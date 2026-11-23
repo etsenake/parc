@@ -720,8 +720,8 @@ struct NoteMDReader {
         if let color = attributes.color { block.color = color }
         let values = attributes.values
         if let icon = values["icon"] { block.props.icon = icon }
-        if let width = values["width"], let number = Double(width) { block.props.width = number }
-        if let height = values["height"], let number = Double(height) { block.props.height = number }
+        if let width = values["width"], let number = Double(width), number.isFinite { block.props.width = number }
+        if let height = values["height"], let number = Double(height), number.isFinite { block.props.height = number }
         if let align = values["align"], let alignment = NoteAlignment(rawValue: align.lowercased()) { block.props.alignment = alignment }
         if NoteMDMedia.writesFraming(block.kind) {
             if let value = values["crop"], let crop = NoteImageCrop(attribute: value) { block.props.crop = crop }
