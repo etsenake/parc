@@ -324,9 +324,8 @@ extension EaselCanvasView {
 
     func redrawBoardObject(_ id: UUID) {
         guard let item = items.first(where: { $0.id == id }) else { return }
-        let reach = boardOverhang(item) + 4
-        setNeedsDisplay(rect(item).insetBy(dx: -reach, dy: -reach))
         artwork[id]?.needsDisplay = true
+        decoration.setNeedsDisplay(rect(item).insetBy(dx: -(boardOverhang(item) + 4), dy: -(boardOverhang(item) + 4)))
     }
 
     func positionSectionTitleField() {

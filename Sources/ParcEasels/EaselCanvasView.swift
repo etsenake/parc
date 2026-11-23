@@ -94,7 +94,7 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
         guard let editor, let responder = window?.firstResponder as? NSView else { return false }
         return responder === editor || responder.isDescendant(of: editor)
     }
-    func refreshDecorations() { decoration.needsDisplay = true; needsDisplay = true }
+    func refreshDecorations() { decoration.needsDisplay = true }
     lazy var decoration = EaselCanvasDecoration(canvas: self)
     private var trackedItems: [UUID: EaselItem] = [:]
     private var trackedSelection = Set<UUID>()
@@ -2047,8 +2047,7 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
             textSizeBadge = (label, EaselTextLayout.sizeBadgeRect(label, below: area, scale: canvasScale))
         }
         for rect in [previous, textSizeBadge?.rect].compactMap({ $0 }) {
-            setNeedsDisplay(rect.insetBy(dx: -2, dy: -2))
-            if decoration.superview === self { decoration.setNeedsDisplay(rect.insetBy(dx: -2, dy: -2)) }
+            decoration.setNeedsDisplay(rect.insetBy(dx: -2, dy: -2))
         }
     }
     func setTextSize(_ size: EaselTextStyle.Size) { changeTextStyle { $0 = EaselTextSizing.preset($0, size: size) } }
