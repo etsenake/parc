@@ -45,6 +45,7 @@ final class StartPageView: NSView {
 
     let commandBarSlot: NSView = StartPageCommandBarSlot()
     let mark = StartPageMarkView()
+    let privateMark: StartPagePrivateMarkView
     let paper = StartPagePaperView()
     let windowButtons = WindowStandardButtons()
     let markEffects = StartPagePassthroughView()
@@ -54,6 +55,7 @@ final class StartPageView: NSView {
         didSet {
             guard incognito != oldValue else { return }
             paper.incognito = incognito; mark.incognito = incognito
+            refreshMarks()
             applyPalette()
         }
     }
@@ -81,10 +83,15 @@ final class StartPageView: NSView {
     private var sidebarGlyphPointSize: CGFloat = 0
     override var isFlipped: Bool { true }
 
-    override init(frame frameRect: NSRect) {
+    override convenience init(frame frameRect: NSRect) {
+        self.init(frame: frameRect, privateMark: StartPagePrivateMarkView())
+    }
+
+    init(frame frameRect: NSRect, privateMark: StartPagePrivateMarkView) {
+        self.privateMark = privateMark
         super.init(frame: frameRect)
         wantsLayer = true
-        for view in [paper, mark, commandBarSlot, windowButtons, sidebarButton, markEffects] { addSubview(view) }
+        for view in [paper, mark, privateMark, commandBarSlot, windowButtons, sidebarButton, markEffects] { addSubview(view) }
         mark.effectsHost = markEffects
         sidebarButton.imagePosition = .imageOnly
         sidebarButton.translucentFace = TranslucentButtonFace(view: sidebarButton)
@@ -97,6 +104,7 @@ final class StartPageView: NSView {
         setAccessibilityLabel(Self.accessibilityTitle)
         applyTheme()
         refreshChrome()
+        refreshMarks()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
@@ -115,10 +123,13 @@ final class StartPageView: NSView {
         super.layout()
         if paper.frame != bounds { paper.frame = bounds }
         if markEffects.frame != bounds { markEffects.frame = bounds }
-        let frames = StartPageLayout(size: bounds.size, barRestHeight: barRestHeight, markSize: mark.intrinsicContentSize,
+        let frames = StartPageLayout(size: bounds.size, barRestHeight: barRestHeight,
+                                     markSize: showsPrivateMark ? StartPagePrivateMarkView.size : mark.intrinsicContentSize,
                                      chromeOrigin: showsWindowChrome ? chromeOrigin : nil, showsWindowButtons: showsWindowButtons,
                                      toolbarWidth: sidebarToolbarWidth, showsNavigation: sidebarShowsNavigation)
-        if mark.frame != frames.mark { mark.frame = frames.mark }
+        if showsPrivateMark {
+            if privateMark.frame != frames.mark { privateMark.frame = frames.mark }
+        } else if mark.frame != frames.mark { mark.frame = frames.mark }
         if commandBarSlot.frame != frames.commandBarSlot { commandBarSlot.frame = frames.commandBarSlot }
         if let frame = frames.windowButtons, windowButtons.frame != frame { windowButtons.frame = frame }
         guard let frame = frames.sidebarButton else { return }
@@ -166,6 +177,15 @@ final class StartPageView: NSView {
     private func applyPalette() {
         let palette = ThemeChromePalette(theme: paper.effectiveTheme, isDark: paper.isDark)
         if sidebarButton.contentTintColor != palette.title { sidebarButton.contentTintColor = palette.title }
+    }
+
+    var showsPrivateMark: Bool { incognito && privateMark.hasArtwork }
+
+    private func refreshMarks() {
+        let privateShown = showsPrivateMark
+        if mark.isHidden != privateShown { mark.isHidden = privateShown }
+        if privateMark.isHidden == privateShown { privateMark.isHidden = !privateShown }
+        needsLayout = true
     }
 
     private func refreshChrome() {

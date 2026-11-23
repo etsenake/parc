@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import ParcCore
 import ParcKit
 import ParcCommandBar
 import ParcSidebar
@@ -119,5 +120,39 @@ extension BrowserWindowController {
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             startPage.animator().alphaValue = 1
         }
+    }
+    func chromiumNewTabSurface(for pane: BrowserPane) -> StartPageView {
+        let page: StartPageView
+        if let existing = pane.newTabSurface {
+            page = existing
+        } else {
+            page = StartPageView()
+            page.barRestHeight = CommandBar.residentRestHeight
+            page.showsWindowButtons = false
+            page.setAccessibilityLabel("New tab")
+            let prompt = StartPageAddressPrompt(frame: NSRect(x: 0, y: 0, width: 0, height: CommandBar.residentRestHeight))
+            prompt.autoresizingMask = [.width]
+            page.commandBarSlot.addSubview(prompt)
+            prompt.onActivate = { [weak self, weak pane] in
+                guard let self, let pane, let id = self.panes.first(where: { $0.value === pane })?.key else { return }
+                self.openChromiumNewTabCommandBar(id)
+            }
+            pane.newTabSurface = page
+        }
+        page.coordinateSpace = rootView
+        page.incognito = rootView.incognito
+        page.theme = rootView.theme
+        page.pagingTransition = rootView.pagingTransition
+        return page
+    }
+    func promptChromiumNewTab(_ id: UUID) {
+        guard promptedNewTabIDs.insert(id).inserted else { return }
+        DispatchQueue.main.async { [weak self] in self?.openChromiumNewTabCommandBar(id) }
+    }
+    func openChromiumNewTabCommandBar(_ id: UUID) {
+        guard currentTabID == id, activePeek == nil, let window, window.isKeyWindow, window.attachedSheet == nil,
+              commandBar == nil, libraryView == nil, spaceCreation == nil,
+              let browser = browsers[id], ChromiumNewTabPage.matches(browser.url?.absoluteString) else { return }
+        presentCommandBar(newTab: false)
     }
 }

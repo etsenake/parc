@@ -490,6 +490,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var residentCommandBar: CommandBar?
     var residentCommandOwner: (spaceID: UUID, profileID: UUID)?
     var startPagePresented = false
+    var promptedNewTabIDs: Set<UUID> = []
     var startPageRefreshScheduled = false
     var startPageDeparting = false
     var closeFade: TabCloseFade?

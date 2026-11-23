@@ -42,6 +42,7 @@ final class BrowserPane: NSView {
     let error = PageFailureView()
     private var nativeContent: NSView?
     private(set) var showsBlank = false
+    var newTabSurface: StartPageView?
     private(set) var showsNoteCanvas = false
     private(set) var showsTopBar = false
     private var noteCanvasContentAppearance: NSAppearance?

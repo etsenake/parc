@@ -321,7 +321,7 @@ extension BrowserWindowController {
         }
         let historyExcludedURL = currentBrowser?.url?.absoluteString
             ?? store.state.tabs.first(where: { $0.id == commandTab })?.url
-        let seedURL = newTab ? nil : historyExcludedURL
+        let seedURL = newTab || ChromiumNewTabPage.matches(historyExcludedURL) ? nil : historyExcludedURL
         let typedItems = currentSidebarMenuItems
         let typedCommands = commandBarTypedCommands(items: typedItems, profileID: commandProfile)
         if resident { residentTypedCommands = (typedItems, typedCommands) }

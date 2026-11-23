@@ -20,6 +20,19 @@ a Space with no open tab, or creating one, lands there too. Popup windows, an op
 own content. Add Split's pending pane keeps its placeholder and sidebar hold
 while a result is being chosen; see [sidebar motion](sidebar-motion.md#add-splits-pending-pane-keeps-its-sidebar).
 
+A tab that lands on Chromium's own New Tab page (an extension opening a tab
+without an address, `parc://newtab` or the internal-page directory) shows the
+start page instead, inside that tab: the paper, the mark and a "Search or Enter
+URL…" field. Selecting the tab opens the command bar once, and the field opens it
+again; what you enter loads in that tab, replacing the New Tab page, so an
+extension that later sends the tab somewhere still finds it. Chromium's page
+keeps running hidden underneath.
+
+In private windows the mark is Boo, Parc's private mark (a sheet ghost with the
+P's foot showing, from `Resources/PrivateMark`), on a rounded tile, in both the
+empty-Space start page and a private tab's New Tab page; the sidebar shows Boo
+as that tab's icon too.
+
 `BrowserWindowController` places one `StartPageView` per window as the page
 card's only content and builds it the first time a window needs it, so windows
 with tabs never pay for it. Every render refreshes it: a new Space or Profile

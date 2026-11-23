@@ -447,6 +447,9 @@ extension BrowserWindowController {
                 && !resolvingTransfers.contains(expected.id) && transferRecoveries[expected.id] == nil
         }
         guard current(), InternalPage(urlString: expected.url) == nil else { completion(nil); return }
+        if isPrivateBrowsing, ChromiumNewTabPage.matches(expected.url), let artwork = StartPagePrivateMarkView.artwork {
+            completion(artwork); return
+        }
         if let browser = browsers[expected.id] {
             guard browserProfiles[expected.id] == expected.profileID,
                   ownership.canUse(expected.id, owner: presentationID),

@@ -637,7 +637,13 @@ extension BrowserWindowController {
             pane.showRendererFailure(crash)
         }
         else if let message = failures[id] { pane.showError(message) }
-        else { pane.showBrowser() }
+        else if ChromiumNewTabPage.matches(browser.url?.absoluteString) {
+            pane.showNativeContent(chromiumNewTabSurface(for: pane))
+            promptChromiumNewTab(id)
+        } else {
+            pane.showBrowser()
+            promptedNewTabIDs.remove(id)
+        }
         synchronizeNativeLayout()
         guard browsers[id] === browser else { return }
         if let crash, moveFocusToError {

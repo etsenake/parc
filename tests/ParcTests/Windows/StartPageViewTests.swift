@@ -389,3 +389,52 @@ struct StartPagePaperStyleTests {
         #expect(page.sidebarButton.contentTintColor == ThemeChromePalette(theme: violet, isDark: dark).title)
     }
 }
+
+@MainActor struct StartPagePrivateMarkTests {
+    private static func artwork() -> NSImage {
+        let image = NSImage(size: NSSize(width: 64, height: 64))
+        image.lockFocus(); NSColor.systemPurple.setFill(); NSRect(x: 0, y: 0, width: 64, height: 64).fill(); image.unlockFocus()
+        return image
+    }
+
+    private static func page(artwork: NSImage?, incognito: Bool) -> StartPageView {
+        _ = NSApplication.shared
+        let page = StartPageView(frame: NSRect(x: 0, y: 0, width: 1220, height: 820), privateMark: StartPagePrivateMarkView(image: artwork))
+        page.incognito = incognito
+        page.layoutSubtreeIfNeeded()
+        return page
+    }
+
+    @Test func aPrivateStartPageShowsBooInPlaceOfTheMark() {
+        let page = Self.page(artwork: Self.artwork(), incognito: true)
+        let layout = StartPageLayout(size: page.bounds.size, barRestHeight: page.barRestHeight,
+                                     markSize: StartPagePrivateMarkView.size, chromeOrigin: nil, showsWindowButtons: true)
+        #expect(page.mark.isHidden && !page.privateMark.isHidden)
+        #expect(page.privateMark.frame == layout.mark && page.commandBarSlot.frame == layout.commandBarSlot)
+    }
+
+    @Test func aRegularStartPageKeepsTheMark() {
+        let page = Self.page(artwork: Self.artwork(), incognito: false)
+        #expect(!page.mark.isHidden && page.privateMark.isHidden)
+    }
+
+    @Test func leavingPrivateBrowsingBringsTheMarkBack() {
+        let page = Self.page(artwork: Self.artwork(), incognito: true)
+        page.incognito = false
+        page.layoutSubtreeIfNeeded()
+        #expect(!page.mark.isHidden && page.privateMark.isHidden)
+    }
+
+    @Test func aMissingArtworkFallsBackToTheMark() {
+        let page = Self.page(artwork: nil, incognito: true)
+        #expect(!page.mark.isHidden && page.privateMark.isHidden)
+    }
+
+    @Test func theAddressPromptOpensTheCommandBar() {
+        let prompt = StartPageAddressPrompt(frame: NSRect(x: 0, y: 0, width: 600, height: 64))
+        var opened = 0
+        prompt.onActivate = { opened += 1 }
+        #expect(prompt.accessibilityPerformPress())
+        #expect(opened == 1 && prompt.accessibilityRole() == .button)
+    }
+}
