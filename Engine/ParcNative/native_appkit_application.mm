@@ -727,10 +727,10 @@ class AppKitApplication final : public NativeApplication {
     NSMutableArray<NSString*>* arguments =
         [NSMutableArray arrayWithCapacity:command_line.argv().size()];
     for (const auto& argument : command_line.argv()) {
-      [arguments addObject:base::SysUTF8ToNSString(argument)];
+      [arguments addObject:LossyNSString(argument)];
     }
     [client nativeApplicationRelaunchedWithArguments:[arguments copy]
-                                    currentDirectory:base::SysUTF8ToNSString(
+                                    currentDirectory:LossyNSString(
                                                          current_directory
                                                              .value())];
     return true;

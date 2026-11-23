@@ -334,7 +334,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_application.mm",
       "target": "parc/native/native_appkit_application.mm",
-      "sha256": "66f26da5021fe48d68b0ee1f3257c0a08c8d7cda58e1da3bdfec682563471854"
+      "sha256": "4c5489985132faf63f1d485c25b911402086ae5d701c5ce58800671af897015f"
     },
     {
       "source": "Engine/ParcNative/native_appkit_bridge.h",
