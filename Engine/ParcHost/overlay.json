@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 800,
+  "version": 801,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -919,7 +919,7 @@
     {
       "source": "Engine/ParcNative/native_capture_picker.mm",
       "target": "parc/native/native_capture_picker.mm",
-      "sha256": "a5e64ddfeb3d386a4442e7947709b01848e6b661fff0f4f48896db28be94388f"
+      "sha256": "6816e6b00cd10e1d0a7a2380aa449d7ef783c6ef92d0fa480f73f33953a99ee8"
     },
     {
       "source": "Engine/ParcNative/native_card_save_session.h",

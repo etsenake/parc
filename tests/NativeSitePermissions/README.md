@@ -51,8 +51,8 @@ Prompt geometry metrics remain absent because this is an AppKit presentation;
 the actual popover anchor is supplied separately by the native page host.
 
 Screen/window/tab selection uses the registered `WrapNativeCapturePicker` route
-and the genuine Chromium/system picker under its original document and security
-reservation. Site setting changes and revocation use the Site Control Center's
+and the genuine Chromium/system picker under its original document; the picker
+holds the window's security reservation itself while it shows. Site setting changes and revocation use the Site Control Center's
 real PageInfo presenter, including `OnSitePermissionChanged` and `OnUIClosing`.
 These are separate connected owners, not missing permission-prompt screens.
 See [web interactions](../../docs/web-interactions.md#dialogs-authentication-certificates-and-permissions--web15).

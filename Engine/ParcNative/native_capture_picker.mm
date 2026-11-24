@@ -91,13 +91,9 @@ class CaptureSession final : public content::WebContentsObserver,
                        : tab_ && tab_->IsActivated() && tab_->GetContents() == contents &&
                              tab_->GetBrowserWindowInterface() == browser_.get());
   }
-  bool Valid() const {
-    return !finished_ && !revoked_ && ValidOwner() &&
-           (!reservation_ || reservation_.isOnlyReservation);
-  }
+  bool Valid() const { return !finished_ && !revoked_ && ValidOwner(); }
   bool ValidForDelivery() const {
-    return ValidOwner() && (reservation_ ? reservation_.isOnlyReservation
-                                        : !PCNativeWindowHasSecurityReservation(parent_));
+    return ValidOwner() && !PCNativeWindowHasSecurityReservation(parent_);
   }
   bool MatchesCurrentTab(const ID& id) const {
     if (!current_tab_only_) return true;
@@ -128,11 +124,6 @@ class CaptureSession final : public content::WebContentsObserver,
       auxiliary_cancel_ = auxiliary_->OnInvalidated(
           base::BindRepeating(&CaptureSession::Cancel, weak));
     }
-    auto reservation = [PCNativeWindowSecurityReservation acquireForWindow:parent_];
-    if (!weak || !Valid() || !reservation.isOnlyReservation) {
-      [reservation invalidate]; Cancel(); return;
-    }
-    reservation_ = reservation;
     notifications_ = [NSMutableArray array];
     for (NSNotificationName name in @[NSWindowWillCloseNotification,
                                       NSWindowDidMiniaturizeNotification,
@@ -148,55 +139,21 @@ class CaptureSession final : public content::WebContentsObserver,
         queue:nil usingBlock:^(NSNotification*) {
           if (weak && !weak->Valid()) weak->Cancel();
         }]];
-    {
-      // Keep Chromium's actual desktop picker and its source controls. The
-      // surrounding session still owns the original request's security lease.
-      // Show can reenter through native widget construction, so cancellation
-      // revokes immediately but defers picker destruction until it returns.
-      stock_mode_ = true;
-      auto forwarded = params_;
-      auto destroying = std::move(params_.on_picker_destroying);
-      forwarded.on_picker_destroying = base::BindRepeating(
-          [](std::shared_ptr<CaptureSession> session,
-             base::RepeatingClosure destroying) {
-            // Close() can be asynchronous. Keep the native window reservation
-            // until the actual view is gone, even after the picker is reset.
-            session->stock_view_destroyed_ = true;
-            session->in_destroying_callback_ = true;
-            if (destroying) destroying.Run();
-            session->in_destroying_callback_ = false;
-            session->ScheduleStockReservationRelease();
-          }, shared_from_this(), std::move(destroying));
-      ++dispatch_depth_;
-      // Hold the session through Chromium's posted result even if the outer
-      // picker is abandoned first; the result must then be discarded safely.
-      fallback_->Show(forwarded, std::move(lists_), base::BindOnce(
-          [](std::shared_ptr<CaptureSession> session, Result result) {
-            session->StockResult(std::move(result));
-          }, shared_from_this()));
-      --dispatch_depth_;
-      if (revoked_) ScheduleCancel();
-      else if (!Valid()) Cancel();
-      return;
-    }
-  }
-  void ScheduleStockReservationRelease() {
-    if (!stock_view_destroyed_ || !finished_ || !reservation_ ||
-        in_destroying_callback_ || reservation_release_scheduled_) return;
-    reservation_release_scheduled_ = true;
-    auto keep = shared_from_this();
-    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
-        FROM_HERE, base::BindOnce([](std::shared_ptr<CaptureSession> self) {
-          self->reservation_release_scheduled_ = false;
-          [self->reservation_ invalidate];
-          self->reservation_ = nil;
-        }, std::move(keep)));
+    stock_mode_ = true;
+    auto forwarded = params_;
+    params_.on_picker_destroying.Reset();
+    ++dispatch_depth_;
+    fallback_->Show(forwarded, std::move(lists_), base::BindOnce(
+        [](std::shared_ptr<CaptureSession> session, Result result) {
+          session->StockResult(std::move(result));
+        }, shared_from_this()));
+    --dispatch_depth_;
+    if (revoked_) ScheduleCancel();
+    else if (!Valid()) Cancel();
   }
   void Cancel() {
     if (finished_) return;
     revoked_ = true;
-    // Native view callbacks can invalidate this request while the picker is
-    // still using its controller. Revoke now and tear down on the next turn.
     if (stock_mode_ || dispatch_depth_) { ScheduleCancel(); return; }
     Finish(base::unexpected(Error::PERMISSION_DENIED_BY_USER));
   }
@@ -213,8 +170,6 @@ class CaptureSession final : public content::WebContentsObserver,
         }, std::move(keep)));
   }
   void StockResult(Result result) {
-    // A picker is allowed to complete while Show or a widget callback is on
-    // its stack. Never destroy it on that stack.
     auto keep = shared_from_this();
     base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(
@@ -231,9 +186,6 @@ class CaptureSession final : public content::WebContentsObserver,
     Finish(std::move(result));
   }
   void Abandon() {
-    // The outer request may be erased even after the picker has posted its
-    // result. Until delivery begins, do not let that result reach a later
-    // request in Chromium's per-WebContents queue.
     if (delivered_ || abandoned_) return;
     abandoned_ = true;
     callback_.Reset();
@@ -266,17 +218,11 @@ class CaptureSession final : public content::WebContentsObserver,
     deactivate_ = {}; detach_ = {}; discard_ = {}; auxiliary_cancel_ = {};
     for (id observer in notifications_) [NSNotificationCenter.defaultCenter removeObserver:observer];
     notifications_ = nil;
-    // A picker not yet shown still owns its offered models. Once shown,
-    // Chromium owns them and their delegated-session leases.
     lists_.clear();
     fallback_.reset();
-    if (stock_mode_) ScheduleStockReservationRelease();
-    else { [reservation_ invalidate]; reservation_ = nil; }
     auto callback = std::move(callback_);
     auto destroying = std::move(params_.on_picker_destroying);
     if (destroying) destroying.Run();
-    // Mirrors Chromium's picker ownership contract: completion may destroy
-    // the DesktopMediaPicker, so invoke after the native UI is detached.
     if (callback) base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(
             [](std::shared_ptr<CaptureSession> self,
@@ -285,7 +231,6 @@ class CaptureSession final : public content::WebContentsObserver,
                 if (result.has_value()) ReleaseNativeSelection(result.value());
                 return;
               }
-              // A new document or parent can arrive during the task boundary.
               if (result.has_value() &&
                   (!self->ValidForDelivery() || !self->MatchesCurrentTab(result.value()))) {
                 ReleaseNativeSelection(result.value());
@@ -306,16 +251,14 @@ class CaptureSession final : public content::WebContentsObserver,
   std::shared_ptr<NativeAuxiliaryPage> auxiliary_;
   base::CallbackListSubscription deactivate_, detach_, discard_, auxiliary_cancel_;
   bool current_tab_only_ = false, finished_ = false;
-  bool revoked_ = false, cancel_scheduled_ = false, in_destroying_callback_ = false;
-  bool stock_mode_ = false, stock_view_destroyed_ = false;
-  bool reservation_release_scheduled_ = false;
+  bool revoked_ = false, cancel_scheduled_ = false;
+  bool stock_mode_ = false;
   unsigned dispatch_depth_ = 0;
   bool abandoned_ = false, delivered_ = false;
   raw_ptr<content::WebContents> identity_;
   std::unique_ptr<DesktopMediaPicker> fallback_;
   NSWindow* __weak parent_;
   NSView* __weak page_;
-  PCNativeWindowSecurityReservation* __strong reservation_;
   NSMutableArray* __strong notifications_;
   base::WeakPtrFactory<CaptureSession> weak_factory_{this};
 };
@@ -353,7 +296,7 @@ class RoutingPicker final : public DesktopMediaPicker {
   content::WeakDocumentPtr document_;
   bool exact_request_, current_tab_only_ = false;
 };
-}  // namespace
+}
 void SetNativeCapturePickerRoute(base::RepeatingCallback<bool(content::WebContents&)> route) {
   Route() = std::move(route);
 }
@@ -369,4 +312,4 @@ void CancelNativeCapturePicker(content::WebContents& contents) {
   for (auto* session : it->second) sessions.push_back(session->shared_from_this());
   for (const auto& session : sessions) session->Cancel();
 }
-}  // namespace parc
+}

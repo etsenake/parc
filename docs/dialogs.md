@@ -31,6 +31,10 @@ that asked, follows it as the window moves or resizes, hides with its tab, keeps
 the page or DevTools pane blocked until it closes, closes with its page or window
 and hands focus back to it. A window's dialog sits along the top of the page area.
 Each holds the window's security reservation and waits while another prompt has it.
+The screen, window and tab sharing picker is one of these. Parc's share request
+checks the page and window, then leaves the reservation to the picker: a request
+that held it itself would keep its own picker waiting, invisible, with the window
+locked.
 
 Device pickers for Web Bluetooth (the device chooser and the scanning prompt),
 WebUSB, WebHID and Web Serial never reach Chromium's Views chooser bubble, which

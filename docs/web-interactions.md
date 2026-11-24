@@ -123,7 +123,7 @@ unrelated page or answered after its original owner retires.
 | Site permission | Original request popover anchored to that page's controls, with Not Now/Allow |
 | Server certificate | Chromium's certificate viewer sheet for the visible certificate; while Developer Tools are open on the page (or in their own window), any certificate the Security or Network panel asks for |
 | Client certificate | Genuine Chromium `SSLClientCertificateSelector` |
-| Screen/window/tab sharing | Genuine Chromium/system picker under its original request lease |
+| Screen/window/tab sharing | Genuine Chromium/system picker, attached to the sharing page and holding the window's security reservation while it shows |
 
 Page dialogs use the engine's shared Parc dialog (`dialog_style.mm`): Parc's
 mark, the bold title, the page's text (scrolling when very long), key-badged
