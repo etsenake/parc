@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.18.3 (2026-11-24)
+
+### Fixed
+
+- **notes:** Give selected blocks a toolbar and send the cursor Home
+- **capture:** Screen sharing shows its picker again instead of freezing the window with nothing on screen
+- **capture:** Clicking Share always starts the share, even when another prompt was waiting to appear
+
 ## 2.18.2 (2026-11-23)
 
 ### Fixed

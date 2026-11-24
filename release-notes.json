@@ -1,6 +1,31 @@
 {
   "releases": [
     {
+      "version": "2.18.3",
+      "build": 58,
+      "date": "2026-11-24",
+      "changes": [
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Give selected blocks a toolbar and send the cursor Home",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "capture",
+          "summary": "Screen sharing shows its picker again instead of freezing the window with nothing on screen",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "capture",
+          "summary": "Clicking Share always starts the share, even when another prompt was waiting to appear",
+          "breaking": false
+        }
+      ]
+    },
+    {
       "version": "2.18.2",
       "build": 57,
       "date": "2026-11-23",
