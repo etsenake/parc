@@ -92,9 +92,6 @@ class CaptureSession final : public content::WebContentsObserver,
                              tab_->GetBrowserWindowInterface() == browser_.get());
   }
   bool Valid() const { return !finished_ && !revoked_ && ValidOwner(); }
-  bool ValidForDelivery() const {
-    return ValidOwner() && !PCNativeWindowHasSecurityReservation(parent_);
-  }
   bool MatchesCurrentTab(const ID& id) const {
     if (!current_tab_only_) return true;
     auto* frame = main_document_.AsRenderFrameHostIfValid();
@@ -232,7 +229,7 @@ class CaptureSession final : public content::WebContentsObserver,
                 return;
               }
               if (result.has_value() &&
-                  (!self->ValidForDelivery() || !self->MatchesCurrentTab(result.value()))) {
+                  (!self->ValidOwner() || !self->MatchesCurrentTab(result.value()))) {
                 ReleaseNativeSelection(result.value());
                 result = base::unexpected(Error::PERMISSION_DENIED_BY_USER);
               }
