@@ -210,7 +210,8 @@ struct SafariSidebarReaderTests {
 
     @Test func theFixtureBecomesItsSpacesProfilesPinnedTodayAndFavorites() throws {
         try Fixture.withHome { home in
-            #expect(try Fixture.read(home) == Fixture.expected)
+            let imported = try Fixture.read(home)
+            #expect(imported == Fixture.expected)
         }
     }
 
@@ -294,7 +295,8 @@ struct SafariSidebarReaderTests {
 
     @Test func noChosenProfileImportsNothing() throws {
         try Fixture.withHome { home in
-            #expect(try SafariSidebarReader.read(home: home, profiles: []) == SidebarImport(spaces: []))
+            let imported = try SafariSidebarReader.read(home: home, profiles: [])
+            #expect(imported == SidebarImport(spaces: []))
         }
     }
 }
