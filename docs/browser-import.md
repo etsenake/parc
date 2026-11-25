@@ -74,7 +74,9 @@ Each supported browser's own reader turns its tab organisation into one
 `SidebarImport`, which the store inserts in a single save before any other data
 imports. Readers work on private copies of the source files, skip what they
 cannot use and report real losses as import warnings. A Space remembers the
-source Space or window it came from, so importing again adds nothing twice.
+source Space or window it came from, so importing again fills that same Space:
+tabs it already has are skipped, same-named folders are reused and only new
+items arrive.
 Browsers whose windows are not named Spaces put their first window into the
 Space the import started from and give every further window a Space of its own.
 Tab groups become Pinned folders that open or close as they did, split views keep
@@ -83,7 +85,7 @@ link routing rules join Air Traffic Control without duplicates.
 
 | Browser | What comes over, and from where |
 | --- | --- |
-| Arc | Spaces with their Profiles, pinned tabs, folders and their open state, Tidy Tabs groups, splits, Today tabs, unread dots, a collapsed Pinned section, Favorites, the archive and Air Traffic Control rules, from the sidebar, windows, archive and routing files. |
+| Arc | Spaces with their Profiles, pinned tabs, folders and their open state, Tidy Tabs groups, splits, Today tabs, unread dots, a collapsed Pinned section, Favorites, the archive and Air Traffic Control rules, from the sidebar, windows, archive and routing files. Arc notes become Parc notes in the Space's Notes folder, as Markdown with their pictures, in the sidebar spot they held; a note with the same name and text is reused rather than copied. |
 | Zen | Spaces with their themes, each container as its own Profile, Essentials as Favorites, pinned tabs, nested folders, splits, renamed tabs, open tabs and space routing, from `zen-sessions.jsonlz4` (or Zen's own backups) and the routing file. |
 | Firefox | Pinned tabs, tab groups, split views, open tabs, saved groups, closed tabs and the sites pinned on the New Tab page as Favorites, from the session file Firefox itself would restore. Profiles made with Firefox's newer profile manager are listed too. |
 | Chrome, Chromium, Brave, Edge, Comet, Helium | Pinned tabs, tab groups, split views, open tabs per window, closed tabs and saved tab groups, from the session files and the saved-group store. Helium's pins keep their home address; Brave's sidebar web panels become Favorites. |
