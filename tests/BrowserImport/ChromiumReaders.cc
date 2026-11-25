@@ -221,6 +221,70 @@ void BookmarkStores(const base::FilePath& root,
   Require(!ReadChromiumCategory(options, kBookmarks, stop).success,
           "missing bookmark files refuse");
 }
+void BookmarkRootPresentation(const base::FilePath& root,
+                              const parc::importer::Cancellation& stop) {
+  using namespace parc::importer;
+  ReadOptions options;
+  options.family = Family::kChromium;
+  options.profile_path = Directory(root, "vivaldi-roots");
+  Write(options.profile_path.AppendASCII("Bookmarks"),
+        R"({"roots":{"bookmark_bar":{"type":"folder","name":"Bookmarks","children":[)"
+        R"({"type":"url","name":"Keep","url":"https://keep.test/"},)"
+        R"({"type":"url","name":"---","url":"","meta_info":{"Description":"separator"}},)"
+        R"({"type":"url","name":"Dashes","url":"https://dashes.test/","meta_info":{"Description":"note"}},)"
+        R"({"type":"folder","name":"Speed Dial","meta_info":{"Speeddial":"true"},"children":[)"
+        R"({"type":"url","name":"Mine","url":"https://mine.test/"},)"
+        R"({"type":"url","name":"Sponsor","url":"https://sponsor.test/","meta_info":{"Partner":"5d2b4a"}}]},)"
+        R"({"type":"folder","name":"Shopping","meta_info":{"Partner":"7e1c9f"},"children":[)"
+        R"({"type":"url","name":"Store","url":"https://store.test/","meta_info":{"Partner":"8a3f2d"}}]},)"
+        R"({"type":"folder","name":"Trash","guid":"9f32a0fb-bfd9-5032-be46-07afe4a25400","children":[)"
+        R"({"type":"url","name":"Old","url":"https://trashed.test/"}]}]},)"
+        R"("other":{"type":"folder","name":"Other bookmarks","children":[]},)"
+        R"("trash":{"type":"folder","name":"Trash","guid":"9f32a0fb-bfd9-5032-be46-07afe4a25400","children":[)"
+        R"({"type":"url","name":"Gone","url":"https://gone.test/"}]}}})");
+  auto b = ReadChromiumCategory(options, kBookmarks, stop);
+  Require(b.success && b.bookmarks.size() == 6,
+          "Vivaldi trash, separators and partner entries are left out");
+  Require(b.bookmarks[0].title == u"Bookmarks" &&
+              b.bookmarks[1].url == "https://keep.test/" &&
+              b.bookmarks[2].url == "https://dashes.test/" &&
+              b.bookmarks[3].folder && b.bookmarks[3].title == u"Speed Dial" &&
+              b.bookmarks[4].url == "https://mine.test/" &&
+              b.bookmarks[4].parent == b.bookmarks[3].id &&
+              b.bookmarks[5].title == u"Other bookmarks",
+          "Vivaldi user bookmarks and Speed Dial keep their order");
+  Require(Count(b, "https://trashed.test/") == 0 &&
+              Count(b, "https://gone.test/") == 0 &&
+              Count(b, "https://sponsor.test/") == 0 &&
+              Count(b, "https://store.test/") == 0,
+          "Vivaldi trashed and partner addresses never appear");
+  options.profile_path = Directory(root, "opera-roots");
+  Write(options.profile_path.AppendASCII("Bookmarks"),
+        R"({"roots":{"bookmark_bar":{"type":"folder","name":"Bookmarks bar","children":[]},)"
+        R"("other":{"type":"folder","name":"Other bookmarks","children":[]},)"
+        R"("synced":{"type":"folder","name":"Mobile bookmarks","children":[]},)"
+        R"("custom_root":{)"
+        R"("speedDial":{"type":"folder","name":"Speed Dial","children":[)"
+        R"({"type":"url","name":"Tile","url":"https://tile.test/","meta_info":{"imageID":"i1"}}]},)"
+        R"("trash":{"type":"folder","name":"Trash","children":[)"
+        R"({"type":"url","name":"Binned","url":"https://binned.test/"}]},)"
+        R"("unsorted":{"type":"folder","name":"Unsorted bookmarks","children":[)"
+        R"({"type":"url","name":"Loose","url":"https://loose.test/"}]},)"
+        R"("extra":{"type":"folder","name":"Unknown","children":[]}}}})");
+  b = ReadChromiumCategory(options, kBookmarks, stop);
+  Require(b.success && b.bookmarks.size() == 7,
+          "Opera Speed Dial and Unsorted import while its Trash does not");
+  Require(b.bookmarks[3].title == u"Speed Dial" &&
+              b.bookmarks[3].id == "speedDial" &&
+              b.bookmarks[4].url == "https://tile.test/" &&
+              b.bookmarks[4].parent == "speedDial" &&
+              b.bookmarks[5].title == u"Unsorted bookmarks" &&
+              b.bookmarks[6].url == "https://loose.test/" &&
+              b.bookmarks[6].parent == "unsorted",
+          "Opera custom roots follow the standard roots as ordinary folders");
+  Require(Count(b, "https://binned.test/") == 0,
+          "Opera trashed bookmarks never appear");
+}
 void LoginTable(const base::FilePath& path) {
   sqlite3* db = Database(path);
   SQL(db,
@@ -454,6 +518,7 @@ int main() {
   Require(!failed.success && failed.passwords.empty(),
           "later unsupported encryption publishes no partial passwords");
   BookmarkStores(temp.GetPath(), stop);
+  BookmarkRootPresentation(temp.GetPath(), stop);
   AccountPasswords(temp.GetPath(), stop);
   FallbackKey(temp.GetPath(), stop);
   const auto cookies = temp.GetPath().AppendASCII("Cookies");

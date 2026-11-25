@@ -105,7 +105,16 @@ bool FinishQuery(Statement& query,
   return true;
 }
 constexpr base::TimeDelta kSameSave = base::Minutes(1);
-constexpr const char* kBookmarkRoots[] = {"bookmark_bar", "other", "synced"};
+struct BookmarkRootKey {
+  const char* container;
+  const char* key;
+};
+constexpr BookmarkRootKey kBookmarkRoots[] = {{nullptr, "bookmark_bar"},
+                                              {nullptr, "other"},
+                                              {nullptr, "synced"},
+                                              {"custom_root", "speedDial"},
+                                              {"custom_root", "unsorted"}};
+constexpr char kVivaldiTrash[] = "9f32a0fb-bfd9-5032-be46-07afe4a25400";
 struct BookmarkTree {
   std::u16string title;
   std::string url;
@@ -125,6 +134,22 @@ bool UsesEncryptedCopy(const base::FilePath& profile,
   const auto plain = Modified(profile.AppendASCII(files.plain));
   const auto encrypted = Modified(profile.AppendASCII(files.encrypted));
   return encrypted && (!plain || *encrypted - *plain > kSameSave);
+}
+std::string_view Meta(const base::DictValue& node, std::string_view key) {
+  const auto* meta = node.FindDict("meta_info");
+  const auto* value = meta ? meta->FindString(key) : nullptr;
+  return value ? std::string_view(*value) : std::string_view();
+}
+bool HiddenBookmark(const base::DictValue& node) {
+  const auto* type = node.FindString("type");
+  const auto* guid = node.FindString("guid");
+  if (guid && *guid == kVivaldiTrash)
+    return true;
+  if (!type || *type != "url")
+    return false;
+  const auto* name = node.FindString("name");
+  return (name && *name == "---" && Meta(node, "Description") == "separator") ||
+         !Meta(node, "Partner").empty();
 }
 bool ParseBookmark(const base::DictValue& node,
                    BookmarkTree& tree,
@@ -152,10 +177,17 @@ bool ParseBookmark(const base::DictValue& node,
   if (!children)
     return false;
   for (const auto& child : *children) {
-    if (!child.is_dict() ||
-        !ParseBookmark(child.GetDict(), tree.children.emplace_back(), count,
+    if (!child.is_dict())
+      return false;
+    if (HiddenBookmark(child.GetDict()))
+      continue;
+    if (!ParseBookmark(child.GetDict(), tree.children.emplace_back(), count,
                        stop, depth + 1))
       return false;
+    const auto& parsed = tree.children.back();
+    if (parsed.folder && parsed.children.empty() &&
+        !Meta(child.GetDict(), "Partner").empty())
+      tree.children.pop_back();
   }
   return true;
 }
@@ -167,8 +199,13 @@ bool ParseBookmarkRoots(const base::DictValue& json,
     return false;
   size_t count = 0;
   for (size_t i = 0; i < std::size(kBookmarkRoots); ++i) {
-    const auto* root = dict->FindDict(kBookmarkRoots[i]);
-    if (root && !ParseBookmark(*root, roots[i].emplace(), count, stop, 0))
+    const auto& key = kBookmarkRoots[i];
+    const auto* container =
+        key.container ? dict->FindDict(key.container) : dict;
+    const auto* root = container ? container->FindDict(key.key) : nullptr;
+    if (!root || HiddenBookmark(*root))
+      continue;
+    if (!ParseBookmark(*root, roots[i].emplace(), count, stop, 0))
       return false;
   }
   return true;
@@ -293,7 +330,7 @@ bool ReadBookmarks(const ReadOptions& options,
   }
   for (size_t i = 0; i < merged.size(); ++i) {
     if (merged[i] &&
-        !EmitBookmark(*merged[i], "", kBookmarkRoots[i], batch, stop)) {
+        !EmitBookmark(*merged[i], "", kBookmarkRoots[i].key, batch, stop)) {
       batch.error =
           "The source bookmarks contain unsupported or incomplete data.";
       return false;

@@ -8,6 +8,8 @@
 #include <cmath>
 #include <limits>
 #include <string>
+#include <utility>
+#include <vector>
 #include <sys/stat.h>
 
 #include "base/files/file_util.h"
@@ -48,6 +50,16 @@ NSString* String(id value) {
 }
 NSDictionary* Dictionary(id value) {
   return [value isKindOfClass:[NSDictionary class]] ? value : nil;
+}
+
+NSString* const kReadingList = @"com.apple.ReadingList";
+bool IsReadingList(NSDictionary* node) {
+  return [String(node[@"WebBookmarkType"]) isEqualToString:@"WebBookmarkTypeList"] &&
+      [String(node[@"Title"]) isEqualToString:kReadingList];
+}
+NSDate* DateAdded(NSDictionary* node) {
+  id date = Dictionary(node[@"ReadingList"])[@"DateAdded"];
+  return [date isKindOfClass:[NSDate class]] ? date : nil;
 }
 
 bool SameFile(const struct stat& before, const struct stat& after) {
@@ -91,32 +103,59 @@ Batch ReadBookmarks(const ReadOptions& options, const Cancellation& cancel) {
       id children = node[@"Children"];
       if ((!is_root && !title) ||
           (children && ![children isKindOfClass:[NSArray class]])) return false;
-      if (!is_root && !(parent.empty() && [title isEqualToString:@"BookmarksMenu"])) {
-        batch.bookmarks.push_back({key, parent, base::SysNSStringToUTF16(title), {}, true});
+      const bool top = depth == 1;
+      const bool reading_list = top && [title isEqualToString:kReadingList];
+      const bool special = reading_list || (top && [title isEqualToString:@"BookmarksBar"]);
+      if (!is_root && !(top && [title isEqualToString:@"BookmarksMenu"])) {
+        batch.bookmarks.push_back({key, parent,
+            reading_list ? std::u16string(u"Reading List")
+            : special    ? std::u16string(u"Favorites")
+                         : base::SysNSStringToUTF16(title),
+            {}, true});
         parent = key;
       }
-      size_t index = 0;
+      const size_t mark = batch.bookmarks.size();
+      std::vector<std::pair<NSDictionary*, size_t>> ordered;
       for (id child in (NSArray*)children) {
         NSDictionary* dictionary = Dictionary(child);
-        if (!dictionary || !self(self, dictionary, key + "/" + std::to_string(index),
-                                  parent, depth + 1, false)) return false;
-        ++index;
+        if (!dictionary) return false;
+        ordered.emplace_back(dictionary, ordered.size());
       }
+      if (reading_list) {
+        std::stable_sort(ordered.begin(), ordered.end(), [](const auto& a, const auto& b) {
+          NSDate* first = DateAdded(a.first);
+          NSDate* second = DateAdded(b.first);
+          return first && (!second || [first compare:second] == NSOrderedDescending);
+        });
+      }
+      if (is_root) {
+        std::stable_partition(ordered.begin(), ordered.end(), [](const auto& entry) {
+          return !IsReadingList(entry.first);
+        });
+      }
+      for (const auto& [dictionary, index] : ordered) {
+        if (!self(self, dictionary, key + "/" + std::to_string(index),
+                  parent, depth + 1, false)) return false;
+      }
+      if (special && batch.bookmarks.size() == mark) batch.bookmarks.pop_back();
       return true;
     }
+    if ([type isEqualToString:@"WebBookmarkTypeProxy"]) return true;
     if (![type isEqualToString:@"WebBookmarkTypeLeaf"]) {
       WarnOnce(batch, "Unsupported Safari bookmark item types were skipped.");
       return true;
     }
     NSString* url = String(node[@"URLString"]);
     NSString* title = String(Dictionary(node[@"URIDictionary"])[@"title"]);
-    if (!url || !title) return false;
+    if (!url) return false;
     GURL parsed(base::SysNSStringToUTF8(url));
     if (!parsed.is_valid()) {
       WarnOnce(batch, "Bookmarks with invalid URLs were skipped.");
       return true;
     }
-    batch.bookmarks.push_back({key, parent, base::SysNSStringToUTF16(title), parsed.spec(), false});
+    batch.bookmarks.push_back({key, parent,
+        title.length ? base::SysNSStringToUTF16(title) : base::UTF8ToUTF16(parsed.spec()),
+        parsed.spec(), false});
     return true;
   };
   if (!read(read, root, "safari", {}, 0, true)) {

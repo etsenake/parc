@@ -60,10 +60,54 @@ void Safari(const base::FilePath& path) {
     Require(result.success && result.bookmarks.size() == 4, "Safari XML/binary nested bookmarks");
     Require(result.bookmarks[0].parent.empty() && result.bookmarks[0].title == u"Café 🦊", "Safari menu flatten and Unicode");
     Require(result.bookmarks[1].folder && result.bookmarks[2].folder, "Safari toolbar and empty folder survive");
+    Require(result.bookmarks[1].title == u"Favorites", "Safari favorites bar is named as Safari names it");
     Require(result.bookmarks[3].parent == result.bookmarks[1].id, "Safari exact parent identity");
     Require(result.warnings.size() == 1, "Safari skipped item reported");
     Require(Bytes(bookmarks) == original, "Safari original plist unchanged");
   }
+  NSDictionary* (^page)(NSString*, NSString*, NSDate*) = ^NSDictionary*(NSString* url, NSString* title, NSDate* added) {
+    NSMutableDictionary* item = [@{@"WebBookmarkType":@"WebBookmarkTypeLeaf", @"URLString":url} mutableCopy];
+    if (title) item[@"URIDictionary"] = @{@"title":title};
+    if (added) item[@"ReadingList"] = @{@"DateAdded":added, @"PreviewText":@"Preview"};
+    return item;
+  };
+  NSDictionary* special = @{@"WebBookmarkFileVersion":@1, @"Children":@[
+      @{@"WebBookmarkType":@"WebBookmarkTypeProxy", @"Title":@"History"},
+      @{@"WebBookmarkType":@"WebBookmarkTypeList", @"Title":@"BookmarksBar", @"Children":@[]},
+      @{@"WebBookmarkType":@"WebBookmarkTypeList", @"Title":@"BookmarksMenu", @"Children":@[
+          page(@"https://menu.example.test/", @"Menu", nil)]},
+      @{@"WebBookmarkType":@"WebBookmarkTypeList", @"Title":@"com.apple.ReadingList", @"Children":@[
+          page(@"https://older.example.test/", @"Older", [NSDate dateWithTimeIntervalSince1970:1600000000]),
+          page(@"https://undated.example.test/", nil, nil),
+          page(@"https://newer.example.test/", @"Newer", [NSDate dateWithTimeIntervalSince1970:1750000000])]},
+      @{@"WebBookmarkType":@"WebBookmarkTypeList", @"Title":@"Projects", @"Children":@[
+          page(@"https://project.example.test/", @"Project", nil)]}]};
+  for (NSNumber* format in @[@(NSPropertyListXMLFormat_v1_0), @(NSPropertyListBinaryFormat_v1_0)]) {
+    Plist(bookmarks, special, static_cast<NSPropertyListFormat>(format.unsignedIntegerValue));
+    auto result = ReadSafariCategory(options, kBookmarks, cancel);
+    Require(result.success && result.bookmarks.size() == 7, "Safari special roots read");
+    Require(result.warnings.empty(), "Safari's History proxy is skipped without a warning");
+    Require(result.bookmarks[0].url == "https://menu.example.test/" && result.bookmarks[0].parent.empty(),
+            "Safari bookmarks menu stays flattened and an empty Favorites bar is left out");
+    Require(result.bookmarks[1].title == u"Projects" && result.bookmarks[2].parent == result.bookmarks[1].id,
+            "Safari top-level folders keep their own names");
+    Require(result.bookmarks[3].folder && result.bookmarks[3].title == u"Reading List" &&
+            result.bookmarks[3].parent.empty(),
+            "Safari Reading List is named as Safari names it and follows the bookmark folders");
+    Require(result.bookmarks[4].url == "https://newer.example.test/" &&
+            result.bookmarks[5].url == "https://older.example.test/" &&
+            result.bookmarks[6].url == "https://undated.example.test/",
+            "Safari Reading List is newest first, undated items last");
+    Require(result.bookmarks[4].parent == result.bookmarks[3].id &&
+            result.bookmarks[4].id == result.bookmarks[3].id + "/2",
+            "Safari Reading List items keep identities from their saved order");
+    Require(result.bookmarks[6].title == u"https://undated.example.test/",
+            "Safari untitled Reading List items show their address");
+  }
+  Plist(bookmarks, @{@"Children":@[@{@"WebBookmarkType":@"WebBookmarkTypeList",
+      @"Title":@"com.apple.ReadingList", @"Children":@[]}]}, NSPropertyListBinaryFormat_v1_0);
+  auto empty_list = ReadSafariCategory(options, kBookmarks, cancel);
+  Require(empty_list.success && empty_list.bookmarks.empty(), "Safari empty Reading List is left out");
   cancel->store(true);
   Require(!ReadSafariCategory(options, kBookmarks, cancel).success, "Safari cancellation");
   cancel->store(false);
@@ -139,7 +183,9 @@ void Firefox(const base::FilePath& path) {
   Require(bookmarks.bookmarks[2].parent == "firefox:10", "Firefox original child parent");
   Require(bookmarks.bookmarks[3].id == "firefox:12" && bookmarks.bookmarks[3].parent.empty(), "Firefox menu flatten");
   Require(bookmarks.bookmarks.back().folder && bookmarks.bookmarks.back().title == u"Empty", "Firefox empty folder retained");
-  Require(bookmarks.warnings.size() == 3, "Firefox excluded annotation/URL/separator warnings");
+  Require(bookmarks.bookmarks[0].title == u"Bookmarks Toolbar" && bookmarks.bookmarks[4].title == u"Other Bookmarks",
+          "Firefox roots are named as Firefox names them, not by their stored titles");
+  Require(bookmarks.warnings.size() == 1, "Firefox queries and separators are skipped silently");
   Require(Bytes(places) == original, "Firefox original database unchanged");
   Require(!base::PathExists(base::FilePath(places.value()+"-shm")), "Firefox no original SHM");
   db = Database(places);
@@ -180,6 +226,74 @@ void Firefox(const base::FilePath& path) {
   Require(!ReadFirefoxCategory(options, kHistory, cancel).success, "Firefox relative path rejected");
   options.profile_path = path.AppendASCII("missing");
   Require(!ReadFirefoxCategory(options, kHistory, cancel).success, "Missing source does not become empty success");
+}
+void FirefoxRoots(const base::FilePath& path) {
+  using namespace parc::importer;
+  ReadOptions options; options.family = Family::kFirefox; options.profile_path = path;
+  auto cancel = std::make_shared<std::atomic_bool>(false);
+  const auto places = path.AppendASCII("places.sqlite");
+  sqlite3* db = Database(places);
+  SQL(db, "CREATE TABLE moz_places(id INTEGER PRIMARY KEY,url TEXT,title TEXT,visit_count INTEGER,hidden INTEGER,typed INTEGER);"
+          "CREATE TABLE moz_bookmarks(id INTEGER PRIMARY KEY,parent INTEGER,position INTEGER,type INTEGER,guid TEXT,title TEXT,fk INTEGER);"
+          "INSERT INTO moz_places(id,url,title) VALUES"
+          "(1,'https://support.mozilla.org/products/firefox','Get Help'),"
+          "(2,'https://example.org/','Example'),(3,'https://news.example.com/','News'),"
+          "(4,'https://support.mozilla.org/kb/customize-firefox-controls-buttons-and-toolbars?utm_source=firefox-browser&utm_medium=default-bookmarks&utm_campaign=customize','Customize Firefox'),"
+          "(5,'https://www.mozilla.org/contribute/','Get Involved'),(6,'https://www.mozilla.org/about/','About Us'),"
+          "(7,'place:sort=8&maxResults=10','Most Visited'),(8,'https://phone.example.com/','Phone'),"
+          "(9,'https://www.mozilla.org/firefox/','Firefox Home');"
+          "INSERT INTO moz_bookmarks VALUES"
+          "(1,0,0,2,'root________','',NULL),(2,1,0,2,'menu________','menu',NULL),"
+          "(3,1,1,2,'toolbar_____','toolbar',NULL),(4,1,2,2,'tags________','tags',NULL),"
+          "(5,1,3,2,'unfiled_____','unfiled',NULL),(6,1,4,2,'mobile______','mobile',NULL),"
+          "(7,2,0,2,'stockfolder1','Mozilla Firefox',NULL),"
+          "(8,7,0,1,'stockbmark01','Get Help',1),(9,7,1,1,'stockbmark02','Customize Firefox',4),"
+          "(10,7,2,1,'stockbmark03','Get Involved',5),(11,7,3,1,'stockbmark04','About Us',6),"
+          "(12,3,0,1,'userbmark001','Example',2),(13,3,1,3,'separator001','',NULL),"
+          "(14,3,2,1,'smartbmark01','Most Visited',7),"
+          "(15,4,0,2,'tagfolder001','reading',NULL),(16,15,0,1,'tagentry0001',NULL,2),"
+          "(17,5,0,1,'userbmark002',NULL,3),(18,6,0,1,'mobilebmark1','Phone',8);");
+  sqlite3_close(db);
+  auto result = ReadFirefoxCategory(options, kBookmarks, cancel);
+  Require(result.success && result.bookmarks.size() == 6, "Firefox stock bookmarks, tags and empty roots are left out");
+  Require(result.bookmarks[0].folder && result.bookmarks[0].title == u"Bookmarks Toolbar" &&
+          result.bookmarks[1].url == "https://example.org/" &&
+          result.bookmarks[1].parent == result.bookmarks[0].id,
+          "Firefox toolbar keeps its user bookmark");
+  Require(result.bookmarks[2].title == u"Other Bookmarks" && result.bookmarks[3].title == u"News",
+          "Firefox untitled bookmarks take the page title");
+  Require(result.bookmarks[4].title == u"Mobile Bookmarks" &&
+          result.bookmarks[5].url == "https://phone.example.com/" &&
+          result.bookmarks[5].parent == result.bookmarks[4].id,
+          "Firefox mobile bookmarks are offered under their own root");
+  Require(result.warnings.empty(), "Firefox stock, query, separator and tag rows raise no warnings");
+  for (const auto& bookmark : result.bookmarks)
+    Require(bookmark.title != u"reading" && bookmark.title != u"tags" &&
+            bookmark.title != u"Mozilla Firefox" && bookmark.url.find("mozilla.org") == std::string::npos,
+            "Firefox tags and stock bookmarks never appear");
+  db = Database(places);
+  SQL(db, "INSERT INTO moz_bookmarks VALUES(19,7,4,1,'userbmark003','Firefox Home',9),"
+          "(20,2,1,2,'userfolder01','Saved Later',NULL);"
+          "DELETE FROM moz_bookmarks WHERE id=18;");
+  sqlite3_close(db);
+  result = ReadFirefoxCategory(options, kBookmarks, cancel);
+  Require(result.success && result.bookmarks.size() == 7, "Firefox user additions to the stock folder are kept");
+  Require(result.bookmarks[2].folder && result.bookmarks[2].title == u"Mozilla Firefox" &&
+          result.bookmarks[2].parent.empty() &&
+          result.bookmarks[3].url == "https://www.mozilla.org/firefox/" &&
+          result.bookmarks[3].parent == result.bookmarks[2].id,
+          "Firefox stock folder stays when the user saved into it, with only their bookmark");
+  Require(result.bookmarks[4].folder && result.bookmarks[4].title == u"Saved Later" &&
+          result.bookmarks[4].parent.empty(),
+          "Firefox user's own empty menu folder is kept");
+  Require(result.bookmarks[5].title == u"Other Bookmarks" &&
+          result.bookmarks.back().title == u"News",
+          "Firefox empty mobile root is left out");
+  db = Database(places);
+  SQL(db, "DELETE FROM moz_bookmarks WHERE id IN (12,17,19,20);");
+  sqlite3_close(db);
+  result = ReadFirefoxCategory(options, kBookmarks, cancel);
+  Require(result.success && result.bookmarks.empty(), "Firefox profile with only stock bookmarks imports nothing, cleanly");
 }
 void SafariExport(const base::FilePath& path) {
   using namespace parc::importer;
@@ -287,7 +401,7 @@ int main() {
     std::fprintf(stderr, "fixture: start\n");
     base::ScopedTempDir temporary;
     Require(temporary.CreateUniqueTempDir(), "create disposable fixture root");
-    for (const char* name : {"Safari", "SafariExport", "Firefox", "WAL"})
+    for (const char* name : {"Safari", "SafariExport", "Firefox", "FirefoxRoots", "WAL"})
       Require(base::CreateDirectory(temporary.GetPath().AppendASCII(name)), "create fixture source");
     std::fprintf(stderr, "fixture: Safari\n");
     Safari(temporary.GetPath().AppendASCII("Safari"));
@@ -295,6 +409,8 @@ int main() {
     SafariExport(temporary.GetPath().AppendASCII("SafariExport"));
     std::fprintf(stderr, "fixture: Firefox\n");
     Firefox(temporary.GetPath().AppendASCII("Firefox"));
+    std::fprintf(stderr, "fixture: FirefoxRoots\n");
+    FirefoxRoots(temporary.GetPath().AppendASCII("FirefoxRoots"));
     std::fprintf(stderr, "fixture: WAL\n");
     WAL(temporary.GetPath().AppendASCII("WAL"));
     std::printf("Safari/Firefox readers: %d checks passed\n", checks);

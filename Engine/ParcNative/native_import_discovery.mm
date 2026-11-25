@@ -16,6 +16,7 @@
 #include "base/uuid.h"
 #import "native_import_internal.h"
 #include "parc/importer/import_reader.h"
+#include "parc/importer/import_snapshot.h"
 namespace parc::importer {
 NSError* ImportError(NSString* message) {
   return [NSError errorWithDomain:@"ParcBrowserImport"
@@ -217,6 +218,50 @@ void AddSideProfiles(ProfilesResult& result,
                listing, folder.BaseName().value());
   }
 }
+bool ValidStoreID(std::string_view id) {
+  return !id.empty() && id.size() <= 64 &&
+         id.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+                              "0123456789-_") == std::string_view::npos;
+}
+void AddProfileGroup(ProfilesResult& result,
+                     const std::shared_ptr<const Installation>& source,
+                     const base::FilePath& root,
+                     const std::string& store,
+                     bool listing) {
+  const auto file = root.AppendASCII("Profile Groups").AppendASCII(store + ".sqlite");
+  if (!base::PathExists(file))
+    return;
+  if (!Readable(file, &result.restricted))
+    return;
+  SnapshotDatabase database;
+  if (!database.Open(file))
+    return;
+  Statement rows(database.get(), "SELECT path, name FROM Profiles ORDER BY id");
+  if (!rows.valid())
+    return;
+  size_t count = 0;
+  while (rows.Step() && ++count <= 1000) {
+    const std::string relative = rows.Text(0);
+    if (relative.empty())
+      continue;
+    base::FilePath path(relative);
+    if (!path.IsAbsolute())
+      path = root.Append(path);
+    base::FilePath normalized = base::MakeAbsoluteFilePath(path);
+    if (normalized.empty())
+      normalized = path;
+    std::string name = rows.Text(1);
+    if (name.empty())
+      name = normalized.BaseName().value();
+    auto listed = std::find_if(
+        result.profiles.begin(), result.profiles.end(),
+        [&](const auto& profile) { return profile->path == normalized; });
+    if (listed != result.profiles.end())
+      (*listed)->name = std::move(name);
+    else
+      AddProfile(result, source, normalized, std::move(name), listing);
+  }
+}
 ProfilesResult Load(std::shared_ptr<const Installation> source,
                     base::FilePath home,
                     bool listing) {
@@ -270,9 +315,14 @@ ProfilesResult Load(std::shared_ptr<const Installation> source,
       return result;
     }
     std::map<std::string, std::string> section;
+    std::vector<std::string> stores;
     auto flush = [&] {
       if (!section.contains("Path"))
         return;
+      const auto& store = section["StoreID"];
+      if (ValidStoreID(store) &&
+          std::find(stores.begin(), stores.end(), store) == stores.end())
+        stores.push_back(store);
       base::FilePath path(section["Path"]);
       if (section["IsRelative"] != "0")
         path = root.Append(path);
@@ -301,6 +351,8 @@ ProfilesResult Load(std::shared_ptr<const Installation> source,
     }
     if (profile)
       flush();
+    for (const auto& store : stores)
+      AddProfileGroup(result, source, root, store, listing);
   }
   if (result.restricted)
     result.constraints.push_back(

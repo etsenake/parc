@@ -3,12 +3,15 @@
 #include "parc/importer/import_snapshot.h"
 
 #include <algorithm>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <set>
 #include <string>
+#include <string_view>
 #include <vector>
 
+#include "base/strings/utf_string_conversions.h"
 #include "url/gurl.h"
 
 namespace parc::importer {
@@ -106,6 +109,27 @@ struct Node {
   std::string guid, url;
   std::u16string title;
 };
+struct Root {
+  const char* guid;
+  const char16_t* title;
+  bool required;
+};
+constexpr char kMenu[] = "menu________";
+constexpr Root kRoots[] = {{"toolbar_____", u"Bookmarks Toolbar", true},
+                           {kMenu, nullptr, true},
+                           {"unfiled_____", u"Other Bookmarks", true},
+                           {"mobile______", u"Mobile Bookmarks", false}};
+constexpr std::string_view kStockBookmarks[] = {
+    "https://support.mozilla.org/products/firefox",
+    "https://support.mozilla.org/kb/customize-firefox-controls-buttons-and-"
+    "toolbars?utm_source=firefox-browser&utm_medium=default-bookmarks&utm_"
+    "campaign=customize",
+    "https://www.mozilla.org/contribute/",
+    "https://www.mozilla.org/about/"};
+bool Stock(const std::string& url) {
+  return std::find(std::begin(kStockBookmarks), std::end(kStockBookmarks),
+                   url) != std::end(kStockBookmarks);
+}
 Batch BookmarkRows(sqlite3* database, const std::string& name,
                    const Cancellation& cancel) {
   Batch batch;
@@ -130,7 +154,7 @@ Batch BookmarkRows(sqlite3* database, const std::string& name,
     if (!rows.done()) return Failure(kBookmarks, name + " bookmark annotations could not be read completely.");
   }
   Statement rows(database,
-      "SELECT b.id,b.parent,b.position,b.type,b.guid,b.title,p.url "
+      "SELECT b.id,b.parent,b.position,b.type,b.guid,b.title,p.url,p.title "
       "FROM moz_bookmarks b LEFT JOIN moz_places p ON b.fk=p.id "
       "ORDER BY b.parent,b.position,b.id");
   if (!rows.valid()) return Failure(kBookmarks, name + " bookmarks have an unsupported database schema.");
@@ -143,21 +167,25 @@ Batch BookmarkRows(sqlite3* database, const std::string& name,
     if (++count > kMaxRows) return Failure(kBookmarks, name + " bookmarks exceed the import limit.");
     Node node{rows.Int(0), rows.Int(1), rows.Int(2), rows.Int(3), rows.Text(4),
               rows.Text(6), rows.Text16(5)};
+    if (node.title.empty()) node.title = rows.Text16(7);
     if (node.id <= 0 || node.position < 0 || !nodes.emplace(node.id, node).second)
       return Failure(kBookmarks, name + " bookmarks contain invalid or duplicate identities.");
     children[node.parent].push_back(node.id);
-    if (node.guid == "toolbar_____" || node.guid == "menu________" ||
-        node.guid == "unfiled_____") {
+    for (const Root& root : kRoots) {
+      if (node.guid != root.guid) continue;
       if (node.type != 2 || !roots.emplace(node.guid, node.id).second)
         return Failure(kBookmarks, name + " bookmark roots are ambiguous.");
     }
   }
   if (!rows.done()) return Failure(kBookmarks, name + " bookmarks could not be read completely.");
-  if (roots.size() != 3)
-    return Failure(kBookmarks, name + " bookmark roots could not be identified.");
+  for (const Root& root : kRoots) {
+    if (root.required && !roots.contains(root.guid))
+      return Failure(kBookmarks, name + " bookmark roots could not be identified.");
+  }
   std::set<int64_t> visited;
-  auto read = [&](auto&& self, int64_t id, std::string parent, size_t depth,
-                  bool flatten) -> bool {
+  size_t stock = 0;
+  auto read = [&](auto&& self, int64_t id, const std::string& parent,
+                  size_t depth, std::vector<Bookmark>& out) -> bool {
     if (Cancelled(cancel) || depth > kMaxDepth || !visited.insert(id).second)
       return false;
     const Node& node = nodes.at(id);
@@ -167,27 +195,49 @@ Batch BookmarkRows(sqlite3* database, const std::string& name,
     }
     const std::string key = "firefox:" + std::to_string(id);
     if (node.type == 2) {
-      if (!flatten) {
-        batch.bookmarks.push_back({key, parent, node.title, {}, true});
-        parent = key;
-      }
+      const size_t start = out.size(), dropped = stock;
+      out.push_back({key, parent, node.title, {}, true});
       for (int64_t child : children[id])
-        if (!self(self, child, parent, depth + 1, false)) return false;
+        if (!self(self, child, key, depth + 1, out)) return false;
+      if (out.size() == start + 1 && stock > dropped &&
+          nodes.at(node.parent).guid == kMenu)
+        out.pop_back();
     } else if (node.type == 1) {
       if (!children[id].empty()) return false;
       GURL url(node.url);
+      if (url.SchemeIs("place")) return true;
+      if (Stock(node.url)) {
+        ++stock;
+        return true;
+      }
       if (Importable(url))
-        batch.bookmarks.push_back({key, parent, node.title, url.spec(), false});
+        out.push_back({key, parent,
+                       node.title.empty() ? base::UTF8ToUTF16(url.spec()) : node.title,
+                       url.spec(), false});
       else WarnOnce(batch, "Unsupported or invalid " + name + " bookmark URLs were skipped.");
-    } else {
-      WarnOnce(batch, name + " separators and unsupported dynamic bookmark items were skipped.");
+    } else if (node.type != 3) {
+      WarnOnce(batch, name + " unsupported dynamic bookmark items were skipped.");
     }
     return true;
   };
-  for (const char* root : {"toolbar_____", "menu________", "unfiled_____"}) {
-    if (!read(read, roots.at(root), {}, 0, std::string_view(root) == "menu________"))
+  for (const Root& root : kRoots) {
+    const auto found = roots.find(root.guid);
+    if (found == roots.end()) continue;
+    const int64_t id = found->second;
+    const std::string key = root.title ? "firefox:" + std::to_string(id) : "";
+    std::vector<Bookmark> items;
+    bool complete = visited.insert(id).second;
+    for (int64_t child : children[id]) {
+      if (!complete) break;
+      complete = read(read, child, key, 1, items);
+    }
+    if (!complete)
       return Failure(kBookmarks, Cancelled(cancel) ? "Import was cancelled."
           : name + " bookmarks have a cyclic or excessively deep hierarchy.");
+    if (items.empty()) continue;
+    if (root.title)
+      batch.bookmarks.push_back({key, {}, std::u16string(root.title), {}, true});
+    std::move(items.begin(), items.end(), std::back_inserter(batch.bookmarks));
   }
   batch.success = true;
   return batch;

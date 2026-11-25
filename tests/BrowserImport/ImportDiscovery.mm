@@ -3,6 +3,8 @@
 #include <cstdlib>
 #import "../../Engine/ParcNative/native_import_discovery.mm"
 #include "base/files/scoped_temp_dir.h"
+#include "sql/initialization.h"
+#include "third_party/sqlite/sqlite3.h"
 
 namespace {
 using parc::importer::Installation;
@@ -171,6 +173,69 @@ void ChromeIgnoresSideFolder(const base::FilePath& home) {
       result.profiles.size() == 1 && result.profiles[0]->directory == "Default",
       "only Opera and Opera GX read side profiles");
 }
+void FirefoxProfileGroups(const base::FilePath& home) {
+  const auto source = std::make_shared<const Installation>(
+      Installation{2, "org.mozilla.firefox", "Firefox",
+                   "Library/Application Support/Firefox", {}, {}, {}});
+  const auto root = home.Append(source->root_relative);
+  Write(root.AppendASCII("profiles.ini"),
+        "[Profile1]\nName=default\nIsRelative=1\nPath=Profiles/old.default\n\n"
+        "[Profile0]\nName=default-release\nIsRelative=1\n"
+        "Path=Profiles/abc.default-release\nStoreID=a1b2c3d4\n\n"
+        "[Profile2]\nName=evil\nIsRelative=1\nPath=Profiles/evil\n"
+        "StoreID=../escape\n\n"
+        "[Install4F96D1932A9F858E]\nDefault=Profiles/abc.default-release\n");
+  for (const char* folder : {"Profiles/old.default", "Profiles/abc.default-release",
+                             "Profiles/evil", "Profiles/work.Work",
+                             "Profiles/nameless"})
+    Write(root.AppendASCII(folder).AppendASCII("places.sqlite"), "");
+  Require(base::CreateDirectory(root.AppendASCII("Profile Groups")),
+          "create the profile group folder");
+  sql::EnsureSqliteInitialized(false);
+  sqlite3* db = nullptr;
+  Require(sqlite3_open(root.AppendASCII("Profile Groups/a1b2c3d4.sqlite")
+                           .value().c_str(), &db) == SQLITE_OK,
+          "create the profile group database");
+  Require(sqlite3_exec(db,
+              "CREATE TABLE Profiles(id INTEGER PRIMARY KEY, path TEXT UNIQUE, "
+              "name TEXT, avatar TEXT, themeId TEXT, themeFg TEXT, themeBg TEXT);"
+              "INSERT INTO Profiles(id, path, name) VALUES"
+              "(1, 'Profiles/abc.default-release', 'Personal'),"
+              "(2, 'Profiles/work.Work', 'Work'),"
+              "(3, 'Profiles/nameless', ''),"
+              "(4, 'Profiles/deleted', 'Deleted');",
+              nullptr, nullptr, nullptr) == SQLITE_OK,
+          "fill the profile group database");
+  sqlite3_close(db);
+
+  const auto result = parc::importer::Load(source, home, false);
+  Require(result.profiles.size() == 5,
+          "Firefox lists its profiles.ini profiles and the group's other "
+          "profiles once each");
+  Require(result.profiles[0]->name == "default" &&
+              result.profiles[1]->name == "Personal" &&
+              result.profiles[1]->path ==
+                  Real(root.AppendASCII("Profiles/abc.default-release")),
+          "the group's real name replaces the internal profiles.ini name "
+          "instead of listing the profile twice");
+  Require(result.profiles[2]->name == "evil",
+          "a StoreID that is not a plain identifier is never followed");
+  Require(result.profiles[3]->name == "Work" &&
+              result.profiles[3]->path ==
+                  Real(root.AppendASCII("Profiles/work.Work")) &&
+              (result.profiles[3]->categories & PCNativeImportCategoryBookmarks),
+          "a profile that exists only in the group is offered with its data");
+  Require(result.profiles[4]->name == "nameless",
+          "a group profile without a name falls back to its folder");
+  Require(!Named(result, "Deleted"),
+          "a group profile whose folder is gone is not offered");
+  for (const auto& profile : result.profiles)
+    Require(profile->source == source,
+            "group profiles belong to the same Firefox source");
+  const auto listed = parc::importer::Load(source, home, true);
+  Require(listed.profiles.size() == 5,
+          "the source list sees the same group profiles");
+}
 }
 
 int main() {
@@ -180,7 +245,7 @@ int main() {
     Require(temporary.CreateUniqueTempDir(), "create disposable fixture root");
     int index = 0;
     for (auto check : {OperaGXAtRoot, OperaWithDefault, SideProfileOnly,
-                       ChromeIgnoresSideFolder}) {
+                       ChromeIgnoresSideFolder, FirefoxProfileGroups}) {
       const auto home = temporary.GetPath().AppendASCII(
           "home" + base::NumberToString(++index));
       Require(base::CreateDirectory(home), "create fixture home");
