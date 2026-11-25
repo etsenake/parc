@@ -1364,7 +1364,7 @@
     {
       "source": "Engine/ParcImport/chromium_reader.cc",
       "target": "parc/importer/chromium_reader.cc",
-      "sha256": "73071dbf6bec813489c0de284175b5fb869f294a7ad618a6b32f54fa311e6c9f"
+      "sha256": "5f7ff3a4b3bc75213b7dc7c045491442b632b5ce429e1a2d2c825af73ddec4d9"
     },
     {
       "source": "Engine/ParcImport/import_snapshot.cc",
@@ -1374,7 +1374,7 @@
     {
       "source": "Engine/ParcImport/safari_reader.mm",
       "target": "parc/importer/safari_reader.mm",
-      "sha256": "98996889dfcd2099b5bf0a071ed5ada27ded73fb1d6153731f237548e71708dc"
+      "sha256": "952b52c9216b4ae40a791eae2ef911533dcb6007b2f4d06a6faa909444ce2fbb"
     },
     {
       "source": "Engine/ParcImport/parc_import.mojom",
@@ -1384,7 +1384,7 @@
     {
       "source": "Engine/ParcImport/firefox_reader.cc",
       "target": "parc/importer/firefox_reader.cc",
-      "sha256": "d300139f78acc5b46d2c8e6ad685141f07dbb16d9a7262411804f9fc000d4a07"
+      "sha256": "3b27e903e4845a35af035af4c953f35de97865857ef6c9bcfa33db2dd7e7892b"
     },
     {
       "source": "Engine/ParcImport/sidebar_decrypt.cc",
@@ -1404,7 +1404,7 @@
     {
       "source": "Engine/ParcNative/native_import_discovery.mm",
       "target": "parc/native/native_import_discovery.mm",
-      "sha256": "5ab28781d83e1f2d6dcd52f6c25aa36a9b1d3c01ffa2db7928e15a87306694ef"
+      "sha256": "6b87de8864131791e9118635195814de5aea1e69ce843b84f4cf34f46c66851e"
     },
     {
       "source": "Engine/ParcNative/native_import_extensions.mm",
