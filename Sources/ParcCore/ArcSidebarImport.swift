@@ -1,42 +1,50 @@
 import Foundation
 
 extension SidebarImport {
-    package init(arcData data: Data) throws {
+    package init(arcData data: Data, windows: Data? = nil, archive: Data? = nil, routing: Data? = nil) throws {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let containers = (root["sidebar"] as? [String: Any])?["containers"] as? [Any],
-              let container = containers.lazy.compactMap({ $0 as? [String: Any] }).first(where: { $0["spaces"] is [Any] }) else {
+              let container = Self.arcMainContainer(containers) else {
             throw CocoaError(.fileReadCorruptFile)
         }
-        var parser = Parser(container: container)
+        let layout = ArcWindowLayout(windows)
+        var parser = Parser(container: container, expanded: layout.expanded)
         var spaces: [Space] = []
-        for (_, value) in Parser.pairs(container["spaces"]) {
+        for (_, value) in Self.arcPairs(container["spaces"]) {
             guard let space = value as? [String: Any], let profile = Self.profile(space["profile"]) else {
                 parser.skipped += 1; continue
             }
             let customInfo = space["customInfo"] as? [String: Any]
             let pinned = Self.containerID(space, "pinned").flatMap { parser.items[$0] }
             let today = Self.containerID(space, "unpinned").flatMap { parser.items[$0] }
+            let id = (space["id"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             spaces.append(Space(title: (space["title"] as? String).flatMap { $0.isEmpty ? nil : $0 },
                 icon: Self.icon(customInfo?["iconType"]),
                 theme: Self.theme(customInfo?["windowTheme"] ?? NSNull()),
-                profile: profile, pinned: pinned.map { parser.children(of: $0, depth: 0, inFavorites: false) } ?? [],
-                id: (space["id"] as? String).flatMap { $0.isEmpty ? nil : $0 },
-                today: today.map { parser.children(of: $0, depth: 0, inFavorites: false) } ?? []))
+                profile: profile, pinned: pinned.map { parser.children(of: $0, depth: 0, section: .pinned) } ?? [],
+                id: id,
+                today: today.map { parser.children(of: $0, depth: 0, section: .today) } ?? [],
+                pinnedCollapsed: id.map { layout.collapsedPinned.contains($0) } ?? false))
         }
         var favorites: [ProfileKey: [Item]] = [:], order: [ProfileKey] = []
-        for (key, id) in Parser.pairs(container["topAppsContainerIDs"]) {
+        for (key, id) in Self.arcPairs(container["topAppsContainerIDs"]) {
             guard let key = Self.profile(key), favorites[key] == nil,
                   let id = id as? String, let item = parser.items[id] else { continue }
-            favorites[key] = parser.children(of: item, depth: 0, inFavorites: true)
+            favorites[key] = parser.children(of: item, depth: 0, section: .favorites)
             order.append(key)
         }
+        var spaceProfiles: [String: ProfileKey] = [:]
+        for space in spaces { if let id = space.id, spaceProfiles[id] == nil { spaceProfiles[id] = space.profile } }
+        let routed = Self.arcRoutes(routing, spaces: Set(spaceProfiles.keys))
         self.init(spaces: spaces, favorites: order.compactMap { key in favorites[key].map { (key, $0) } },
+                  archive: Self.arcArchive(archive, spaces: spaceProfiles), routes: routed.routes,
                   skippedItemCount: parser.skipped)
+        warnings = routed.warnings
     }
 
     private static func containerID(_ space: [String: Any], _ section: String) -> String? {
         for key in ["containerIDs", "newContainerIDs"] {
-            for (label, id) in Parser.pairs(space[key]) {
+            for (label, id) in arcPairs(space[key]) {
                 let matches = label as? String == section || (label as? [String: Any])?[section] != nil
                 if matches, let id = id as? String { return id }
             }
@@ -65,7 +73,7 @@ extension SidebarImport {
         let global = hours(decoded(preferences["autoArchiveTimeThreshold"]))
         var perProfile: [ProfileKey: Double] = [:]
         let map = (decoded(preferences["autoArchiveTimeThresholdsPerProfile"]) as? [String: Any])?["thresholds"]
-        for (key, value) in Parser.pairs(map) {
+        for (key, value) in arcPairs(map) {
             if let key = profile(key), let value = hours(value) { perProfile[key] = value }
         }
         var result: [ProfileKey: Double] = [:]
@@ -155,21 +163,20 @@ extension SidebarImport {
     }
 
     private struct Parser {
+        enum Section { case pinned, today, favorites }
+
         var items: [String: [String: Any]] = [:]
         var skipped = 0
         private var used = Set<String>()
+        private let expanded: Set<String>?
 
-        init(container: [String: Any]) {
-            for (id, value) in Self.pairs(container["items"]) {
+        init(container: [String: Any], expanded: Set<String>?) {
+            self.expanded = expanded
+            for (id, value) in SidebarImport.arcPairs(container["items"]) {
                 guard let id = id as? String, let item = value as? [String: Any], items[id] == nil,
                       items.count < SidebarImport.maximumItems else { skipped += 1; continue }
                 items[id] = item
             }
-        }
-
-        static func pairs(_ value: Any?) -> [(Any, Any)] {
-            guard let array = value as? [Any] else { return [] }
-            return stride(from: 0, to: array.count - 1, by: 2).map { (array[$0], array[$0 + 1]) }
         }
 
         private mutating func take(_ id: Any) -> (id: String, item: [String: Any])? {
@@ -181,23 +188,31 @@ extension SidebarImport {
             (item["data"] as? [String: Any])?[kind] as? [String: Any]
         }
 
-        mutating func children(of container: [String: Any], depth: Int, inFavorites: Bool) -> [Item] {
+        mutating func children(of container: [String: Any], depth: Int, section: Section) -> [Item] {
             guard depth < SidebarImport.maximumDepth else { skipped += 1; return [] }
             var result: [Item] = []
             for child in container["childrenIds"] as? [Any] ?? [] {
                 guard let taken = take(child) else { continue }
-                result += item(taken.item, depth: depth + 1, inFavorites: inFavorites)
+                result += item(taken.item, id: taken.id, depth: depth + 1, section: section)
             }
             return result
         }
 
-        private mutating func item(_ item: [String: Any], depth: Int, inFavorites: Bool) -> [Item] {
+        private mutating func item(_ item: [String: Any], id: String, depth: Int, section: Section) -> [Item] {
             let title = (item["title"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             if Self.data(item, "tab") != nil { return tab(item).map { [.tab($0)] } ?? [] }
-            if let list = Self.data(item, "list"), !inFavorites {
+            if let list = Self.data(item, "list"), section != .favorites {
                 let icon = SidebarImport.icon((list["customInfo"] as? [String: Any])?["iconType"])
                 return [.folder(title: title ?? "Imported folder", icon: icon,
-                                children: children(of: item, depth: depth, inFavorites: false))]
+                                children: children(of: item, depth: depth, section: section),
+                                isExpanded: expanded?.contains(id) ?? true)]
+            }
+            if let group = Self.data(item, "tabGroup") {
+                let tabs = children(of: item, depth: depth, section: section)
+                guard section == .pinned else { return tabs }
+                let named = (group["title"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+                return [.folder(title: title ?? named ?? "Tab Group", icon: nil, children: tabs,
+                                isExpanded: expanded?.contains(id) ?? true)]
             }
             if let split = Self.data(item, "splitView") {
                 var entries: [SplitEntry] = []
@@ -241,7 +256,7 @@ extension SidebarImport {
 
         private static func weights(_ split: [String: Any]) -> [String: Double] {
             var weights: [String: Double] = [:]
-            for (key, value) in pairs(split["itemWidthFactors"]) {
+            for (key, value) in SidebarImport.arcPairs(split["itemWidthFactors"]) {
                 if let key = key as? String, let value = value as? Double { weights[key] = value }
             }
             return weights
@@ -303,16 +318,8 @@ extension SidebarImport {
         }
 
         private mutating func tab(_ item: [String: Any]) -> Tab? {
-            let tab = Self.data(item, "tab") ?? [:]
-            let saved = tab["savedURL"] as? String ?? ""
-            let value = BrowserInternalURL.publicString(saved)
-            guard let url = URL(string: value), let scheme = url.scheme?.lowercased(),
-                  ["https", "http", "file"].contains(scheme) || (scheme == "parc" && saved.lowercased().hasPrefix("chrome://")),
-                  scheme == "file" || url.host?.isEmpty == false else { skipped += 1; return nil }
-            let savedTitle = (tab["savedTitle"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            return Tab(title: savedTitle ?? url.host ?? value, url: value,
-                       customTitle: (item["title"] as? String).flatMap { $0.isEmpty ? nil : $0 },
-                       isMuted: tab["savedMuteStatus"] as? String == "mute")
+            guard let tab = SidebarImport.arcTab(item) else { skipped += 1; return nil }
+            return tab
         }
     }
 }
