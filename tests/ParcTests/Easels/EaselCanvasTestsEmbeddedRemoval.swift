@@ -200,7 +200,8 @@ struct EaselCanvasTestsEmbeddedRemoval {
         board.settle()
         #expect(board.session.document.items.map(\.id) == [kept.id, shape.id])
         #expect(board.hasView(shape))
-        #expect(board.canvas.artwork[kept.id] == nil, "Objects on another Easel page have no view until that page is shown")
+        let parked = try #require(board.canvas.artwork[kept.id], "A live page on another Easel page stays attached for closing")
+        #expect(parked === board.surfaces.view && parked.isHidden)
         #expect(board.canvas.artwork[doomed.id] == nil)
     }
 

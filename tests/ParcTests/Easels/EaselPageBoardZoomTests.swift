@@ -72,10 +72,12 @@ struct EaselPageBoardZoomTests {
         board.select()
         surface.needsLayout = true
         surface.layoutSubtreeIfNeeded()
+        let card = board.item.frame, header = Double(NoteEmbedSurface.headerHeight)
+        let fitted = { (zoom: Double) in min(card.width * zoom, (card.height * zoom - header) * 300 / 200) }
         let width = engine.positionedWidth, visible = surface.pageArea.visible
-        try #require(width > 0)
+        try #require(abs(width - fitted(1)) < 0.001)
         settle(surface, at: scale)
-        #expect(abs(engine.positionedWidth - width * Double(scale)) < 0.001)
+        #expect(abs(engine.positionedWidth - fitted(Double(scale))) < 0.001)
         #expect(engine.positionedRegion == NSRect(x: 20, y: 40, width: 300, height: 200))
         #expect(surface.browser.frame.size == NSSize(width: 1000, height: 700))
         #expect(engine.liveDisplayZoom == 0)
