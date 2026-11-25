@@ -1374,7 +1374,7 @@
     {
       "source": "Engine/ParcImport/safari_reader.mm",
       "target": "parc/importer/safari_reader.mm",
-      "sha256": "952b52c9216b4ae40a791eae2ef911533dcb6007b2f4d06a6faa909444ce2fbb"
+      "sha256": "272bc9a5650903d6a74b713f44940baa81ef3a4832c99406de77ff4c327840ec"
     },
     {
       "source": "Engine/ParcImport/parc_import.mojom",
@@ -1384,7 +1384,7 @@
     {
       "source": "Engine/ParcImport/firefox_reader.cc",
       "target": "parc/importer/firefox_reader.cc",
-      "sha256": "3b27e903e4845a35af035af4c953f35de97865857ef6c9bcfa33db2dd7e7892b"
+      "sha256": "aa6f828a5d08d56e0118aaee5df48f306336fc70ff174905e38fcb41bd738aab"
     },
     {
       "source": "Engine/ParcImport/sidebar_decrypt.cc",
