@@ -10,6 +10,7 @@ package enum ArcSidebarSnapshot {
     package static func windowsURL(home: URL) -> URL { sibling("StorableWindows.json", home: home) }
     package static func archiveURL(home: URL) -> URL { sibling("StorableArchiveItems.json", home: home) }
     package static func routingURL(home: URL) -> URL { sibling("StorableLinkRouting.json", home: home) }
+    package static func notesURL(home: URL) -> URL { sibling("StorableARCDocuments", home: home) }
 
     private static func sibling(_ name: String, home: URL) -> URL {
         sidebarURL(home: home).deletingLastPathComponent().appendingPathComponent(name)
@@ -17,12 +18,12 @@ package enum ArcSidebarSnapshot {
 
     package static func read(home: URL) throws -> (SidebarImport, [String: Any]) {
         try read(sidebarURL(home: home), preferences: preferencesURL(home: home), windows: windowsURL(home: home),
-                 archive: archiveURL(home: home), routing: routingURL(home: home))
+                 archive: archiveURL(home: home), routing: routingURL(home: home), notes: notesURL(home: home))
     }
     static let maximumSize = 64 * 1024 * 1024
 
     package static func read(_ source: URL, preferences: URL, windows: URL? = nil, archive: URL? = nil,
-                             routing: URL? = nil) throws -> (SidebarImport, [String: Any]) {
+                             routing: URL? = nil, notes: URL? = nil) throws -> (SidebarImport, [String: Any]) {
         let files = FileManager.default
         let directory = files.temporaryDirectory.appendingPathComponent("ParcArcImport-\(UUID().uuidString)", isDirectory: true)
         try files.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
@@ -32,8 +33,14 @@ package enum ArcSidebarSnapshot {
             guard let url, files.fileExists(atPath: url.path) else { return nil }
             return try? stableCopy(of: url, in: directory)
         }
+        var documents: [SidebarImport.Note] = []
+        let copies = directory.appendingPathComponent("Notes", isDirectory: true)
+        if let notes, files.fileExists(atPath: notes.path),
+           (try? files.createDirectory(at: copies, withIntermediateDirectories: false)) != nil {
+            documents = ArcNotesImport.notes(in: notes) { try stableCopy(of: $0, in: copies) }
+        }
         let arc = try SidebarImport(arcData: sidebar, windows: optional(windows), archive: optional(archive),
-                                    routing: optional(routing))
+                                    routing: optional(routing), notes: documents)
         let settings = directory.appendingPathComponent("Preferences.plist")
         guard let size = (try? files.attributesOfItem(atPath: preferences.path))?[.size] as? Int, size <= maximumSize,
               (try? files.copyItem(at: preferences, to: settings)) != nil,

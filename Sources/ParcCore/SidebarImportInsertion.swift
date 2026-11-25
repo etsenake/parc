@@ -13,14 +13,16 @@ extension SidebarImport {
         }
     }
 
+    @MainActor
     func inserting(into state: BrowserState, profiles: [(key: ProfileKey, name: String)],
                    standardProfileID: UUID, target: (key: ProfileKey, profileID: UUID)? = nil,
-                   homeSpaceID: UUID? = nil, at date: Date) throws -> Result {
+                   homeSpaceID: UUID? = nil, at date: Date, noteFiles: NoteFiles? = nil) throws -> Result {
         func live(_ id: UUID) -> Bool {
             state.profiles.contains { $0.id == id } && !state.profileRemovals.contains { $0.profileID == id }
         }
         guard live(standardProfileID), target.map({ live($0.profileID) }) != false else { throw CocoaError(.userCancelled) }
         var next = state
+        let notesWriter = SidebarImportNoteWriter(files: noteFiles, date: date)
         var mapped: [ProfileKey: UUID] = [:], names: [ProfileKey: String] = [:]
         let named = profiles + extraProfiles.filter { extra in !profiles.contains { $0.key == extra.key } }
             .map { (key: $0.key, name: $0.name) }
@@ -157,9 +159,10 @@ extension SidebarImport {
         func pinnedKeys(_ items: [Item]) -> [String] {
             items.flatMap { item -> [String] in
                 switch item {
-                case .tab(let tab): return [SavedTabURLComparison.key(tab.url)]
+                case .tab(let tab): return tab.note == nil ? [SavedTabURLComparison.key(tab.url)] : []
                 case .folder(_, _, let children, _): return pinnedKeys(children)
-                case .split(_, _, let tabs, _, _), .stackedSplit(_, _, let tabs, _, _): return tabs.map { SavedTabURLComparison.key($0.url) }
+                case .split(_, _, let tabs, _, _), .stackedSplit(_, _, let tabs, _, _):
+                    return tabs.filter { $0.note == nil }.map { SavedTabURLComparison.key($0.url) }
                 }
             }.sorted()
         }
@@ -172,7 +175,8 @@ extension SidebarImport {
             return state.spaces.first { existing in
                 existing.profileID == profileID && !next.arcImportedSpaces.values.contains(existing.id)
                     && (space.placement == .profileHome || existing.title?.lowercased() == space.title?.lowercased())
-                    && state.openTabs(where: { $0.spaceID == existing.id && $0.kind == .pinned })
+                    && state.openTabs(where: { $0.spaceID == existing.id && $0.kind == .pinned
+                        && InternalPage.noteFile($0.savedURL) == nil })
                         .map { SavedTabURLComparison.key($0.savedURL) }.sorted() == keys
             }
         }
@@ -185,8 +189,10 @@ extension SidebarImport {
                 if destinations[space.profile] == nil { destinations[space.profile] = .init(spaceID: existing.id, profileID: profileID) }
                 if space.placement == .profileHome, existing.id == home?.id { homeUsed = true }
                 var known = openKeys(in: existing.id)
-                insertPinned(space.pinned, spaceID: existing.id, profileID: profileID, folderID: nil, known: &known)
-                insertToday(space.today, spaceID: existing.id, profileID: profileID, known: &known)
+                insertPinned(notesWriter.resolving(space.pinned, profileID: profileID), spaceID: existing.id,
+                             profileID: profileID, folderID: nil, known: &known)
+                insertToday(notesWriter.resolving(space.today, profileID: profileID), spaceID: existing.id,
+                            profileID: profileID, known: &known)
                 continue
             }
             let id: UUID
@@ -204,8 +210,10 @@ extension SidebarImport {
                                  pinnedCollapsed: space.pinnedCollapsed)
             }
             if destinations[space.profile] == nil { destinations[space.profile] = .init(spaceID: id, profileID: profileID) }
-            insertPinned(space.pinned, spaceID: id, profileID: profileID, folderID: nil, known: &known)
-            insertToday(space.today, spaceID: id, profileID: profileID, known: &known)
+            insertPinned(notesWriter.resolving(space.pinned, profileID: profileID), spaceID: id, profileID: profileID,
+                         folderID: nil, known: &known)
+            insertToday(notesWriter.resolving(space.today, profileID: profileID), spaceID: id, profileID: profileID,
+                        known: &known)
             if let sourceID = space.id { next.arcImportedSpaces[sourceID] = id; spaceIDs[sourceID] = id }
         }
         var archiveChanged = false
@@ -241,7 +249,7 @@ extension SidebarImport {
             }
             var existing = Set(next.openTabs(where: { $0.profileID == profileID && $0.kind == .favorite })
                 .map { SavedTabURLComparison.key($0.savedURL) })
-            for item in items {
+            for item in notesWriter.resolving(items, profileID: profileID) {
                 if case .tab(let tab) = item, existing.contains(SavedTabURLComparison.key(tab.url)) { continue }
                 if let tabs = item.splitTabs, tabs.allSatisfy({ existing.contains(SavedTabURLComparison.key($0.url)) }) { continue }
                 guard order.count < Self.maximumFavorites else { continue }
@@ -297,6 +305,7 @@ extension SidebarImport {
                         archivedAt: item.archivedAt,
                         provenance: ArchiveProvenance(reason: item.reason, spaceID: spaceID, spaceName: spaceName))
         }
+        notesWriter.write(notes, profileID: homeProfileID)
         let resolvedRoutes = routes.compactMap { route -> LinkRoute? in
             let conditions = route.conditions.map { LinkRouteCondition(style: $0.style, pattern: $0.pattern) }
             guard !conditions.isEmpty else { return nil }

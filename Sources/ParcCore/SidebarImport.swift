@@ -9,6 +9,7 @@ package struct SidebarImport: Equatable {
         var customTitle: String? = nil
         var isMuted = false
         var isUnread = false
+        var note: Note? = nil
 
         package init(title: String, url: String, customTitle: String? = nil, isMuted: Bool = false, isUnread: Bool = false) {
             self.title = title
@@ -16,6 +17,12 @@ package struct SidebarImport: Equatable {
             self.customTitle = customTitle
             self.isMuted = isMuted
             self.isUnread = isUnread
+        }
+
+        package static func note(_ note: Note) -> Tab {
+            var tab = Tab(title: note.title, url: "")
+            tab.note = note
+            return tab
         }
 
         package static func web(url raw: String, title: String?, customTitle: String? = nil, isMuted: Bool = false,
@@ -127,6 +134,7 @@ package struct SidebarImport: Equatable {
     package var archive: [ArchivedTab] = []
     package var routes: [Route] = []
     package var warnings: [String] = []
+    package var notes: [Note] = []
     let skippedItemCount: Int
     private let favoriteOrder: [ProfileKey]
 
@@ -163,6 +171,7 @@ package struct SidebarImport: Equatable {
         for part in parts {
             result.autoArchiveHours.merge(part.autoArchiveHours) { current, _ in current }
             result.warnings += part.warnings
+            result.notes += part.notes
         }
         return result
     }

@@ -1,14 +1,15 @@
 import Foundation
 
 extension SidebarImport {
-    package init(arcData data: Data, windows: Data? = nil, archive: Data? = nil, routing: Data? = nil) throws {
+    package init(arcData data: Data, windows: Data? = nil, archive: Data? = nil, routing: Data? = nil,
+                 notes: [Note] = []) throws {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let containers = (root["sidebar"] as? [String: Any])?["containers"] as? [Any],
               let container = Self.arcMainContainer(containers) else {
             throw CocoaError(.fileReadCorruptFile)
         }
         let layout = ArcWindowLayout(windows)
-        var parser = Parser(container: container, expanded: layout.expanded)
+        var parser = Parser(container: container, expanded: layout.expanded, notes: notes)
         var spaces: [Space] = []
         for (_, value) in Self.arcPairs(container["spaces"]) {
             guard let space = value as? [String: Any], let profile = Self.profile(space["profile"]) else {
@@ -41,6 +42,16 @@ extension SidebarImport {
                   archive: archived.tabs, routes: routed.routes,
                   skippedItemCount: parser.skipped + archived.skipped)
         warnings = routed.warnings
+        self.notes = notes.filter { !parser.claimed.contains($0.id) }
+        if parser.missingNotes > 0 {
+            warnings.append(parser.missingNotes == 1 ? "1 Arc note wasn’t saved on this Mac, so it stayed behind."
+                : "\(parser.missingNotes) Arc notes weren’t saved on this Mac, so they stayed behind.")
+        }
+        let pictures = notes.reduce(0) { $0 + $1.droppedImages }
+        if pictures > 0 {
+            warnings.append(pictures == 1 ? "1 picture in your Arc notes couldn’t be read, so it stayed behind."
+                : "\(pictures) pictures in your Arc notes couldn’t be read, so they stayed behind.")
+        }
     }
 
     private static func containerID(_ space: [String: Any], _ section: String) -> String? {
@@ -168,11 +179,19 @@ extension SidebarImport {
 
         var items: [String: [String: Any]] = [:]
         var skipped = 0
+        var missingNotes = 0
+        private(set) var claimed = Set<String>()
         private var used = Set<String>()
         private let expanded: Set<String>?
+        private var notes: [String: Note] = [:]
+        private var notesByTitle: [String: [String]] = [:]
 
-        init(container: [String: Any], expanded: Set<String>?) {
+        init(container: [String: Any], expanded: Set<String>?, notes: [Note] = []) {
             self.expanded = expanded
+            for note in notes where self.notes[note.id] == nil {
+                self.notes[note.id] = note
+                notesByTitle[note.title, default: []].append(note.id)
+            }
             for (id, value) in SidebarImport.arcPairs(container["items"]) {
                 guard let id = id as? String, let item = value as? [String: Any], items[id] == nil,
                       items.count < SidebarImport.maximumItems else { skipped += 1; continue }
@@ -202,6 +221,7 @@ extension SidebarImport {
         private mutating func item(_ item: [String: Any], id: String, depth: Int, section: Section) -> [Item] {
             let title = (item["title"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             if Self.data(item, "tab") != nil { return tab(item).map { [.tab($0)] } ?? [] }
+            if let document = Self.data(item, "arcDocument") { return note(document, title: title).map { [.tab($0)] } ?? [] }
             if let list = Self.data(item, "list"), section != .favorites {
                 let icon = SidebarImport.icon((list["customInfo"] as? [String: Any])?["iconType"])
                 return [.folder(title: title ?? "Imported folder", icon: icon,
@@ -224,8 +244,8 @@ extension SidebarImport {
                         if found.tabs.isEmpty { skipped += 1; continue }
                         entries.append(SplitEntry(id: taken.id, tabs: found.tabs, orientation: Self.orientation(nested),
                                                   weights: Self.weights(nested), deeper: found.deeper))
-                    } else if Self.data(taken.item, "tab") == nil { drop(taken.item, depth: depth + 1) }
-                    else if let tab = tab(taken.item) {
+                    } else if !Self.isLeaf(taken.item) { drop(taken.item, depth: depth + 1) }
+                    else if let tab = leaf(taken.item) {
                         entries.append(SplitEntry(id: taken.id, tabs: [(taken.id, tab)], orientation: nil, weights: [:], deeper: false))
                     }
                 }
@@ -274,8 +294,8 @@ extension SidebarImport {
                 if Self.data(taken.item, "splitView") != nil, depth + 1 < SidebarImport.maximumDepth {
                     let found = nestedTabs(of: taken.item, depth: depth + 1).tabs
                     if found.isEmpty { skipped += 1 } else { tabs += found; deeper = true }
-                } else if Self.data(taken.item, "tab") == nil { drop(taken.item, depth: depth + 1) }
-                else if let tab = tab(taken.item) { tabs.append((taken.id, tab)) }
+                } else if !Self.isLeaf(taken.item) { drop(taken.item, depth: depth + 1) }
+                else if let tab = leaf(taken.item) { tabs.append((taken.id, tab)) }
             }
             return (tabs, deeper)
         }
@@ -321,6 +341,23 @@ extension SidebarImport {
         private mutating func tab(_ item: [String: Any]) -> Tab? {
             guard let tab = SidebarImport.arcTab(item) else { skipped += 1; return nil }
             return tab
+        }
+
+        private static func isLeaf(_ item: [String: Any]) -> Bool {
+            data(item, "tab") != nil || data(item, "arcDocument") != nil
+        }
+
+        private mutating func leaf(_ item: [String: Any]) -> Tab? {
+            guard let document = Self.data(item, "arcDocument") else { return tab(item) }
+            return note(document, title: (item["title"] as? String).flatMap { $0.isEmpty ? nil : $0 })
+        }
+
+        private mutating func note(_ document: [String: Any], title: String?) -> Tab? {
+            let byID = (document["arcDocumentID"] as? String).flatMap { notes[$0] }
+            let byTitle = title.flatMap { name in notesByTitle[name].flatMap { $0.count == 1 ? notes[$0[0]] : nil } }
+            guard let note = byID ?? byTitle else { skipped += 1; missingNotes += 1; return nil }
+            claimed.insert(note.id)
+            return .note(note)
         }
     }
 }
