@@ -104,6 +104,43 @@ void Safari(const base::FilePath& path) {
     Require(result.bookmarks[6].title == u"https://undated.example.test/",
             "Safari untitled Reading List items show their address");
   }
+  Plist(bookmarks, @{@"WebBookmarkFileVersion":@1, @"Children":@[
+      @{@"WebBookmarkType":@"WebBookmarkTypeProxy", @"Title":@"History", @"WebBookmarkIdentifier":@"History"},
+      @{@"WebBookmarkType":@"WebBookmarkTypeList", @"Title":@"BookmarksBar", @"Children":@[
+          page(@"https://bar.example.test/", @"Bar", nil)]},
+      @{@"WebBookmarkType":@"WebBookmarkTypeList", @"Title":@"BookmarksMenu", @"Children":@[]},
+      @{@"WebBookmarkType":@"WebBookmarkTypeList", @"Title":@"BookmarksBar", @"Children":@[
+          page(@"https://mine.example.test/", @"Mine", nil)]}]}, NSPropertyListBinaryFormat_v1_0);
+  auto typed = ReadSafariCategory(options, kBookmarks, cancel);
+  Require(typed.success && typed.bookmarks.size() == 4, "Safari user folder named BookmarksBar is read");
+  Require(typed.bookmarks[0].title == u"Favorites" && typed.bookmarks[1].url == "https://bar.example.test/" &&
+          typed.bookmarks[1].parent == typed.bookmarks[0].id,
+          "Safari's own unmarked Favorites bar is the first top-level BookmarksBar");
+  Require(typed.bookmarks[2].folder && typed.bookmarks[2].title == u"BookmarksBar" &&
+          typed.bookmarks[2].parent.empty() && typed.bookmarks[3].url == "https://mine.example.test/" &&
+          typed.bookmarks[3].parent == typed.bookmarks[2].id,
+          "Safari user's top-level folder named BookmarksBar stays as typed");
+  Plist(bookmarks, @{@"WebBookmarkFileVersion":@1, @"Children":@[
+      @{@"WebBookmarkType":@"WebBookmarkTypeList", @"Title":@"BookmarksMenu",
+        @"Sync":@{@"ServerID":@"5C1E0E4A-USER"}, @"Children":@[page(@"https://own-menu.example.test/", @"Own", nil)]},
+      @{@"WebBookmarkType":@"WebBookmarkTypeList", @"Title":@"Bookmarks Bar",
+        @"Sync":@{@"ServerID":@"Favorites Bar"}, @"Children":@[page(@"https://bar.example.test/", @"Bar", nil)]},
+      @{@"WebBookmarkType":@"WebBookmarkTypeList", @"Title":@"BookmarksMenu",
+        @"Sync":@{@"ServerID":@"Bookmarks Menu"}, @"Children":@[page(@"https://menu.example.test/", @"Menu", nil)]},
+      @{@"WebBookmarkType":@"WebBookmarkTypeList", @"Title":@"com.apple.ReadingList", @"ShouldOmitFromUI":@YES,
+        @"Sync":@{@"ServerID":@"Reading List"}, @"Children":@[page(@"https://later.example.test/", @"Later", nil)]}]},
+      NSPropertyListBinaryFormat_v1_0);
+  auto synced = ReadSafariCategory(options, kBookmarks, cancel);
+  Require(synced.success && synced.bookmarks.size() == 7, "Safari iCloud-marked roots are read");
+  Require(synced.bookmarks[0].folder && synced.bookmarks[0].title == u"BookmarksMenu" &&
+          synced.bookmarks[1].parent == synced.bookmarks[0].id,
+          "Safari user's folder named BookmarksMenu stays a folder when the real menu carries its sync marker");
+  Require(synced.bookmarks[2].title == u"Favorites" && synced.bookmarks[3].parent == synced.bookmarks[2].id,
+          "Safari Favorites bar is found by its sync marker after Safari retitled it");
+  Require(synced.bookmarks[4].url == "https://menu.example.test/" && synced.bookmarks[4].parent.empty(),
+          "Safari marked bookmarks menu is flattened");
+  Require(synced.bookmarks[5].title == u"Reading List" && synced.bookmarks[6].parent == synced.bookmarks[5].id,
+          "Safari marked Reading List is named as Safari names it");
   Plist(bookmarks, @{@"Children":@[@{@"WebBookmarkType":@"WebBookmarkTypeList",
       @"Title":@"com.apple.ReadingList", @"Children":@[]}]}, NSPropertyListBinaryFormat_v1_0);
   auto empty_list = ReadSafariCategory(options, kBookmarks, cancel);
@@ -294,6 +331,27 @@ void FirefoxRoots(const base::FilePath& path) {
   sqlite3_close(db);
   result = ReadFirefoxCategory(options, kBookmarks, cancel);
   Require(result.success && result.bookmarks.empty(), "Firefox profile with only stock bookmarks imports nothing, cleanly");
+  db = Database(places);
+  SQL(db, "INSERT INTO moz_bookmarks VALUES(21,3,0,1,'userbmark004','About Mozilla',6),"
+          "(22,2,1,2,'userfolder02','Mozilla links',NULL),(23,22,0,1,'userbmark005','Contribute',5),"
+          "(24,22,1,1,'userbmark006','Help',1);");
+  sqlite3_close(db);
+  result = ReadFirefoxCategory(options, kBookmarks, cancel);
+  Require(result.success && result.bookmarks.size() == 5, "Firefox stock addresses outside the default folder are kept");
+  Require(result.bookmarks[0].title == u"Bookmarks Toolbar" &&
+          result.bookmarks[1].url == "https://www.mozilla.org/about/" &&
+          result.bookmarks[1].title == u"About Mozilla" &&
+          result.bookmarks[1].parent == result.bookmarks[0].id,
+          "Firefox user's own mozilla.org/about bookmark in the toolbar survives");
+  Require(result.bookmarks[2].folder && result.bookmarks[2].title == u"Mozilla links" &&
+          result.bookmarks[2].parent.empty() &&
+          result.bookmarks[3].url == "https://www.mozilla.org/contribute/" &&
+          result.bookmarks[4].url == "https://support.mozilla.org/products/firefox" &&
+          result.bookmarks[3].parent == result.bookmarks[2].id &&
+          result.bookmarks[4].parent == result.bookmarks[2].id,
+          "Firefox user's menu folder holding only stock addresses survives whole");
+  for (const auto& bookmark : result.bookmarks)
+    Require(bookmark.title != u"Mozilla Firefox", "Firefox default folder is still left out");
 }
 void SafariExport(const base::FilePath& path) {
   using namespace parc::importer;

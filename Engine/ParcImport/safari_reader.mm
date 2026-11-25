@@ -52,10 +52,17 @@ NSDictionary* Dictionary(id value) {
   return [value isKindOfClass:[NSDictionary class]] ? value : nil;
 }
 
-NSString* const kReadingList = @"com.apple.ReadingList";
-bool IsReadingList(NSDictionary* node) {
-  return [String(node[@"WebBookmarkType"]) isEqualToString:@"WebBookmarkTypeList"] &&
-      [String(node[@"Title"]) isEqualToString:kReadingList];
+NSDictionary* StockFolder(NSArray* top_level, NSString* server_id, NSString* title) {
+  NSDictionary* titled = nil;
+  for (id child in top_level) {
+    NSDictionary* node = Dictionary(child);
+    if (![String(node[@"WebBookmarkType"]) isEqualToString:@"WebBookmarkTypeList"])
+      continue;
+    if ([String(Dictionary(node[@"Sync"])[@"ServerID"]) isEqualToString:server_id])
+      return node;
+    if (!titled && [String(node[@"Title"]) isEqualToString:title]) titled = node;
+  }
+  return titled;
 }
 NSDate* DateAdded(NSDictionary* node) {
   id date = Dictionary(node[@"ReadingList"])[@"DateAdded"];
@@ -90,6 +97,10 @@ Batch ReadBookmarks(const ReadOptions& options, const Cancellation& cancel) {
   if (!root || ![root[@"Children"] isKindOfClass:[NSArray class]]) {
     return Failure(kBookmarks, "Safari bookmarks have an unsupported or malformed structure.");
   }
+  NSArray* top_level = root[@"Children"];
+  NSDictionary* const bar = StockFolder(top_level, @"Favorites Bar", @"BookmarksBar");
+  NSDictionary* const menu = StockFolder(top_level, @"Bookmarks Menu", @"BookmarksMenu");
+  NSDictionary* const reading = StockFolder(top_level, @"Reading List", @"com.apple.ReadingList");
   Batch batch;
   batch.category = kBookmarks;
   size_t visited = 0;
@@ -104,9 +115,9 @@ Batch ReadBookmarks(const ReadOptions& options, const Cancellation& cancel) {
       if ((!is_root && !title) ||
           (children && ![children isKindOfClass:[NSArray class]])) return false;
       const bool top = depth == 1;
-      const bool reading_list = top && [title isEqualToString:kReadingList];
-      const bool special = reading_list || (top && [title isEqualToString:@"BookmarksBar"]);
-      if (!is_root && !(top && [title isEqualToString:@"BookmarksMenu"])) {
+      const bool reading_list = top && node == reading;
+      const bool special = reading_list || (top && node == bar);
+      if (!is_root && !(top && node == menu)) {
         batch.bookmarks.push_back({key, parent,
             reading_list ? std::u16string(u"Reading List")
             : special    ? std::u16string(u"Favorites")
@@ -129,8 +140,8 @@ Batch ReadBookmarks(const ReadOptions& options, const Cancellation& cancel) {
         });
       }
       if (is_root) {
-        std::stable_partition(ordered.begin(), ordered.end(), [](const auto& entry) {
-          return !IsReadingList(entry.first);
+        std::stable_partition(ordered.begin(), ordered.end(), [&](const auto& entry) {
+          return entry.first != reading;
         });
       }
       for (const auto& [dictionary, index] : ordered) {

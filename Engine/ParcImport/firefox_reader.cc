@@ -126,9 +126,31 @@ constexpr std::string_view kStockBookmarks[] = {
     "campaign=customize",
     "https://www.mozilla.org/contribute/",
     "https://www.mozilla.org/about/"};
+constexpr std::u16string_view kStockFolderTitles[] = {
+    u"Mozilla Firefox",
+    u"\u09AE\u099C\u09BF\u09B2\u09BE \u09AB\u09BE\u09DF\u09BE\u09B0\u09AB\u0995\u09CD\u09B8",
+    u"\u0D2E\u0D4B\u0D38\u0D3F\u0D32\u0D4D\u0D32\u0D3E "
+    u"\u0D2B\u0D2F\u0D30\u0D4D\u200D\u0D2B\u0D4B\u0D15\u0D4D\u0D38\u0D4D",
+    u"\u0DB8\u0DDC\u0DC3\u0DD2\u0DBD\u0DCA\u0DBD\u0DCF\u00A0"
+    u"\u0DC6\u0DBA\u0DBB\u0DCA\u0DC6\u0DDC\u0D9A\u0DCA\u0DC3\u0DCA"};
 bool Stock(const std::string& url) {
   return std::find(std::begin(kStockBookmarks), std::end(kStockBookmarks),
                    url) != std::end(kStockBookmarks);
+}
+bool StockFolder(const Node& folder, const std::vector<int64_t>& items,
+                 const std::map<int64_t, Node>& nodes) {
+  if (folder.type != 2 || items.empty() ||
+      std::find(std::begin(kStockFolderTitles), std::end(kStockFolderTitles),
+                folder.title) == std::end(kStockFolderTitles))
+    return false;
+  std::set<std::string> found;
+  bool only_stock = true;
+  for (int64_t id : items) {
+    const Node& item = nodes.at(id);
+    if (item.type == 1 && Stock(item.url)) found.insert(item.url);
+    else only_stock = false;
+  }
+  return only_stock || found.size() == std::size(kStockBookmarks);
 }
 Batch BookmarkRows(sqlite3* database, const std::string& name,
                    const Cancellation& cancel) {
@@ -182,8 +204,10 @@ Batch BookmarkRows(sqlite3* database, const std::string& name,
     if (root.required && !roots.contains(root.guid))
       return Failure(kBookmarks, name + " bookmark roots could not be identified.");
   }
+  std::set<int64_t> stock_folders;
+  for (int64_t id : children[roots.at(kMenu)])
+    if (StockFolder(nodes.at(id), children[id], nodes)) stock_folders.insert(id);
   std::set<int64_t> visited;
-  size_t stock = 0;
   auto read = [&](auto&& self, int64_t id, const std::string& parent,
                   size_t depth, std::vector<Bookmark>& out) -> bool {
     if (Cancelled(cancel) || depth > kMaxDepth || !visited.insert(id).second)
@@ -195,21 +219,16 @@ Batch BookmarkRows(sqlite3* database, const std::string& name,
     }
     const std::string key = "firefox:" + std::to_string(id);
     if (node.type == 2) {
-      const size_t start = out.size(), dropped = stock;
+      const size_t start = out.size();
       out.push_back({key, parent, node.title, {}, true});
       for (int64_t child : children[id])
         if (!self(self, child, key, depth + 1, out)) return false;
-      if (out.size() == start + 1 && stock > dropped &&
-          nodes.at(node.parent).guid == kMenu)
-        out.pop_back();
+      if (out.size() == start + 1 && stock_folders.contains(id)) out.pop_back();
     } else if (node.type == 1) {
       if (!children[id].empty()) return false;
       GURL url(node.url);
       if (url.SchemeIs("place")) return true;
-      if (Stock(node.url)) {
-        ++stock;
-        return true;
-      }
+      if (stock_folders.contains(node.parent) && Stock(node.url)) return true;
       if (Importable(url))
         out.push_back({key, parent,
                        node.title.empty() ? base::UTF8ToUTF16(url.spec()) : node.title,
