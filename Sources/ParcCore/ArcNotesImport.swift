@@ -313,23 +313,35 @@ package enum ArcNotesImport {
     }
 
     static func range(_ value: Any?, count: Int) -> Range<Int>? {
-        var location: Int?, length: Int?
+        var location: Int?, length: Int?, end: Int?
         switch unwrap(value) {
         case let fields as [String: Any]:
-            if let lower = integer(fields["lowerBound"]), let upper = integer(fields["upperBound"]) {
-                location = lower; length = upper - lower
+            if let lower = offset(fields["lowerBound"]), let upper = offset(fields["upperBound"]) {
+                location = lower; end = upper
             } else {
-                location = integer(fields["location"]); length = integer(fields["length"])
+                location = offset(fields["location"]); length = offset(fields["length"])
             }
         case let list as [Any] where list.count == 2:
-            location = integer(list[0]); length = integer(list[1])
+            location = offset(list[0]); length = offset(list[1])
         case let string as String:
             let parsed = NSRangeFromString(string)
             if string.contains(where: \.isNumber) { location = parsed.location; length = parsed.length }
         default: break
         }
-        guard let location, let length, location >= 0, length >= 0, location <= count else { return nil }
-        return location..<min(count, location + length)
+        guard let location, location >= 0, location <= count else { return nil }
+        if let end {
+            guard end >= location else { return nil }
+            return location..<min(count, end)
+        }
+        guard let length, length >= 0 else { return nil }
+        return location..<(location + min(length, count - location))
+    }
+
+    private static func offset(_ value: Any?) -> Int? {
+        guard let number = unwrap(value) as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+        let double = number.doubleValue
+        guard double.isFinite else { return nil }
+        return Int(max(-9.0e18, min(9.0e18, double)))
     }
 
     struct PageBuilder {
@@ -562,19 +574,37 @@ package enum ArcNotesImport {
     }
 }
 
+package struct SidebarImportNotePlan {
+    struct Write {
+        let id: String
+        let note: SidebarImport.Note
+        let url: URL
+    }
+
+    var writes: [Write] = []
+}
+
 @MainActor
 final class SidebarImportNoteWriter {
     typealias Item = SidebarImport.Item
     typealias Tab = SidebarImport.Tab
 
+    static let maximumMatchCandidates = 20
+    static let maximumMatchSize = 1024 * 1024
+
     private let provided: NoteFiles?
-    private let date: Date
-    private var written: [String: URL] = [:]
+    private let known: [String: String]
+    private let excluded: Set<String>
+    private var planned: [String: URL] = [:]
+    private var reserved = Set<String>()
+    private(set) var plan = SidebarImportNotePlan()
+    private(set) var mapping: [String: String] = [:]
     private lazy var files: NoteFiles = provided ?? .shared
 
-    init(files: NoteFiles?, date: Date) {
+    init(files: NoteFiles?, known: [String: String], excluding: Set<String> = []) {
         provided = files
-        self.date = date
+        self.known = known
+        excluded = excluding
     }
 
     func resolving(_ items: [Item], profileID: UUID) -> [Item] {
@@ -612,7 +642,7 @@ final class SidebarImportNoteWriter {
         return result
     }
 
-    func write(_ notes: [SidebarImport.Note], profileID: UUID) {
+    func include(_ notes: [SidebarImport.Note], profileID: UUID) {
         for note in notes { _ = file(for: note, profileID: profileID) }
     }
 
@@ -631,65 +661,54 @@ final class SidebarImportNoteWriter {
     }
 
     private func file(for note: SidebarImport.Note, profileID: UUID) -> URL? {
-        let folder = NoteFilePaths.canonical(files.folders.folder(for: profileID))
-        let key = folder.path + "\n" + note.id
-        if let url = written[key] { return url }
-        guard let url = existing(note, in: folder) ?? create(note, in: folder) else { return nil }
-        written[key] = url
+        guard !excluded.contains(note.id) else { return nil }
+        if let url = planned[note.id] { return url }
+        let url: URL
+        if let path = known[note.id], NoteFilePaths.itemExists(atPath: path), !NoteFilePaths.isDirectory(URL(fileURLWithPath: path)) {
+            url = URL(fileURLWithPath: path)
+        } else {
+            let folder = NoteFilePaths.canonical(files.folders.folder(for: profileID))
+            if let match = matching(note, in: folder) {
+                url = match
+            } else if let free = reserve(note, in: folder) {
+                url = free
+                plan.writes.append(.init(id: note.id, note: note, url: free))
+            } else {
+                return nil
+            }
+        }
+        planned[note.id] = url
+        mapping[note.id] = url.path
         return url
     }
 
-    private func existing(_ note: SidebarImport.Note, in folder: URL) -> URL? {
-        var base = NoteFileNaming.sanitizedTitle(note.title)
-        if base.isEmpty { base = NoteFileNaming.untitled }
-        let expected = Self.comparable(note.markdown)
-        var misses = 0
-        for candidate in NoteFileNaming.candidates(in: folder, base: base, pathExtension: "md").prefix(1_000) {
-            guard NoteFilePaths.itemExists(candidate) else {
-                misses += 1
-                if misses > 20 { return nil }
-                continue
-            }
-            misses = 0
-            guard let size = (try? FileManager.default.attributesOfItem(atPath: candidate.path))?[.size] as? Int,
-                  size <= ArcNotesImport.maximumFileSize * 2, let data = try? Data(contentsOf: candidate),
+    private static func base(_ note: SidebarImport.Note) -> String {
+        let base = NoteFileNaming.sanitizedTitle(note.title)
+        return base.isEmpty ? NoteFileNaming.untitled : base
+    }
+
+    private func matching(_ note: SidebarImport.Note, in folder: URL) -> URL? {
+        var expected: String?
+        for candidate in NoteFileNaming.candidates(in: folder, base: Self.base(note), pathExtension: "md")
+            .prefix(Self.maximumMatchCandidates) {
+            guard NoteFilePaths.itemExists(candidate),
+                  let size = (try? FileManager.default.attributesOfItem(atPath: candidate.path))?[.size] as? Int,
+                  size <= Self.maximumMatchSize, let data = try? Data(contentsOf: candidate),
                   let text = String(data: data, encoding: .utf8) else { continue }
-            if Self.comparable(text) == expected { return candidate }
+            let wanted = expected ?? Self.comparable(note.markdown)
+            expected = wanted
+            if Self.comparable(text) == wanted { return candidate }
         }
         return nil
     }
 
-    private func create(_ note: SidebarImport.Note, in folder: URL) -> URL? {
-        guard let url = try? files.createNote(in: folder, title: note.title) else { return nil }
-        var page = note.page
-        if let current = try? String(contentsOf: url, encoding: .utf8), !current.isEmpty {
-            page.settings = NoteMarkdown.parse(current).settings
+    private func reserve(_ note: SidebarImport.Note, in folder: URL) -> URL? {
+        for candidate in NoteFileNaming.candidates(in: folder, base: Self.base(note), pathExtension: "md").prefix(10_000)
+            where !reserved.contains(candidate.path) && !NoteFilePaths.itemExists(candidate) {
+            reserved.insert(candidate.path)
+            return candidate
         }
-        page.blocks = placing(note.images, in: page.blocks, note: url)
-        do {
-            try Data(NoteMarkdown.serialize(page).utf8).write(to: url, options: .atomic)
-        } catch {
-            try? FileManager.default.removeItem(at: url)
-            files.filesRewritten([url])
-            return nil
-        }
-        files.filesRewritten([url])
-        return url
-    }
-
-    private func placing(_ images: [String: SidebarImport.Note.Image], in blocks: [NoteBlock], note: URL) -> [NoteBlock] {
-        guard !images.isEmpty else { return blocks }
-        var result: [NoteBlock] = []
-        for var block in blocks {
-            block.children = placing(images, in: block.children, note: note)
-            if block.kind == .image, let source = block.props.source, let image = images[source] {
-                guard let placement = try? NoteAttachments.placeData(image.data, fileExtension: image.fileExtension,
-                                                                     suggestedName: nil, into: note, date: date) else { continue }
-                block.props.source = placement.path
-            }
-            result.append(block)
-        }
-        return result
+        return nil
     }
 
     private static func comparable(_ markdown: String) -> String {
@@ -702,5 +721,148 @@ final class SidebarImportNoteWriter {
             }
         }
         return NoteMarkdown.serialize(NotePage(blocks: blank(NoteMarkdown.parse(markdown).blocks)))
+    }
+}
+
+@MainActor
+final class SidebarImportNoteStaging {
+    private struct Entry {
+        let id: String
+        let url: URL
+        let staged: URL
+        let attachments: [(staged: URL, target: URL)]
+    }
+
+    private let files: NoteFiles
+    private let date: Date
+    private var roots: [String: URL] = [:]
+    private var reserved = Set<String>()
+    private var entries: [Entry] = []
+    private(set) var failed = Set<String>()
+
+    init(_ plan: SidebarImportNotePlan, files: NoteFiles, date: Date) {
+        self.files = files
+        self.date = date
+        for write in plan.writes {
+            if let entry = stage(write) { entries.append(entry) } else { failed.insert(write.id) }
+        }
+    }
+
+    func commit() -> (placed: [String: String], failed: Set<String>) {
+        var placed: [String: String] = [:], missing = Set<String>(), written: [URL] = []
+        let manager = FileManager.default
+        for entry in entries {
+            var moved: [URL] = []
+            do {
+                for attachment in entry.attachments {
+                    try manager.createDirectory(at: attachment.target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try manager.moveItem(at: attachment.staged, to: attachment.target)
+                    moved.append(attachment.target)
+                }
+                try manager.createDirectory(at: entry.url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try manager.moveItem(at: entry.staged, to: entry.url)
+                placed[entry.id] = entry.url.path
+                written.append(entry.url)
+            } catch {
+                for url in moved { try? manager.removeItem(at: url) }
+                missing.insert(entry.id)
+            }
+        }
+        discard()
+        if !written.isEmpty { files.filesRewritten(written) }
+        return (placed, missing)
+    }
+
+    func discard() {
+        for root in roots.values { try? FileManager.default.removeItem(at: root) }
+        roots = [:]
+        entries = []
+    }
+
+    private func stage(_ write: SidebarImportNotePlan.Write) -> Entry? {
+        let folder = write.url.deletingLastPathComponent()
+        guard let root = root(for: folder) else { return nil }
+        let area = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        var attachments: [(staged: URL, target: URL)] = []
+        do {
+            try FileManager.default.createDirectory(at: area, withIntermediateDirectories: true)
+            var page = write.note.page
+            if let cover = files.newNoteCover?(),
+               let path = try? attach(cover.data, fileExtension: cover.fileExtension, suggestedName: cover.suggestedName,
+                                      note: write.url, area: area, into: &attachments) {
+                page.settings.cover = NoteCover(source: path)
+            }
+            page.blocks = placing(write.note.images, in: page.blocks, note: write.url, area: area, into: &attachments)
+            let staged = area.appendingPathComponent(write.url.lastPathComponent)
+            try Data(NoteMarkdown.serialize(page).utf8).write(to: staged, options: .withoutOverwriting)
+            return Entry(id: write.id, url: write.url, staged: staged, attachments: attachments)
+        } catch {
+            try? FileManager.default.removeItem(at: area)
+            for attachment in attachments { reserved.remove(attachment.target.path) }
+            return nil
+        }
+    }
+
+    private func root(for folder: URL) -> URL? {
+        if let root = roots[folder.path] { return root }
+        var volume = folder
+        while !NoteFilePaths.itemExists(volume), volume.pathComponents.count > 1 { volume.deleteLastPathComponent() }
+        let manager = FileManager.default
+        var root = try? manager.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: volume, create: true)
+        if root == nil {
+            let fallback = NoteAttachments.stagingFolder.appendingPathComponent(UUID().uuidString, isDirectory: true)
+            if (try? manager.createDirectory(at: fallback, withIntermediateDirectories: true)) != nil { root = fallback }
+        }
+        roots[folder.path] = root
+        return root
+    }
+
+    private func placing(_ images: [String: SidebarImport.Note.Image], in blocks: [NoteBlock], note: URL, area: URL,
+                         into attachments: inout [(staged: URL, target: URL)]) -> [NoteBlock] {
+        guard !images.isEmpty else { return blocks }
+        var result: [NoteBlock] = []
+        for var block in blocks {
+            block.children = placing(images, in: block.children, note: note, area: area, into: &attachments)
+            if block.kind == .image, let source = block.props.source, let image = images[source] {
+                guard let path = try? attach(image.data, fileExtension: image.fileExtension, suggestedName: nil,
+                                             note: note, area: area, into: &attachments) else { continue }
+                block.props.source = path
+            }
+            result.append(block)
+        }
+        return result
+    }
+
+    private func attach(_ data: Data, fileExtension: String, suggestedName: String?, note: URL, area: URL,
+                        into attachments: inout [(staged: URL, target: URL)]) throws -> String {
+        let pathExtension = NoteFileNaming.sanitizedExtension(fileExtension)
+        var base = ""
+        if let suggestedName {
+            let suggested = suggestedName as NSString
+            let stem = suggested.pathExtension.lowercased() == pathExtension && !pathExtension.isEmpty
+                ? suggested.deletingPathExtension : suggestedName
+            base = NoteFileNaming.sanitizedTitle(stem)
+        }
+        if base.isEmpty {
+            base = NoteFileNaming.pastedBaseName(at: date, isImage: NoteFileNaming.imageExtensions.contains(pathExtension))
+        }
+        let destination = NoteAttachments.folder(for: note)
+        for candidate in NoteFileNaming.candidates(in: destination, base: base, pathExtension: pathExtension).prefix(10_000)
+            where !reserved.contains(candidate.path) {
+            let link = NoteFilePaths.encodedPath([NoteAttachments.folderName, candidate.lastPathComponent])
+            if NoteFilePaths.itemExists(candidate) {
+                if (try? candidate.resourceValues(forKeys: [.fileSizeKey]).fileSize) == data.count,
+                   let existing = try? Data(contentsOf: candidate), existing == data {
+                    return link
+                }
+                continue
+            }
+            let staged = area.appendingPathComponent(UUID().uuidString + "-" + candidate.lastPathComponent)
+            try data.write(to: staged, options: .withoutOverwriting)
+            reserved.insert(candidate.path)
+            attachments.append((staged, candidate))
+            return link
+        }
+        throw NoteFileError.nameTaken(base)
     }
 }

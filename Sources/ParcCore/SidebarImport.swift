@@ -9,7 +9,12 @@ package struct SidebarImport: Equatable {
         var customTitle: String? = nil
         var isMuted = false
         var isUnread = false
-        var note: Note? = nil
+        private var noteBox: NoteBox?
+
+        var note: Note? {
+            get { noteBox?.note }
+            set { noteBox = newValue.map(NoteBox.init) }
+        }
 
         package init(title: String, url: String, customTitle: String? = nil, isMuted: Bool = false, isUnread: Bool = false) {
             self.title = title
@@ -34,6 +39,18 @@ package struct SidebarImport: Equatable {
             let named = title.flatMap { $0.isEmpty ? nil : $0 }
             let custom = customTitle.flatMap { $0.isEmpty ? nil : $0 }
             return Tab(title: named ?? url.host ?? value, url: value, customTitle: custom, isMuted: isMuted, isUnread: isUnread)
+        }
+    }
+
+    final class NoteBox: Equatable {
+        let note: Note
+
+        init(_ note: Note) {
+            self.note = note
+        }
+
+        static func == (lhs: NoteBox, rhs: NoteBox) -> Bool {
+            lhs === rhs || lhs.note == rhs.note
         }
     }
 

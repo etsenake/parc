@@ -130,6 +130,32 @@ struct ArcNotesImportParsingTests {
         #expect(Self.canonical(result) == Self.canonical("**Bold** *move*\n"))
     }
 
+    @Test func rangesThatRunFarPastTheTextAreClampedInsteadOfCrashing() throws {
+        let properties: [[String: Any]] = [
+            ["range": "{5, 9223372036854775807}", "value": "italic"],
+            ["range": ["location": 0, "length": Int.max], "value": "underline"],
+            ["range": ["lowerBound": 0, "upperBound": Int.max], "value": "bold"],
+            ["range": [Int.max, 1], "value": "code"]]
+        let result = try Self.markdown("Bold move", properties)
+        let expected = try Self.markdown("Bold move", [
+            Self.rich(5, 4, "italic"), Self.rich(0, 9, "underline"), Self.rich(0, 9, "bold")])
+        #expect(Self.canonical(result) == Self.canonical(expected) && result.contains("move"))
+    }
+
+    @Test func formattingListsAndPicturesFarIntoALongNoteKeepTheirPlace() throws {
+        let filler = String(repeating: "a", count: 2000)
+        let text = filler + "\nBold tail\nitem\n\u{FFFC}"
+        let data = try Self.json(Self.storable(blocks: ["B1", Self.block("B1", text: text, properties: [
+            Self.rich(2001, 4, "bold"), Self.rich(2011, 5, ["unorderedList": ["level": 0]]),
+            Self.rich(2016, 1, ["image": ["_0": Self.png.base64EncodedString()]])])]))
+        let note = try #require(ArcNotesImport.notes(json: data, name: "x").first)
+        #expect(note.page.blocks.map(\.kind) == [.paragraph, .paragraph, .bulletedItem, .image])
+        #expect(note.page.blocks.first?.text.string == filler)
+        #expect(note.markdown.contains("**Bold** tail"))
+        #expect(note.page.blocks[2].text.string == "item")
+        #expect(note.droppedImages == 0 && note.images.count == 1)
+    }
+
     @Test func blankLinesCollapseAndSpecialCharactersStayLiteral() throws {
         let result = try Self.markdown("# not a heading\n\n\n*stars* and [brackets]", [])
         #expect(Self.canonical(result) == Self.canonical("\\# not a heading\n\n\\*stars\\* and \\[brackets\\]\n"))
@@ -170,6 +196,7 @@ struct ArcNotesImportParsingTests {
 
     @Test func aNotesFolderReadsStoredExportedAndHTMLNotesAndSkipsTheRest() throws {
         try DataFixtures.withTemporaryDirectory { folder in
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try Self.json(Self.storable(blocks: ["B1", Self.meetingBlock])).write(to: folder.appendingPathComponent("DOC-1.json"))
             try Data("<html><head><title>Trip &amp; ideas</title></head><body><p>Pack light</p></body></html>".utf8)
                 .write(to: folder.appendingPathComponent("trip.html"))

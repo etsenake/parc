@@ -494,7 +494,8 @@ final class BrowserImportCoordinator {
                 warnings += sidebar.warnings
                 let destinations = try store.importSidebar(sidebar, profiles: keyed.map { ($0.key, $0.profile.displayName) },
                     standardProfileID: originalDestination.profileID, primary: keyed[0].key,
-                    into: originalDestination.profileID, home: originalDestination.spaceID)
+                    into: originalDestination.profileID, home: originalDestination.spaceID,
+                    warn: { self.warnings.append($0) })
                 var known: [String: BrowserImportDestination] = [:]
                 for item in keyed { known[item.profile.identifier] = destinations[item.key] }
                 known[keyed[0].profile.identifier] = originalDestination

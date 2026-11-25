@@ -1136,11 +1136,12 @@ package struct BrowserState: Codable, Equatable {
     package var settings = BrowserSettings()
     package var profileRemovals: [ProfileRemovalRecord] = []
     var arcImportedSpaces: [String: UUID] = [:]
+    var arcImportedNotes: [String: String] = [:]
     var windows: [BrowserWindowRecord] = []
     var spaceSharingVersion = SpaceSharing.version
     var tabLookup = BrowserTabLookupSlot()
 
-    init(version: Int = 1, profiles: [BrowserProfile], spaces: [BrowserSpace], tabs: [BrowserTab] = [], folders: [BrowserFolder] = [], activeSpaceID: UUID, selectedTabIDs: [UUID] = [], selectionBySpace: [String: [UUID]] = [:], splitLayouts: [BrowserSplitLayout] = [], sidebarItemOrder: [String: [SidebarItemReference]] = [:], autoArchiveStartedAt: Date? = nil, autoArchiveDefaultHours: Double = AutoArchiveInterval.twelveHours.rawValue, autoArchiveEducationEligible: Bool = false, history: [BrowserHistoryEntry] = [], downloads: [BrowserDownload] = [], recentlyClosedIDs: [UUID] = [], settings: BrowserSettings = BrowserSettings(), profileRemovals: [ProfileRemovalRecord] = [], arcImportedSpaces: [String: UUID] = [:], windows: [BrowserWindowRecord] = [], spaceSharingVersion: Int = SpaceSharing.version, tabLookup: BrowserTabLookupSlot = BrowserTabLookupSlot()) {
+    init(version: Int = 1, profiles: [BrowserProfile], spaces: [BrowserSpace], tabs: [BrowserTab] = [], folders: [BrowserFolder] = [], activeSpaceID: UUID, selectedTabIDs: [UUID] = [], selectionBySpace: [String: [UUID]] = [:], splitLayouts: [BrowserSplitLayout] = [], sidebarItemOrder: [String: [SidebarItemReference]] = [:], autoArchiveStartedAt: Date? = nil, autoArchiveDefaultHours: Double = AutoArchiveInterval.twelveHours.rawValue, autoArchiveEducationEligible: Bool = false, history: [BrowserHistoryEntry] = [], downloads: [BrowserDownload] = [], recentlyClosedIDs: [UUID] = [], settings: BrowserSettings = BrowserSettings(), profileRemovals: [ProfileRemovalRecord] = [], arcImportedSpaces: [String: UUID] = [:], arcImportedNotes: [String: String] = [:], windows: [BrowserWindowRecord] = [], spaceSharingVersion: Int = SpaceSharing.version, tabLookup: BrowserTabLookupSlot = BrowserTabLookupSlot()) {
         self.version = version
         self.profiles = profiles
         self.spaces = spaces
@@ -1160,6 +1161,7 @@ package struct BrowserState: Codable, Equatable {
         self.settings = settings
         self.profileRemovals = profileRemovals
         self.arcImportedSpaces = arcImportedSpaces
+        self.arcImportedNotes = arcImportedNotes
         self.windows = windows
         self.spaceSharingVersion = spaceSharingVersion
         self.tabLookup = tabLookup
@@ -1227,7 +1229,7 @@ package struct BrowserState: Codable, Equatable {
 extension BrowserState {
     private enum CodingKeys: String, CodingKey {
         case version, profiles, spaces, tabs, folders, activeSpaceID, selectedTabIDs,
-             selectionBySpace, splitLayouts, sidebarItemOrder, autoArchiveStartedAt, autoArchiveDefaultHours, autoArchiveEducationEligible, history, downloads, recentlyClosedIDs, settings, profileRemovals, arcImportedSpaces, windows, spaceSharingVersion
+             selectionBySpace, splitLayouts, sidebarItemOrder, autoArchiveStartedAt, autoArchiveDefaultHours, autoArchiveEducationEligible, history, downloads, recentlyClosedIDs, settings, profileRemovals, arcImportedSpaces, arcImportedNotes, windows, spaceSharingVersion
     }
     private enum LegacySplitKeys: String, CodingKey { case splitWidthFactors }
 
@@ -1248,6 +1250,7 @@ extension BrowserState {
         settings = try values.decode(BrowserSettings.self, forKey: .settings)
         profileRemovals = try values.decodeIfPresent([ProfileRemovalRecord].self, forKey: .profileRemovals) ?? []
         arcImportedSpaces = try values.decodeIfPresent([String: UUID].self, forKey: .arcImportedSpaces) ?? [:]
+        arcImportedNotes = try values.decodeIfPresent([String: String].self, forKey: .arcImportedNotes) ?? [:]
         sidebarItemOrder = try values.decodeIfPresent([String: [SidebarItemReference]].self, forKey: .sidebarItemOrder) ?? [:]
         autoArchiveStartedAt = try values.decodeIfPresent(Date.self, forKey: .autoArchiveStartedAt)
         autoArchiveDefaultHours = try values.decodeIfPresent(Double.self, forKey: .autoArchiveDefaultHours) ?? AutoArchiveInterval.twelveHours.rawValue
@@ -5865,16 +5868,48 @@ package final class BrowserStore: ObservableObject {
 
     package func importSidebar(_ sidebar: SidebarImport, profiles: [(key: SidebarImport.ProfileKey, name: String)],
                           standardProfileID: UUID, primary: SidebarImport.ProfileKey? = nil,
-                          into target: UUID? = nil, home: UUID? = nil) throws
+                          into target: UUID? = nil, home: UUID? = nil, noteFiles: NoteFiles? = nil,
+                          warn: (String) -> Void = { _ in }) throws
         -> [SidebarImport.ProfileKey: BrowserImportDestination] {
         guard !isEphemeral else { throw CocoaError(.userCancelled) }
-        let previous = state
+        let previous = state, now = clock(), files = noteFiles ?? .shared
         var chosen: (key: SidebarImport.ProfileKey, profileID: UUID)?
         if let primary, let target { chosen = (primary, target) }
-        let result = try sidebar.inserting(into: state, profiles: profiles, standardProfileID: standardProfileID,
-                                           target: chosen, homeSpaceID: home, at: clock())
+        var excluded = Set<String>(), placed: [String: String] = [:]
+        func plan() throws -> SidebarImport.Result {
+            var base = previous
+            base.arcImportedNotes.merge(placed) { _, new in new }
+            return try sidebar.inserting(into: base, profiles: profiles, standardProfileID: standardProfileID,
+                                         target: chosen, homeSpaceID: home, at: now, noteFiles: files,
+                                         excludingNotes: excluded)
+        }
+        var result = try plan()
+        var staging = SidebarImportNoteStaging(result.notes, files: files, date: now)
+        while !staging.failed.isEmpty {
+            excluded.formUnion(staging.failed)
+            staging.discard()
+            result = try plan()
+            staging = SidebarImportNoteStaging(result.notes, files: files, date: now)
+        }
         state = result.state
-        do { try save() } catch { state = previous; throw error }
+        do { try save() } catch { state = previous; staging.discard(); throw error }
+        let committed = staging.commit()
+        if !committed.failed.isEmpty {
+            excluded.formUnion(committed.failed)
+            placed = committed.placed
+            while let repaired = try? plan() {
+                result = repaired
+                let unwritten = Set(repaired.notes.writes.map(\.id))
+                if unwritten.isEmpty { break }
+                excluded.formUnion(unwritten)
+            }
+            state = result.state
+            try? save()
+        }
+        if !excluded.isEmpty {
+            warn(excluded.count == 1 ? "1 Arc note couldn’t be saved, so it stayed behind."
+                : "\(excluded.count) Arc notes couldn’t be saved, so they stayed behind.")
+        }
         changed()
         if !result.routes.isEmpty { linkRouting.importRoutes(result.routes) }
         return result.destinations

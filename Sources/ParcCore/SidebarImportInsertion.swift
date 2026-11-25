@@ -5,24 +5,28 @@ extension SidebarImport {
         var state: BrowserState
         var destinations: [ProfileKey: BrowserImportDestination]
         var routes: [LinkRoute] = []
+        var notes = SidebarImportNotePlan()
 
-        init(state: BrowserState, destinations: [ProfileKey: BrowserImportDestination], routes: [LinkRoute] = []) {
+        init(state: BrowserState, destinations: [ProfileKey: BrowserImportDestination], routes: [LinkRoute] = [],
+             notes: SidebarImportNotePlan = SidebarImportNotePlan()) {
             self.state = state
             self.destinations = destinations
             self.routes = routes
+            self.notes = notes
         }
     }
 
     @MainActor
     func inserting(into state: BrowserState, profiles: [(key: ProfileKey, name: String)],
                    standardProfileID: UUID, target: (key: ProfileKey, profileID: UUID)? = nil,
-                   homeSpaceID: UUID? = nil, at date: Date, noteFiles: NoteFiles? = nil) throws -> Result {
+                   homeSpaceID: UUID? = nil, at date: Date, noteFiles: NoteFiles? = nil,
+                   excludingNotes: Set<String> = []) throws -> Result {
         func live(_ id: UUID) -> Bool {
             state.profiles.contains { $0.id == id } && !state.profileRemovals.contains { $0.profileID == id }
         }
         guard live(standardProfileID), target.map({ live($0.profileID) }) != false else { throw CocoaError(.userCancelled) }
         var next = state
-        let notesWriter = SidebarImportNoteWriter(files: noteFiles, date: date)
+        let notesWriter = SidebarImportNoteWriter(files: noteFiles, known: state.arcImportedNotes, excluding: excludingNotes)
         var mapped: [ProfileKey: UUID] = [:], names: [ProfileKey: String] = [:]
         let named = profiles + extraProfiles.filter { extra in !profiles.contains { $0.key == extra.key } }
             .map { (key: $0.key, name: $0.name) }
@@ -305,7 +309,8 @@ extension SidebarImport {
                         archivedAt: item.archivedAt,
                         provenance: ArchiveProvenance(reason: item.reason, spaceID: spaceID, spaceName: spaceName))
         }
-        notesWriter.write(notes, profileID: homeProfileID)
+        notesWriter.include(notes, profileID: homeProfileID)
+        next.arcImportedNotes.merge(notesWriter.mapping) { _, new in new }
         let resolvedRoutes = routes.compactMap { route -> LinkRoute? in
             let conditions = route.conditions.map { LinkRouteCondition(style: $0.style, pattern: $0.pattern) }
             guard !conditions.isEmpty else { return nil }
@@ -317,6 +322,6 @@ extension SidebarImport {
                 return destinations[key].map { LinkRoute(conditions: conditions, destination: .space($0.spaceID)) }
             }
         }
-        return Result(state: next, destinations: destinations, routes: resolvedRoutes)
+        return Result(state: next, destinations: destinations, routes: resolvedRoutes, notes: notesWriter.plan)
     }
 }
