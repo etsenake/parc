@@ -57,20 +57,33 @@ struct SafariTabsDatabase {
 
     private static func copied(_ file: URL) throws -> SafariTabsDatabase {
         let files = FileManager.default
-        let sides = ["-wal", "-shm"].map { (URL(fileURLWithPath: file.path + $0), $0) }.filter { files.fileExists(atPath: $0.0.path) }
-        for source in [file] + sides.map({ $0.0 }) {
-            let size = (try files.attributesOfItem(atPath: source.path)[.size] as? NSNumber)?.int64Value ?? 0
-            guard size <= maximumBytes else { throw CocoaError(.fileReadTooLarge) }
+        var sides: [(URL, String)] = []
+        for suffix in ["-wal", "-shm"] {
+            let source = URL(fileURLWithPath: file.path + suffix)
+            guard let size = (try? files.attributesOfItem(atPath: source.path))?[.size] as? NSNumber else { continue }
+            guard size.int64Value <= maximumBytes else { throw CocoaError(.fileReadTooLarge) }
+            sides.append((source, suffix))
         }
+        let main = (try files.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.int64Value ?? 0
+        guard main <= maximumBytes else { throw CocoaError(.fileReadTooLarge) }
         let folder = files.temporaryDirectory.appendingPathComponent("ParcSafariTabs-\(UUID().uuidString)", isDirectory: true)
         try files.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         defer { try? files.removeItem(at: folder) }
         let copy = folder.appendingPathComponent("SafariTabs.db")
-        try files.copyItem(at: file, to: copy)
+        try copyFile(file, to: copy)
         for (source, suffix) in sides {
-            try files.copyItem(at: source, to: URL(fileURLWithPath: copy.path + suffix))
+            let target = URL(fileURLWithPath: copy.path + suffix)
+            do { try copyFile(source, to: target) } catch where !files.fileExists(atPath: source.path) { continue }
         }
         return try load(copy)
+    }
+
+    private static func copyFile(_ source: URL, to target: URL) throws {
+        let files = FileManager.default
+        do { try files.copyItem(at: source, to: target) } catch {
+            try? files.removeItem(at: target)
+            try files.copyItem(at: source, to: target)
+        }
     }
 
     private static func load(_ file: URL) throws -> SafariTabsDatabase {

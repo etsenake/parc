@@ -17,7 +17,7 @@ struct ArcWindowLayout {
         var collapsed = Set(keys.flatMap { ids(root[$0]) })
         for window in windows ?? [] { collapsed.formUnion(keys.flatMap { ids(window[$0]) }) }
         collapsedPinned = collapsed
-        expanded = windows.map { list in Set(list.flatMap { ids($0["expandedItems"]) }) }
+        expanded = windows.flatMap { list in list.isEmpty ? nil : Set(list.flatMap { ids($0["expandedItems"]) }) }
     }
 }
 
@@ -48,20 +48,18 @@ extension SidebarImport {
                        isUnread: item["isUnread"] as? Bool == true)
     }
 
-    static func arcArchive(_ data: Data?, spaces: [String: ProfileKey]) -> [ArchivedTab] {
-        guard let data, let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return [] }
-        var result: [ArchivedTab] = []
+    static func arcArchive(_ data: Data?, spaces: [String: ProfileKey]) -> (tabs: [ArchivedTab], skipped: Int) {
+        guard let data, let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return ([], 0) }
+        var result: [ArchivedTab] = [], skipped = 0
         for (_, value) in arcPairs(root["items"]).prefix(maximumItems) {
-            guard let entry = value as? [String: Any],
-                  let source = ((entry["source"] as? [String: Any])?["space"] as? [String: Any])?["_0"] as? String,
-                  let item = entry["sidebarItem"] as? [String: Any], let tab = arcTab(item),
+            guard let entry = value as? [String: Any], let item = entry["sidebarItem"] as? [String: Any], let tab = arcTab(item),
                   let seconds = entry["archivedAt"] as? Double, seconds.isFinite else { continue }
-            let profile = spaces[source]
+            guard let source = ((entry["source"] as? [String: Any])?["space"] as? [String: Any])?["_0"] as? String,
+                  let profile = spaces[source] else { skipped += 1; continue }
             result.append(ArchivedTab(tab: tab, archivedAt: Date(timeIntervalSinceReferenceDate: seconds),
-                                      reason: arcArchiveReason(entry["reason"]), spaceID: profile == nil ? nil : source,
-                                      profile: profile ?? .standard))
+                                      reason: arcArchiveReason(entry["reason"]), spaceID: source, profile: profile))
         }
-        return result
+        return (result, skipped)
     }
 
     static func arcRoutes(_ data: Data?, spaces: Set<String>) -> (routes: [Route], warnings: [String]) {

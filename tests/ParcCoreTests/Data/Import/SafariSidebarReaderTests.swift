@@ -266,6 +266,32 @@ struct SafariSidebarReaderTests {
         }
     }
 
+    @Test func aDeviceFolderUnderTheRootIsNotOpenedForGroups() throws {
+        let extra = """
+            INSERT INTO bookmarks (id, parent, type, subtype, title, url, order_index, external_uuid, syncable, hidden, deleted) VALUES
+            (60, 0, 1, 3, 'Root device', NULL, 20, 'B0000000-0000-4000-8000-000000000060', 1, 0, 0),
+            (61, 60, 1, 0, 'Orphan group', NULL, 0, 'B0000000-0000-4000-8000-000000000061', 1, 0, 0),
+            (62, 61, 0, 0, 'Orphan tab', 'https://orphan.example.com/', 0, 'C0000000-0000-4000-8000-000000000062', 1, 0, 0);
+            """
+        try Fixture.withHome(extra: extra) { home in
+            let sidebar = try Fixture.read(home)
+            #expect(!sidebar.spaces.contains { $0.title == "Orphan group" })
+            #expect(!sidebar.spaces.flatMap { Fixture.urls($0.pinned) + Fixture.urls($0.today) }.contains("https://orphan.example.com/"))
+        }
+    }
+
+    @Test func aLocalAddressThatIsNotAWebAddressFallsBackToTheTabsURL() throws {
+        let local = try Fixture.blob(["LocalURL": "about:blank", "LocalTitle": "Blank"])
+        let extra = """
+            INSERT INTO bookmarks (id, parent, type, title, url, order_index, external_uuid, extra_attributes) VALUES
+            (63, 5, 0, 'Fallback', 'https://fallback.example.com/', 9, 'C0000000-0000-4000-8000-000000000063', \(local));
+            """
+        try Fixture.withHome(extra: extra) { home in
+            let research = try #require(try Fixture.read(home).spaces.first { $0.title == "Research" })
+            #expect(research.today.last == Fixture.tab("Blank", "https://fallback.example.com/"))
+        }
+    }
+
     @Test func tabsStillWaitingInSafarisWriteAheadLogAreRead() throws {
         try Fixture.withHome { home in
             let db = try Fixture.open(Fixture.database(home))

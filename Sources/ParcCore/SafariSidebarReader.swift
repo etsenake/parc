@@ -79,7 +79,7 @@ struct SafariTabsMapping {
                                    extraProfiles: extras.map { SidebarImport.ExtraProfile(key: key(of: $0), name: name($0)) },
                                    skippedItemCount: skipped)
         if skipped > 0 {
-            result.warnings.append("Safari has more open tabs than Parc can bring over at once, so \(skipped) were left out.")
+            result.warnings.append("Safari has more open tabs than Parc can import in one go, so \(skipped) were left out.")
         }
         return result
     }
@@ -166,9 +166,10 @@ struct SafariTabsMapping {
     }
 
     private func groups(in container: Int64) -> [Row] {
-        children(container).flatMap { child -> [Row] in
+        let inProfile = database.rows[container].map { isProfile($0) } ?? false
+        return children(container).flatMap { child -> [Row] in
             if isGroup(child) { return [child] }
-            if child.type == 1 && child.subtype == 3 && alive(child.id) { return children(child.id).filter { isGroup($0) } }
+            if inProfile && child.type == 1 && child.subtype == 3 && alive(child.id) { return children(child.id).filter { isGroup($0) } }
             return []
         }
     }
@@ -182,7 +183,7 @@ struct SafariTabsMapping {
     }
 
     private func tab(_ row: Row) -> Tab? {
-        guard let url = row.attributes.localURL ?? webAddress(row.url) else { return nil }
+        guard let url = webAddress(row.attributes.localURL) ?? webAddress(row.url) else { return nil }
         return .web(url: url, title: title(row))
     }
 

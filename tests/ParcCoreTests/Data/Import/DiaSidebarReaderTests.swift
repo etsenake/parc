@@ -167,6 +167,10 @@ struct DiaSidebarReaderTests {
             #expect(urls.count == 12 && Set(urls).count == 12)
             #expect(urls.first == "https://mail.example.com/")
             #expect(urls.last == "https://fav10.example.com/")
+            #expect(Array(imported.spaces[0].pinned.prefix(3)) == [
+                Fixture.tab("https://fav11.example.com/", "Fav 11"), Fixture.tab("https://fav12.example.com/", "Fav 12"),
+                Fixture.tab("https://fav13.example.com/", "Fav 13")])
+            #expect(imported.spaces[0].pinned.count == 5)
         }
     }
 
@@ -214,7 +218,7 @@ struct DiaSidebarReaderTests {
             let second = try Fixture.profile(folder: "Profile 1", key: .custom(directory: "Profile 1"), in: directory)
             let imported = try DiaSidebarReader.read(profiles: [first, second], decrypt: nil)
             #expect(imported.spaces.isEmpty && imported.favorites.isEmpty)
-            #expect(imported.warnings.count == 1 && imported.warnings[0].hasPrefix("Parc couldn't unlock Dia's tabs"))
+            #expect(imported.warnings.count == 1 && imported.warnings[0].hasPrefix("Parc couldn’t unlock Dia’s tabs"))
         }
     }
 
@@ -223,7 +227,7 @@ struct DiaSidebarReaderTests {
             let profile = try Fixture.profile(in: directory)
             let imported = try DiaSidebarReader.read(profiles: [profile], decrypt: { _, _ in throw CocoaError(.userCancelled) })
             #expect(imported.spaces.isEmpty && imported.favorites.isEmpty)
-            #expect(imported.warnings.count == 1 && imported.warnings[0].hasPrefix("Parc couldn't unlock Dia's tabs"))
+            #expect(imported.warnings.count == 1 && imported.warnings[0].hasPrefix("Parc couldn’t unlock Dia’s tabs"))
         }
     }
 

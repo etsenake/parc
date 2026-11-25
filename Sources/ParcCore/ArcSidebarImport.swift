@@ -36,9 +36,10 @@ extension SidebarImport {
         var spaceProfiles: [String: ProfileKey] = [:]
         for space in spaces { if let id = space.id, spaceProfiles[id] == nil { spaceProfiles[id] = space.profile } }
         let routed = Self.arcRoutes(routing, spaces: Set(spaceProfiles.keys))
+        let archived = Self.arcArchive(archive, spaces: spaceProfiles)
         self.init(spaces: spaces, favorites: order.compactMap { key in favorites[key].map { (key, $0) } },
-                  archive: Self.arcArchive(archive, spaces: spaceProfiles), routes: routed.routes,
-                  skippedItemCount: parser.skipped)
+                  archive: archived.tabs, routes: routed.routes,
+                  skippedItemCount: parser.skipped + archived.skipped)
         warnings = routed.warnings
     }
 

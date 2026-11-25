@@ -156,6 +156,29 @@ struct ArcSidebarExtrasTests {
         #expect(arc.spaces[0].pinned.last == SidebarImport.Item.tab(Tab(title: "U", url: "https://example.test/u", isUnread: true)))
     }
 
+    @Test func anEmptyWindowsListLeavesEveryFolderOpen() throws {
+        let arc = try SidebarImport(arcData: Self.work(Self.folderItems), windows: Self.json(["version": 1, "windows": []]))
+        #expect(Self.expansion(arc.spaces[0].pinned) == ["Open one": true, "Closed one": true, "Nested open": true])
+    }
+
+    @Test func archivedTabsWithoutAKnownSpaceAreSkippedAndCounted() throws {
+        let entries: [[Any]] = [
+            Self.archiveEntry("B1", at: 815_000_000, reason: "auto", source: ["space": ["_0": "S1"]],
+                              url: "https://example.test/kept", title: "Kept"),
+            Self.archiveEntry("B2", at: 815_000_100, reason: "auto", source: ["littleArc": [String: Any]()],
+                              url: "https://example.test/little", title: "Little"),
+            Self.archiveEntry("B3", at: 815_000_200, reason: "auto", source: ["standaloneSidebar": [String: Any]()],
+                              url: "https://example.test/standalone", title: "Standalone"),
+            Self.archiveEntry("B4", at: 815_000_300, reason: "auto", source: ["unknown": [String: Any]()],
+                              url: "https://example.test/unknown", title: "Unknown"),
+            Self.archiveEntry("B5", at: 815_000_400, reason: "auto", source: ["space": ["_0": "GONE"]],
+                              url: "https://example.test/gone", title: "Gone")]
+        let arc = try SidebarImport(arcData: Self.work(Self.container("P1", []) + Self.container("U1", [])),
+                                    archive: Self.json(["version": 1, "items": entries.flatMap { $0 }]))
+        #expect(arc.archive.map(\.tab.url) == ["https://example.test/kept"])
+        #expect(arc.skippedItemCount == 4)
+    }
+
     @Test func archivedTabsKeepTheirReasonSpaceTitleAndMute() throws {
         let arc = try SidebarImport(arcData: Self.work(Self.container("P1", []) + Self.container("U1", [])),
                                     archive: Self.json(Self.archive))

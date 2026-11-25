@@ -4,8 +4,8 @@ import SQLite3
 package enum DiaSidebarReader {
     private static let maximumBytes = 256 * 1024 * 1024
     private static let maximumSplitPanes = 4
-    private static let unlockWarning = "Parc couldn't unlock Dia's tabs, so its Spaces, Favorites, pinned tabs and open tabs weren't imported."
-    private static let unreadableWarning = "Parc couldn't read some of Dia's tab data, so part of its Spaces and tabs weren't imported."
+    private static let unlockWarning = "Parc couldn’t unlock Dia’s tabs, so its Spaces, Favorites, Pinned and open tabs stayed behind."
+    private static let unreadableWarning = "Parc couldn’t read some of Dia’s tab data, so a few Spaces or tabs stayed behind."
 
     package static func read(profiles: [SidebarImportProfile], decrypt: SidebarDecryptor?) throws -> SidebarImport {
         var spaces: [SidebarImport.Space] = []
@@ -39,28 +39,25 @@ package enum DiaSidebarReader {
     }
 
     private static func parse(_ data: Data, profile: SidebarImportProfile, folder: String) -> Parsed? {
-        let files = FileManager.default
-        let directory = files.temporaryDirectory.appendingPathComponent("parc-dia-" + UUID().uuidString, isDirectory: true)
-        guard (try? files.createDirectory(at: directory, withIntermediateDirectories: false,
-                                          attributes: [.posixPermissions: 0o700])) != nil else { return nil }
-        defer { try? files.removeItem(at: directory) }
         var bytes = data
         if bytes.count > 19, bytes[18] == 2 || bytes[19] == 2 { bytes[18] = 1; bytes[19] = 1 }
-        let file = directory.appendingPathComponent("tabs.sqlite")
-        guard files.createFile(atPath: file.path, contents: bytes, attributes: [.posixPermissions: 0o600]),
-              let database = Database(path: file.path), let tree = Tree(database: database) else { return nil }
+        guard let database = Database(bytes: bytes), let tree = Tree(database: database) else { return nil }
         var parsed = Parsed()
         var builder = Builder(tree: tree)
         for space in tree.spaces {
             guard !space.id.isEmpty else { parsed.skipped += 1; continue }
             let pinned = builder.items(roots: tree.roots(kind: "pinned_container", space: space.id), flatten: false)
             let today = builder.items(roots: tree.roots(kind: "window", space: space.id), flatten: true)
-            parsed.spaces.append(SidebarImport.Space(title: space.title, icon: nil, theme: theme(space),
-                profile: profile.key, pinned: pinned, id: "dia:\(folder):\(space.id)", today: today))
+            var overflow: [SidebarImport.Item] = []
             for tab in builder.flatTabs(roots: tree.roots(kind: "favorites", space: space.id)) {
-                guard parsed.favorites.count < SidebarImport.maximumFavorites else { break }
-                if !parsed.favorites.contains(where: { url($0) == tab.url }) { parsed.favorites.append(.tab(tab)) }
+                guard !parsed.favorites.contains(where: { url($0) == tab.url }) else { continue }
+                if parsed.favorites.count < SidebarImport.maximumFavorites { parsed.favorites.append(.tab(tab)) }
+                else if !overflow.contains(where: { url($0) == tab.url }) { overflow.append(.tab(tab)) }
             }
+            let known = Set(pinned.compactMap { url($0) })
+            overflow.removeAll { url($0).map(known.contains) == true }
+            parsed.spaces.append(SidebarImport.Space(title: space.title, icon: nil, theme: theme(space),
+                profile: profile.key, pinned: overflow + pinned, id: "dia:\(folder):\(space.id)", today: today))
         }
         parsed.skipped += builder.skipped
         return parsed
@@ -276,9 +273,23 @@ package enum DiaSidebarReader {
     private final class Database {
         private var handle: OpaquePointer?
 
-        init?(path: String) {
-            guard sqlite3_open_v2(path, &handle, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+        init?(bytes: Data) {
+            guard !bytes.isEmpty, sqlite3_open_v2(":memory:", &handle, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else {
                 sqlite3_close(handle)
+                handle = nil
+                return nil
+            }
+            let size = sqlite3_int64(bytes.count)
+            guard let buffer = sqlite3_malloc64(sqlite3_uint64(bytes.count))?.assumingMemoryBound(to: UInt8.self) else {
+                sqlite3_close(handle)
+                handle = nil
+                return nil
+            }
+            bytes.copyBytes(to: buffer, count: bytes.count)
+            let flags = UInt32(SQLITE_DESERIALIZE_FREEONCLOSE | SQLITE_DESERIALIZE_READONLY)
+            guard sqlite3_deserialize(handle, "main", buffer, size, size, flags) == SQLITE_OK else {
+                sqlite3_close(handle)
+                handle = nil
                 return nil
             }
         }
