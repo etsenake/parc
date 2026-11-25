@@ -25,20 +25,33 @@ package enum ChromiumSessionParser {
         let plain = profileDirectory.appendingPathComponent("Sessions", isDirectory: true)
         let encrypted = profileDirectory.appendingPathComponent("Sessions_Encrypted", isDirectory: true)
         var unreadable = false
-        var decryptFailed = false
+        var decryptAttempts = 0
 
         func newest<T>(prefix: String, parse: (Data) -> T?) -> T? {
-            if let found: T = firstValid(in: plain, prefix: prefix, load: { try readFile($0) }, parse: parse) { return found }
-            guard !files(in: encrypted, prefix: prefix).isEmpty else { return nil }
-            guard let decrypt, !decryptFailed else { unreadable = true; return nil }
-            return firstValid(in: encrypted, prefix: prefix, load: { url in
-                guard !decryptFailed else { throw CocoaError(.userCancelled) }
-                do { return try decrypt(url, .chromiumSession) } catch {
-                    decryptFailed = true
-                    unreadable = true
-                    throw error
+            for _ in 0..<2 {
+                var vanished = false
+                let candidates = (stampedFiles(in: plain, prefix: prefix).map { (stamp: $0.stamp, url: $0.url, sealed: false) }
+                    + stampedFiles(in: encrypted, prefix: prefix).map { (stamp: $0.stamp, url: $0.url, sealed: true) })
+                    .sorted { $0.stamp != $1.stamp ? $0.stamp > $1.stamp : !$0.sealed && $1.sealed }
+                for candidate in candidates {
+                    let data: Data
+                    do {
+                        if candidate.sealed {
+                            guard let decrypt, decryptAttempts < maximumDecryptAttempts else { unreadable = true; continue }
+                            decryptAttempts += 1
+                            data = try decrypt(candidate.url, .chromiumSession)
+                        } else {
+                            data = try readFile(candidate.url)
+                        }
+                    } catch {
+                        if isMissing(error) { vanished = true } else if candidate.sealed { unreadable = true }
+                        continue
+                    }
+                    if let value = parse(data) { return value }
                 }
-            }, parse: parse)
+                if !vanished { break }
+            }
+            return nil
         }
 
         var found = newest(prefix: "Session_") { Self.session($0, flavor: flavor) }
@@ -82,32 +95,21 @@ package enum ChromiumSessionParser {
         return (list, marker)
     }
 
-    static func files(in directory: URL, prefix: String) -> [URL] {
+    static let maximumDecryptAttempts = 4
+
+    static func stampedFiles(in directory: URL, prefix: String) -> [(stamp: UInt64, url: URL)] {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return [] }
-        return names.compactMap { name -> (UInt64, URL)? in
+        return names.compactMap { name -> (stamp: UInt64, url: URL)? in
             guard name.hasPrefix(prefix) else { return nil }
             let suffix = name.dropFirst(prefix.count)
             guard !suffix.isEmpty, suffix.allSatisfy(\.isASCII), suffix.allSatisfy(\.isNumber),
                   let stamp = UInt64(suffix) else { return nil }
             return (stamp, directory.appendingPathComponent(name))
-        }.sorted { $0.0 > $1.0 }.map(\.1)
+        }.sorted { $0.stamp > $1.stamp }
     }
 
-    private static func firstValid<T>(in directory: URL, prefix: String, load: (URL) throws -> Data,
-                                      parse: (Data) -> T?) -> T? {
-        for _ in 0..<2 {
-            var vanished = false
-            for url in files(in: directory, prefix: prefix) {
-                let data: Data
-                do { data = try load(url) } catch {
-                    if isMissing(error) { vanished = true; continue }
-                    return nil
-                }
-                if let value = parse(data) { return value }
-            }
-            if !vanished { break }
-        }
-        return nil
+    static func files(in directory: URL, prefix: String) -> [URL] {
+        stampedFiles(in: directory, prefix: prefix).map(\.url)
     }
 
     private static func isMissing(_ error: Error) -> Bool {

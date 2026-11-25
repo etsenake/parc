@@ -28,7 +28,7 @@ package enum ChromiumSidebarReader {
                 guard !content.pinned.isEmpty || !content.today.isEmpty else { continue }
                 let home = spaces.isEmpty
                 spaces.append(SidebarImport.Space(title: window.userTitle, icon: nil, theme: nil, profile: profile.key,
-                    pinned: content.pinned, id: home ? homeID : "\(prefix(flavor)):\(folder):window:\(window.id)",
+                    pinned: content.pinned, id: home ? homeID : "\(prefix(flavor)):\(folder):window:\(spaces.count)",
                     today: content.today, placement: home ? .profileHome : .new))
             }
         }
@@ -56,7 +56,7 @@ package enum ChromiumSidebarReader {
         var result = SidebarImport(spaces: spaces, favorites: favorites.isEmpty ? [] : [(profile.key, favorites)],
                                    archive: archive, skippedItemCount: builder.skipped)
         if outcome.encryptedUnreadable {
-            result.warnings.append("\(name(flavor)) keeps the tabs of \(profile.name) encrypted, so they couldn't be brought over.")
+            result.warnings.append("\(name(flavor)) keeps the tabs in \(profile.name) encrypted, so they stayed behind.")
         }
         return result
     }

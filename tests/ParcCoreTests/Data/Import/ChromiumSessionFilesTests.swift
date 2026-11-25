@@ -100,10 +100,28 @@ struct ChromiumSessionFilesTests {
         }
     }
 
-    @Test func aReadableCleartextSessionNeverTouchesTheDecryptor() throws {
+    @Test func aNewerEncryptedSessionWinsOverAStaleCleartextOne() throws {
         try DataFixtures.withTemporaryDirectory { directory in
-            try Self.write(Fixture.file(Fixture.standard()), "Session_13350000000000001", in: directory)
+            try Self.write(Fixture.file(Fixture.standard() + [Fixture.windowTitle(1, "Stale")]), "Session_13350000000000001",
+                           in: directory)
             try Self.write(Data([0x53, 0x4E, 0x53, 0x53, 5, 0, 0, 0]), "Session_13350000000000009", in: directory,
+                           folder: "Sessions_Encrypted")
+            let fresh = Fixture.file(Fixture.standard() + [Fixture.windowTitle(1, "Fresh")])
+            let outcome = ChromiumSessionParser.read(profileDirectory: directory, flavor: .chrome) { _, _ in fresh }
+            #expect(outcome.session?.windows.map(\.userTitle) == ["Fresh"])
+            let refused = ChromiumSessionParser.read(profileDirectory: directory, flavor: .chrome) { _, _ in
+                throw CocoaError(.userCancelled)
+            }
+            #expect(refused.session?.windows.map(\.userTitle) == ["Stale"])
+        }
+    }
+
+    @Test func aReadableCleartextSessionAsNewAsTheEncryptedOneNeverTouchesTheDecryptor() throws {
+        try DataFixtures.withTemporaryDirectory { directory in
+            try Self.write(Fixture.file(Fixture.standard()), "Session_13350000000000009", in: directory)
+            try Self.write(Data([0x53, 0x4E, 0x53, 0x53, 5, 0, 0, 0]), "Session_13350000000000009", in: directory,
+                           folder: "Sessions_Encrypted")
+            try Self.write(Data([0x53, 0x4E, 0x53, 0x53, 5, 0, 0, 0]), "Session_13350000000000001", in: directory,
                            folder: "Sessions_Encrypted")
             let calls = ChromiumDecryptCalls()
             let outcome = ChromiumSessionParser.read(profileDirectory: directory, flavor: .chrome) { url, format in
@@ -129,7 +147,7 @@ struct ChromiumSessionFilesTests {
                 throw CocoaError(.userCancelled)
             }
             #expect(failed == ChromiumSessionParser.Outcome(session: nil, encryptedUnreadable: true))
-            #expect(calls.entries.count == 1)
+            #expect(calls.entries.map(\.name) == ["Session_13350000000000009", "Session_13350000000000008"])
         }
     }
 }

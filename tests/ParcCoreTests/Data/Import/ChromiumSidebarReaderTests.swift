@@ -79,7 +79,7 @@ struct ChromiumSidebarReaderTests {
             let sidebar = try Self.read(directory)
             #expect(sidebar.spaces.count == 2)
             let reading = sidebar.spaces[1]
-            #expect(reading.placement == .new && reading.title == "Reading" && reading.id == "chrome:Default:window:4")
+            #expect(reading.placement == .new && reading.title == "Reading" && reading.id == "chrome:Default:window:1")
             #expect(reading.pinned == [
                 .folder(title: "Tab Group", icon: nil, children: [
                     .split(title: nil, icon: nil, tabs: [Tab(title: "Top", url: "https://top.example/"),
@@ -117,7 +117,7 @@ struct ChromiumSidebarReaderTests {
                                            folder: "Sessions_Encrypted")
             let sidebar = try ChromiumSidebarReader.read(flavor: .edge, root: directory, profiles: [source], decrypt: nil)
             #expect(sidebar.spaces.isEmpty)
-            #expect(sidebar.warnings == ["Microsoft Edge keeps the tabs of Personal encrypted, so they couldn't be brought over."])
+            #expect(sidebar.warnings == ["Microsoft Edge keeps the tabs in Personal encrypted, so they stayed behind."])
         }
     }
 

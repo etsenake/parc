@@ -74,52 +74,85 @@ extension SidebarImport {
                 tabIDs: ids, orientation: orientation, widthFactors: stacks?.flattenedFactors ?? factors, stacks: stacks))
             return .tab(ids[0])
         }
-        func insertPinned(_ items: [Item], spaceID: UUID, profileID: UUID, folderID: UUID?) {
+        func fresh(_ tab: Tab, _ known: inout Set<String>?) -> Bool {
+            guard var keys = known else { return true }
+            let inserted = keys.insert(SavedTabURLComparison.key(tab.url)).inserted
+            known = keys
+            return inserted
+        }
+        func appendSplit(_ item: Item, kind: TabKind, spaceID: UUID, profileID: UUID, folderID: UUID?,
+                         known: inout Set<String>?, into order: inout [SidebarItemReference]) {
+            guard let tabs = item.splitTabs else { return }
+            let kept = tabs.filter { fresh($0, &known) }
+            if kept.count == 1 {
+                order.append(.tab(makeTab(kept[0], spaceID: spaceID, profileID: profileID, kind: kind, folderID: folderID)))
+                return
+            }
+            guard kept.count > 1 else { return }
+            switch item {
+            case let .split(title, icon, _, orientation, factors):
+                let widths = kept.count == tabs.count ? factors : Array(repeating: 1 / Double(kept.count), count: kept.count)
+                order.append(makeSplit(title: title, icon: icon, tabs: kept, orientation: orientation, factors: widths,
+                                       spaceID: spaceID, profileID: profileID, kind: kind, folderID: folderID))
+            case let .stackedSplit(title, icon, _, orientation, stacks) where kept.count == tabs.count:
+                order.append(makeSplit(title: title, icon: icon, tabs: kept, orientation: orientation,
+                                       factors: stacks.flattenedFactors, stacks: stacks,
+                                       spaceID: spaceID, profileID: profileID, kind: kind, folderID: folderID))
+            case let .stackedSplit(title, icon, _, orientation, _):
+                order.append(makeSplit(title: title, icon: icon, tabs: kept, orientation: orientation,
+                                       factors: Array(repeating: 1 / Double(kept.count), count: kept.count),
+                                       spaceID: spaceID, profileID: profileID, kind: kind, folderID: folderID))
+            case .tab, .folder: break
+            }
+        }
+        func insertPinned(_ items: [Item], spaceID: UUID, profileID: UUID, folderID: UUID?, known: inout Set<String>?) {
             let location = SidebarContainerLocation(spaceID: spaceID, folderID: folderID, section: .pinned)
             var order = next.sidebarItemOrder[location.key] ?? []
             for item in items {
                 switch item {
                 case .tab(let tab):
+                    guard fresh(tab, &known) else { continue }
                     order.append(.tab(makeTab(tab, spaceID: spaceID, profileID: profileID, kind: .pinned, folderID: folderID)))
                 case let .folder(title, icon, children, isExpanded):
+                    if known != nil, let match = next.folders.first(where: { $0.spaceID == spaceID && $0.parentID == folderID
+                        && $0.name.caseInsensitiveCompare(title) == .orderedSame }) {
+                        insertPinned(children, spaceID: spaceID, profileID: profileID, folderID: match.id, known: &known)
+                        continue
+                    }
                     let folder = BrowserFolder(id: UUID(), spaceID: spaceID, name: title, parentID: folderID,
                                                isExpanded: isExpanded, customIcon: icon)
                     next.folders.append(folder)
                     order.append(.folder(folder.id))
-                    insertPinned(children, spaceID: spaceID, profileID: profileID, folderID: folder.id)
-                case let .split(title, icon, tabs, orientation, factors):
-                    order.append(makeSplit(title: title, icon: icon, tabs: tabs, orientation: orientation, factors: factors,
-                                           spaceID: spaceID, profileID: profileID, kind: .pinned, folderID: folderID))
-                case let .stackedSplit(title, icon, tabs, orientation, stacks):
-                    order.append(makeSplit(title: title, icon: icon, tabs: tabs, orientation: orientation,
-                                           factors: stacks.flattenedFactors, stacks: stacks,
-                                           spaceID: spaceID, profileID: profileID, kind: .pinned, folderID: folderID))
+                    insertPinned(children, spaceID: spaceID, profileID: profileID, folderID: folder.id, known: &known)
+                case .split, .stackedSplit:
+                    appendSplit(item, kind: .pinned, spaceID: spaceID, profileID: profileID, folderID: folderID,
+                                known: &known, into: &order)
                 }
             }
             next.sidebarItemOrder[location.key] = order
         }
 
-        func insertToday(_ items: [Item], spaceID: UUID, profileID: UUID) {
+        func insertToday(_ items: [Item], spaceID: UUID, profileID: UUID, known: inout Set<String>?) {
             let location = SidebarContainerLocation(spaceID: spaceID, folderID: nil, section: .today)
             var order = next.sidebarItemOrder[location.key] ?? []
             func append(_ items: [Item]) {
                 for item in items {
                     switch item {
                     case .tab(let tab):
+                        guard fresh(tab, &known) else { continue }
                         order.append(.tab(makeTab(tab, spaceID: spaceID, profileID: profileID, kind: .today, folderID: nil)))
                     case .folder(_, _, let children, _): append(children)
-                    case let .split(title, icon, tabs, orientation, factors):
-                        order.append(makeSplit(title: title, icon: icon, tabs: tabs, orientation: orientation, factors: factors,
-                                               spaceID: spaceID, profileID: profileID, kind: .today, folderID: nil))
-                    case let .stackedSplit(title, icon, tabs, orientation, stacks):
-                        order.append(makeSplit(title: title, icon: icon, tabs: tabs, orientation: orientation,
-                                               factors: stacks.flattenedFactors, stacks: stacks,
-                                               spaceID: spaceID, profileID: profileID, kind: .today, folderID: nil))
+                    case .split, .stackedSplit:
+                        appendSplit(item, kind: .today, spaceID: spaceID, profileID: profileID, folderID: nil,
+                                    known: &known, into: &order)
                     }
                 }
             }
             append(items)
             next.sidebarItemOrder[location.key] = order
+        }
+        func openKeys(in spaceID: UUID) -> Set<String>? {
+            Set(next.openTabs(where: { $0.spaceID == spaceID }).map { SavedTabURLComparison.key($0.savedURL) })
         }
         func pinnedKeys(_ items: [Item]) -> [String] {
             items.flatMap { item -> [String] in
@@ -150,12 +183,18 @@ extension SidebarImport {
             if let existing = alreadyImported(space, profileID: profileID) {
                 if let sourceID = space.id { next.arcImportedSpaces[sourceID] = existing.id; spaceIDs[sourceID] = existing.id }
                 if destinations[space.profile] == nil { destinations[space.profile] = .init(spaceID: existing.id, profileID: profileID) }
+                if space.placement == .profileHome, existing.id == home?.id { homeUsed = true }
+                var known = openKeys(in: existing.id)
+                insertPinned(space.pinned, spaceID: existing.id, profileID: profileID, folderID: nil, known: &known)
+                insertToday(space.today, spaceID: existing.id, profileID: profileID, known: &known)
                 continue
             }
             let id: UUID
+            var known: Set<String>?
             if space.placement == .profileHome, !homeUsed, let home, home.profileID == profileID {
                 homeUsed = true
                 id = home.id
+                known = openKeys(in: id)
                 if space.pinnedCollapsed, let index = next.spaces.firstIndex(where: { $0.id == id }) {
                     next.spaces[index].pinnedCollapsed = true
                 }
@@ -165,8 +204,8 @@ extension SidebarImport {
                                  pinnedCollapsed: space.pinnedCollapsed)
             }
             if destinations[space.profile] == nil { destinations[space.profile] = .init(spaceID: id, profileID: profileID) }
-            insertPinned(space.pinned, spaceID: id, profileID: profileID, folderID: nil)
-            insertToday(space.today, spaceID: id, profileID: profileID)
+            insertPinned(space.pinned, spaceID: id, profileID: profileID, folderID: nil, known: &known)
+            insertToday(space.today, spaceID: id, profileID: profileID, known: &known)
             if let sourceID = space.id { next.arcImportedSpaces[sourceID] = id; spaceIDs[sourceID] = id }
         }
         var archiveChanged = false

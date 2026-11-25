@@ -500,7 +500,7 @@ final class BrowserImportCoordinator {
                 known[keyed[0].profile.identifier] = originalDestination
                 queueProfiles(chosen, primaryDestination: nil, known: known)
             case .failure(let error):
-                if !(error is CocoaError && (error as? CocoaError)?.code == .fileReadNoSuchFile) {
+                if ![CocoaError.fileReadNoSuchFile, .fileNoSuchFile].contains((error as? CocoaError)?.code) {
                     warnings.append("\(chosen[0].displayName): Parc couldn’t read its tabs and Spaces (\(error.localizedDescription)).")
                 }
                 queueProfiles(chosen, primaryDestination: originalDestination)

@@ -307,7 +307,7 @@ static NSError* PCSidebarFileError(NSString* message) {
   if (!data && error) {
     *error = failure
                  ?: PCSidebarFileError(
-                        @"This browser's encrypted files could not be read.");
+                        @"Parc couldn’t read this browser’s encrypted files.");
   }
   return data;
 }
