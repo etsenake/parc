@@ -67,7 +67,8 @@ struct DiaSidebarReaderStoreTests {
             let location = SidebarContainerLocation(spaceID: imported.work.id, folderID: nil, section: .favorite,
                                                     profileID: imported.standardID)
             let favorites = SidebarHierarchy.children(in: location, state: state)
-            let mail = try #require(state.tabs.first { $0.savedURL == "https://mail.example.com/" })
+            let mailTab = state.tabs.first(where: { $0.savedURL == "https://mail.example.com/" })
+            let mail = try #require(mailTab)
             #expect(favorites == [.tab(mail.id)] && mail.kind == .favorite)
             let today = state.tabs.filter { $0.spaceID == imported.work.id && $0.kind == .today }
             #expect(today.map(\.savedURL) == ["https://today.example.com/"])

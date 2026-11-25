@@ -131,6 +131,7 @@ final class BrowserImportEngineFake: BrowserImportNative {
 
     func finishBrowser(_ outcome: PCNativeImportOutcome = .completed, bookmarks: [PCNativeImportedBookmark] = [],
                        warnings: [String] = [], error: NSError? = nil) {
+        if browserCompletions.isEmpty { settle() }
         browserCompletions.removeFirst()(ImportFixture.result(outcome, bookmarks: bookmarks, warnings: warnings, error: error))
     }
 

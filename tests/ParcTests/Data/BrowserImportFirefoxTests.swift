@@ -176,6 +176,7 @@ struct BrowserImportFirefoxTests {
             #expect(switched.setupPage == .progress && switched.setupPagesAhead == [.bookmarks, .passwordFile])
             scene.engine.finishBrowser()
             #expect(!earlier.hasBackgroundWork && switched.stage == .importing && switched.message != "Finishing your last import…")
+            scene.engine.settle()
             #expect(scene.engine.browserCompletions.count == 1)
             #expect(switched.setupPage == .progress && switched.setupPagesAhead == [.bookmarks, .passwordFile])
             scene.engine.finishBrowser(bookmarks: [bookmark("switched")])
