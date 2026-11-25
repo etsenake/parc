@@ -7,6 +7,33 @@ static BOOL OldEngine;
 static void (^Completion)(PCNativeImportExtensionResult*);
 static void (^Background)(NSArray<PCNativeImportExtensionFailure*>*);
 static NSError* RestrictionAsked;
+static NSData* SidebarPlaintext;
+static NSError* SidebarFailure;
+static NSURL* SidebarAsked;
+static PCNativeImportSidebarFormat SidebarFormatAsked;
+
+@interface PCNativeImportProfile (Test)
+- (instancetype)initForTest;
+@end
+@implementation PCNativeImportProfile
+- (instancetype)initForTest { return [super init]; }
+- (BOOL)respondsToSelector:(SEL)selector {
+  if (OldEngine && (selector == @selector(canDecryptSidebarFiles) ||
+                    selector == @selector(decryptSidebarFile:format:error:))) {
+    return NO;
+  }
+  return [super respondsToSelector:selector];
+}
+- (BOOL)canDecryptSidebarFiles { return YES; }
+- (NSData*)decryptSidebarFile:(NSURL*)file format:(PCNativeImportSidebarFormat)format error:(NSError**)error {
+  SidebarAsked = file;
+  SidebarFormatAsked = format;
+  if (!SidebarPlaintext && error) {
+    *error = SidebarFailure;
+  }
+  return SidebarPlaintext;
+}
+@end
 
 @implementation PCNativePage
 @end

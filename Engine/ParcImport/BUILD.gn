@@ -1,4 +1,3 @@
-# Parc's import protocol and isolated readers stay outside Chromium's tree.
 import("//mojo/public/tools/bindings/mojom.gni")
 
 assert(is_mac)
@@ -18,6 +17,7 @@ source_set("service") {
     "import_snapshot.cc",
     "import_snapshot.h",
     "safari_reader.mm",
+    "sidebar_decrypt.cc",
   ]
   deps = [
     ":interfaces",

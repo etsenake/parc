@@ -37,4 +37,17 @@ static BOOL NameOnly(PCImportedExtensionFailure* failure, NSString* name) {
              RestrictionAsked == nil);
 }
 
+- (void)testSidebarFilesNeedEngineSupport {
+  SidebarPlaintext = [NSData dataWithBytes:"x" length:1];
+  SidebarAsked = nil;
+  PCNativeImportProfile* profile = [[PCNativeImportProfile alloc] initForTest];
+  NSError* error = nil;
+  NSData* plain = [PCImportedSidebarFiles decryptFile:[NSURL fileURLWithPath:@"/Default/tabs.db"]
+                                               format:PCNativeImportSidebarFormatDiaTabs
+                                          fromProfile:profile
+                                                error:&error];
+  PARC_CHECK(![PCImportedSidebarFiles canDecryptFromProfile:profile] && plain == nil && error != nil &&
+             SidebarAsked == nil);
+}
+
 @end

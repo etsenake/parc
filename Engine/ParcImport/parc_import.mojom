@@ -29,6 +29,8 @@ struct Autofill {
   int64 created; int64 last_used; int32 use_count;
 };
 struct Extension { string id; string name; };
+enum SidebarFormat { kChromiumSession, kDiaTabs };
+struct DecryptedFile { bool success; string error; array<uint8> data; };
 struct Batch {
   uint32 category; bool success; string error; array<string> warnings;
   array<History> history; array<Bookmark> bookmarks; array<Cookie> cookies;
@@ -37,5 +39,7 @@ struct Batch {
 [ServiceSandbox=sandbox.mojom.Sandbox.kNoSandbox]
 interface Reader {
   ReadCategory(Source source, uint32 category) => (Batch batch);
+  DecryptSidebarFile(Source source, string path, SidebarFormat format)
+      => (DecryptedFile file);
   Cancel();
 };

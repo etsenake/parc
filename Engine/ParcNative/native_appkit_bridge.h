@@ -1679,6 +1679,16 @@ __attribute__((visibility("default")))
 - (instancetype)init NS_UNAVAILABLE;
 + (instancetype)new NS_UNAVAILABLE;
 @end
+typedef NS_ENUM(NSInteger, PCNativeImportSidebarFormat) {
+  PCNativeImportSidebarFormatChromiumSession,
+  PCNativeImportSidebarFormatDiaTabs,
+};
+@interface PCNativeImportProfile (SidebarFiles)
+@property(nonatomic, readonly) BOOL canDecryptSidebarFiles;
+- (nullable NSData*)decryptSidebarFile:(NSURL*)file
+                                format:(PCNativeImportSidebarFormat)format
+                                 error:(NSError**)error;
+@end
 NS_SWIFT_UI_ACTOR
 __attribute__((visibility("default")))
 @interface PCNativeImportProfileResult : NSObject

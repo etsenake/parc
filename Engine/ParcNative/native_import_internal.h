@@ -32,7 +32,7 @@ struct Installation {
 };
 struct ProfileData {
   std::shared_ptr<const Installation> source;
-  base::FilePath path;
+  base::FilePath path, root;
   std::string identifier, name, directory;
   NSUInteger categories = 0;
   bool restricted = false;

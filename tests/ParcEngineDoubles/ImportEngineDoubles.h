@@ -8,6 +8,10 @@ NSObject *ImportTestExtension(NSString *identifier, NSString *displayName)
 NSObject *ImportTestProfile(NSString *identifier, NSString *displayName, NSString *directoryName,
                             NSUInteger categories, NSInteger access, NSArray *extensions)
     NS_SWIFT_NAME(ImportTestProfile(identifier:displayName:directoryName:categories:access:extensions:));
+void ImportTestSetSidebarDecryption(NSObject *profile, BOOL available, NSData *_Nullable data, NSError *_Nullable error)
+    NS_SWIFT_NAME(ImportTestSetSidebarDecryption(_:available:data:error:));
+NSArray<NSString *> *ImportTestSidebarDecryptionRequests(NSObject *profile)
+    NS_SWIFT_NAME(ImportTestSidebarDecryptionRequests(_:));
 NSObject *ImportTestProfileResult(NSArray *profiles, NSInteger access, NSArray<NSString *> *constraints,
                                   NSError *_Nullable error)
     NS_SWIFT_NAME(ImportTestProfileResult(profiles:access:constraints:error:));

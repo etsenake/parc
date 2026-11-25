@@ -88,3 +88,54 @@
 }
 
 @end
+
+@interface EngineFacadeImportTests_ImportedSidebarFileTests : ParcNativeTestCase
+@end
+
+@implementation EngineFacadeImportTests_ImportedSidebarFileTests
+
+- (void)setUp {
+  [super setUp];
+  OldEngine = NO;
+  SidebarPlaintext = nil;
+  SidebarFailure = nil;
+  SidebarAsked = nil;
+  SidebarFormatAsked = PCNativeImportSidebarFormatChromiumSession;
+}
+
+- (void)testPlaintextComesFromTheProfile {
+  PCNativeImportProfile* profile = [[PCNativeImportProfile alloc] initForTest];
+  NSURL* file = [NSURL fileURLWithPath:@"/Dia/User Data/Default/tabs.db"];
+  SidebarPlaintext = [@"SQLite format 3" dataUsingEncoding:NSUTF8StringEncoding];
+  NSError* error = nil;
+  NSData* plain = [PCImportedSidebarFiles decryptFile:file
+                                               format:PCNativeImportSidebarFormatDiaTabs
+                                          fromProfile:profile
+                                                error:&error];
+  PARC_CHECK([PCImportedSidebarFiles canDecryptFromProfile:profile] && [plain isEqual:SidebarPlaintext] &&
+             error == nil && [SidebarAsked isEqual:file] &&
+             SidebarFormatAsked == PCNativeImportSidebarFormatDiaTabs);
+}
+
+- (void)testAnEngineFailureIsReportedAsIs {
+  PCNativeImportProfile* profile = [[PCNativeImportProfile alloc] initForTest];
+  SidebarFailure = [NSError errorWithDomain:@"test" code:7 userInfo:nil];
+  NSError* error = nil;
+  NSData* plain = [PCImportedSidebarFiles decryptFile:[NSURL fileURLWithPath:@"/Session_1"]
+                                               format:PCNativeImportSidebarFormatChromiumSession
+                                          fromProfile:profile
+                                                error:&error];
+  PARC_CHECK(plain == nil && error == SidebarFailure);
+}
+
+- (void)testAFailureWithoutAnEngineErrorStillExplainsItself {
+  PCNativeImportProfile* profile = [[PCNativeImportProfile alloc] initForTest];
+  NSError* error = nil;
+  NSData* plain = [PCImportedSidebarFiles decryptFile:[NSURL fileURLWithPath:@"/Session_1"]
+                                               format:PCNativeImportSidebarFormatChromiumSession
+                                          fromProfile:profile
+                                                error:&error];
+  PARC_CHECK(plain == nil && error.localizedDescription.length > 0);
+}
+
+@end

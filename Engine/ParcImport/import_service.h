@@ -12,13 +12,18 @@ class ImportService final : public mojom::Reader {
   void ReadCategory(mojom::SourcePtr source,
                     uint32_t category,
                     ReadCategoryCallback callback) override;
+  void DecryptSidebarFile(mojom::SourcePtr source,
+                          const std::string& path,
+                          mojom::SidebarFormat format,
+                          DecryptSidebarFileCallback callback) override;
   void Cancel() override;
 
  private:
   void Complete(ReadCategoryCallback callback, Batch batch);
+  void Decrypted(DecryptSidebarFileCallback callback, DecryptedFile file);
   mojo::Receiver<mojom::Reader> receiver_;
   Cancellation cancelled_;
   bool busy_ = false;
   base::WeakPtrFactory<ImportService> weak_factory_{this};
 };
-}  // namespace parc::importer
+}

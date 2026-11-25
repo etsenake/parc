@@ -9,8 +9,10 @@ selection and higher-level presentation. How it fits with the other libraries is
 ## Entry points
 
 - [ParcEngine.h](ParcEngine.h) is the module's umbrella header. It declares
-  `PCBrowserEngine`, `PCBrowserView`, `PCBrowserViewDelegate` and the extension
-  import facade, and imports the native AppKit, application and page-host
+  `PCBrowserEngine`, `PCBrowserView`, `PCBrowserViewDelegate`, the extension
+  import facade and `PCImportedSidebarFiles`, which decrypts a source
+  browser's sidebar files off the main thread and reports an older engine as
+  unable to, and imports the native AppKit, application and page-host
   interfaces from [Engine/ParcNative](../../Engine/ParcNative).
 - [ParcEngine.m](ParcEngine.m) implements the lifecycle calls and
   wraps native page operations and delegate callbacks. Start here for engine
@@ -36,7 +38,8 @@ native AppKit interfaces to interact with pages.
 ## Checks and guides
 
 [EngineFacadeTests](../../tests/EngineFacadeTests) compile the facade against
-native doubles for media delivery, extension import reports and compatibility
+native doubles for media delivery, extension import reports, sidebar file
+decryption and compatibility
 with older engine exports. [ParcNativeTests](../../tests/ParcNativeTests/README.md)
 also exercise the picture-in-picture window. Run from the repository root:
 

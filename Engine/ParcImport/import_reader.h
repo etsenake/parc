@@ -4,7 +4,9 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 #include "base/files/file_path.h"
 
@@ -57,8 +59,22 @@ inline constexpr ChromiumBookmarkFiles kChromiumLocalBookmarks{
     "Bookmarks", "EncryptedBookmarks2"};
 inline constexpr char kChromiumLogins[] = "Login Data";
 inline constexpr char kChromiumAccountLogins[] = "Login Data For Account";
+enum class SidebarFormat { kChromiumSession, kDiaTabs };
+struct DecryptedFile {
+  bool success = false;
+  std::string error;
+  std::vector<uint8_t> data;
+};
+inline constexpr char kChromiumEncryptedSessions[] = "Sessions_Encrypted";
+inline constexpr char kDiaTabs[] = "tabs.db";
 using Cancellation = std::shared_ptr<std::atomic_bool>;
 bool ChromiumBookmarksNeedKey(const base::FilePath& profile);
+std::optional<std::string> DecryptChromiumValue(std::string_view encrypted,
+                                                std::string_view key);
+DecryptedFile DecryptSidebarFile(const ReadOptions&,
+                                 const base::FilePath& file,
+                                 SidebarFormat,
+                                 const Cancellation&);
 Batch ReadChromiumCategory(const ReadOptions&, uint32_t, const Cancellation&);
 Batch ReadSafariCategory(const ReadOptions&, uint32_t, const Cancellation&);
 Batch ReadFirefoxCategory(const ReadOptions&, uint32_t, const Cancellation&);

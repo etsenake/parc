@@ -284,6 +284,35 @@ static NSArray<PCImportedExtensionFailure*>* PCResultFailures(
 }
 @end
 
+static NSError* PCSidebarFileError(NSString* message) {
+  return [NSError errorWithDomain:@"ParcBrowserImport"
+                             code:1
+                         userInfo:@{NSLocalizedDescriptionKey : message}];
+}
+@implementation PCImportedSidebarFiles
++ (BOOL)canDecryptFromProfile:(PCNativeImportProfile*)profile {
+  return [profile respondsToSelector:@selector(canDecryptSidebarFiles)] &&
+         [profile respondsToSelector:@selector(decryptSidebarFile:format:error:)] &&
+         profile.canDecryptSidebarFiles;
+}
++ (NSData*)decryptFile:(NSURL*)file
+                format:(PCNativeImportSidebarFormat)format
+           fromProfile:(PCNativeImportProfile*)profile
+                 error:(NSError**)error {
+  NSError* failure = nil;
+  NSData* data =
+      [profile respondsToSelector:@selector(decryptSidebarFile:format:error:)]
+          ? [profile decryptSidebarFile:file format:format error:&failure]
+          : nil;
+  if (!data && error) {
+    *error = failure
+                 ?: PCSidebarFileError(
+                        @"This browser's encrypted files could not be read.");
+  }
+  return data;
+}
+@end
+
 @interface PCBrowserView () <PCNativePageObserver>
 @end
 @implementation PCBrowserView {

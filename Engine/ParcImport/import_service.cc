@@ -21,6 +21,26 @@ Batch Read(ReadOptions options, uint32_t category, Cancellation cancelled) {
   std::fill(options.source_key.begin(), options.source_key.end(), '\0');
   return result;
 }
+DecryptedFile Decrypt(ReadOptions options,
+                      base::FilePath file,
+                      SidebarFormat format,
+                      Cancellation cancelled) {
+  auto result = DecryptSidebarFile(options, file, format, cancelled);
+  std::fill(options.source_key.begin(), options.source_key.end(), '\0');
+  return result;
+}
+ReadOptions Options(mojom::Source& source) {
+  ReadOptions options;
+  options.family = static_cast<Family>(source.family);
+  options.profile_path = base::FilePath(source.profile_path);
+  options.app_path = base::FilePath(source.app_path);
+  options.source_name = std::move(source.source_name);
+  options.source_key.assign(source.source_key.begin(),
+                            source.source_key.end());
+  std::fill(source.source_key.begin(), source.source_key.end(), 0);
+  options.extension_ids = std::move(source.extension_ids);
+  return options;
+}
 }
 ImportService::ImportService(mojo::PendingReceiver<mojom::Reader> receiver)
     : receiver_(this, std::move(receiver)),
@@ -44,20 +64,40 @@ void ImportService::ReadCategory(mojom::SourcePtr source,
     return;
   }
   busy_ = true;
-  ReadOptions options;
-  options.family = static_cast<Family>(source->family);
-  options.profile_path = base::FilePath(source->profile_path);
-  options.app_path = base::FilePath(source->app_path);
-  options.source_name = std::move(source->source_name);
-  options.source_key.assign(source->source_key.begin(),
-                            source->source_key.end());
-  std::fill(source->source_key.begin(), source->source_key.end(), 0);
-  options.extension_ids = std::move(source->extension_ids);
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
-      base::BindOnce(&Read, std::move(options), category, cancelled_),
+      base::BindOnce(&Read, Options(*source), category, cancelled_),
       base::BindOnce(&ImportService::Complete, weak_factory_.GetWeakPtr(),
                      std::move(callback)));
+}
+void ImportService::DecryptSidebarFile(mojom::SourcePtr source,
+                                       const std::string& path,
+                                       mojom::SidebarFormat format,
+                                       DecryptSidebarFileCallback callback) {
+  if (busy_ || cancelled_->load() || !source ||
+      source->family != mojom::Family::kChromium) {
+    if (source)
+      std::fill(source->source_key.begin(), source->source_key.end(), 0);
+    std::move(callback).Run(mojom::DecryptedFile::New(
+        false, "The import reader is unavailable.", std::vector<uint8_t>()));
+    return;
+  }
+  busy_ = true;
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(&Decrypt, Options(*source), base::FilePath(path),
+                     format == mojom::SidebarFormat::kDiaTabs
+                         ? SidebarFormat::kDiaTabs
+                         : SidebarFormat::kChromiumSession,
+                     cancelled_),
+      base::BindOnce(&ImportService::Decrypted, weak_factory_.GetWeakPtr(),
+                     std::move(callback)));
+}
+void ImportService::Decrypted(DecryptSidebarFileCallback callback,
+                              DecryptedFile file) {
+  busy_ = false;
+  std::move(callback).Run(mojom::DecryptedFile::New(
+      file.success, std::move(file.error), std::move(file.data)));
 }
 void ImportService::Complete(ReadCategoryCallback callback, Batch batch) {
   busy_ = false;

@@ -742,6 +742,10 @@ bool ReadExtensions(const ReadOptions& options,
   return true;
 }
 }
+std::optional<std::string> DecryptChromiumValue(std::string_view encrypted,
+                                                std::string_view key) {
+  return Decrypt(encrypted, key);
+}
 bool ChromiumBookmarksNeedKey(const base::FilePath& profile) {
   return UsesEncryptedCopy(profile, kChromiumAccountBookmarks) ||
          UsesEncryptedCopy(profile, kChromiumLocalBookmarks);

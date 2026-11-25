@@ -5,10 +5,12 @@
 #include <map>
 #include <set>
 #include "base/check.h"
+#include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
 #include "base/strings/sys_string_conversions.h"
+#include "base/synchronization/lock.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/timer/timer.h"
@@ -211,12 +213,44 @@ std::map<std::string, std::weak_ptr<Session>>& Active() {
       sessions;
   return *sessions;
 }
-std::map<const Installation*, std::vector<std::weak_ptr<Session>>>&
-KeyRequests() {
+using KeyCallback = base::OnceCallback<void(const std::vector<uint8_t>&,
+                                            const std::string&)>;
+std::map<const Installation*, std::vector<KeyCallback>>& KeyRequests() {
   static base::NoDestructor<
-      std::map<const Installation*, std::vector<std::weak_ptr<Session>>>>
+      std::map<const Installation*, std::vector<KeyCallback>>>
       requests;
   return *requests;
+}
+void KeyRead(std::shared_ptr<const Installation> source, KeyResult key) {
+  std::vector<KeyCallback> waiting;
+  if (auto it = KeyRequests().find(source.get()); it != KeyRequests().end()) {
+    waiting = std::move(it->second);
+    KeyRequests().erase(it);
+  }
+  if (key.refused)
+    source->key.refused = true;
+  if (!key.bytes.empty())
+    source->key.bytes = key.bytes;
+  for (auto& callback : waiting)
+    std::move(callback).Run(key.bytes, key.error);
+  std::fill(key.bytes.begin(), key.bytes.end(), 0);
+}
+void RequestSourceKey(std::shared_ptr<const Installation> source,
+                      KeyCallback callback) {
+  CHECK(NSThread.isMainThread);
+  const auto& cached = source->key;
+  if (!cached.bytes.empty() || cached.refused) {
+    std::move(callback).Run(cached.bytes,
+                            cached.refused ? kKeychainRefused : "");
+    return;
+  }
+  auto& waiting = KeyRequests()[source.get()];
+  waiting.push_back(std::move(callback));
+  if (waiting.size() > 1)
+    return;
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(&ReadKey, *source), base::BindOnce(&KeyRead, source));
 }
 class Session final : public ProfileObserver,
                       public std::enable_shared_from_this<Session> {
@@ -357,37 +391,15 @@ class Session final : public ProfileObserver,
     }
   }
   void RequestKey() {
-    const auto& cached = source_->source->key;
-    if (!cached.bytes.empty() || cached.refused) {
-      UseKey(cached.bytes, cached.refused ? kKeychainRefused : "");
-      return;
-    }
-    auto& waiting = KeyRequests()[source_->source.get()];
-    waiting.push_back(weak_from_this());
-    if (waiting.size() > 1)
-      return;
-    base::ThreadPool::PostTaskAndReplyWithResult(
-        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
-        base::BindOnce(&ReadKey, *source_->source),
-        base::BindOnce(&Session::KeyRead, source_->source));
-  }
-  static void KeyRead(std::shared_ptr<const Installation> source,
-                      KeyResult key) {
-    std::vector<std::weak_ptr<Session>> waiting;
-    if (auto it = KeyRequests().find(source.get());
-        it != KeyRequests().end()) {
-      waiting = std::move(it->second);
-      KeyRequests().erase(it);
-    }
-    if (key.refused)
-      source->key.refused = true;
-    if (!key.bytes.empty())
-      source->key.bytes = key.bytes;
-    for (const auto& weak : waiting) {
-      if (auto self = weak.lock(); self && !self->finished_)
-        self->UseKey(key.bytes, key.error);
-    }
-    std::fill(key.bytes.begin(), key.bytes.end(), 0);
+    RequestSourceKey(
+        source_->source,
+        base::BindOnce(
+            [](std::weak_ptr<Session> weak, const std::vector<uint8_t>& bytes,
+               const std::string& error) {
+              if (auto self = weak.lock(); self && !self->finished_)
+                self->UseKey(bytes, error);
+            },
+            weak_from_this()));
   }
   void UseKey(const std::vector<uint8_t>& bytes, const std::string& error) {
     key_ = bytes;
@@ -662,8 +674,210 @@ class Session final : public ProfileObserver,
   std::shared_ptr<ImportWriter> writer_;
   base::OneShotTimer deadline_;
 };
+constexpr int64_t kSidebarKeyWait = 5 * 60;
+constexpr int64_t kSidebarReadWait = 60;
+constexpr char kSidebarUnreadable[] =
+    "The encrypted browser file could not be read.";
+class SidebarDecryption {
+ public:
+  SidebarDecryption() : signal_(dispatch_semaphore_create(0)) {}
+  ~SidebarDecryption() { std::fill(data_.begin(), data_.end(), 0); }
+  SidebarDecryption(const SidebarDecryption&) = delete;
+  SidebarDecryption& operator=(const SidebarDecryption&) = delete;
+  bool Done() {
+    base::AutoLock hold(lock_);
+    return done_;
+  }
+  void Launched() {
+    {
+      base::AutoLock hold(lock_);
+      launched_ = true;
+    }
+    dispatch_semaphore_signal(signal_);
+  }
+  void Finish(std::vector<uint8_t> data, std::string error) {
+    {
+      base::AutoLock hold(lock_);
+      if (done_) {
+        std::fill(data.begin(), data.end(), 0);
+        return;
+      }
+      done_ = true;
+      data_ = std::move(data);
+      error_ = std::move(error);
+    }
+    dispatch_semaphore_signal(signal_);
+  }
+  NSData* Wait(std::string& error) {
+    bool reading = false;
+    dispatch_time_t deadline =
+        dispatch_time(DISPATCH_TIME_NOW, kSidebarKeyWait * NSEC_PER_SEC);
+    for (;;) {
+      if (dispatch_semaphore_wait(signal_, deadline) != 0) {
+        Finish({}, "Reading the encrypted browser file took too long.");
+        break;
+      }
+      base::AutoLock hold(lock_);
+      if (done_)
+        break;
+      if (launched_ && !reading) {
+        reading = true;
+        deadline =
+            dispatch_time(DISPATCH_TIME_NOW, kSidebarReadWait * NSEC_PER_SEC);
+      }
+    }
+    base::AutoLock hold(lock_);
+    if (!error_.empty() || data_.empty()) {
+      error = error_.empty() ? kSidebarUnreadable : error_;
+      return nil;
+    }
+    NSData* result = [NSData dataWithBytes:data_.data() length:data_.size()];
+    std::fill(data_.begin(), data_.end(), 0);
+    data_.clear();
+    return result;
+  }
+
+ private:
+  dispatch_semaphore_t __strong signal_;
+  base::Lock lock_;
+  bool done_ = false, launched_ = false;
+  std::vector<uint8_t> data_;
+  std::string error_;
+};
+std::map<const SidebarDecryption*, mojo::Remote<mojom::Reader>>&
+SidebarReaders() {
+  static base::NoDestructor<
+      std::map<const SidebarDecryption*, mojo::Remote<mojom::Reader>>>
+      readers;
+  return *readers;
+}
+void SidebarFinished(std::shared_ptr<SidebarDecryption> request,
+                     mojom::DecryptedFilePtr file) {
+  SidebarReaders().erase(request.get());
+  if (!file)
+    request->Finish({}, "The import reader stopped unexpectedly.");
+  else if (!file->success)
+    request->Finish({}, file->error.empty() ? kSidebarUnreadable : file->error);
+  else
+    request->Finish(std::move(file->data), {});
+}
+void SidebarKeyReady(std::shared_ptr<SidebarDecryption> request,
+                     std::shared_ptr<const ProfileData> profile,
+                     base::FilePath file,
+                     base::FilePath directory,
+                     mojom::SidebarFormat format,
+                     const std::vector<uint8_t>& key,
+                     const std::string& error) {
+  if (request->Done())
+    return;
+  if (key.empty()) {
+    request->Finish(
+        {}, error.empty() ? "The source browser's encryption key is "
+                            "unavailable."
+                          : error);
+    return;
+  }
+  request->Launched();
+  auto& reader = SidebarReaders()[request.get()];
+  content::ServiceProcessHost::Launch(
+      reader.BindNewPipeAndPassReceiver(),
+      content::ServiceProcessHost::Options()
+          .WithDisplayName("Browser data import")
+          .Pass());
+  reader.set_disconnect_handler(base::BindOnce(
+      [](std::shared_ptr<SidebarDecryption> request) {
+        base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+            FROM_HERE, base::BindOnce(&SidebarFinished, request,
+                                      mojom::DecryptedFilePtr()));
+      },
+      request));
+  auto source = mojom::Source::New();
+  source->family = mojom::Family::kChromium;
+  source->profile_path = directory.value();
+  source->app_path = profile->source->app_path.value();
+  source->source_name = profile->source->name;
+  source->source_key = key;
+  reader->DecryptSidebarFile(std::move(source), file.value(), format,
+                             base::BindOnce(&SidebarFinished, request));
+}
+NSData* DecryptProfileFile(std::shared_ptr<const ProfileData> data,
+                           NSURL* file,
+                           PCNativeImportSidebarFormat format,
+                           std::string& error) {
+  constexpr char kOutside[] =
+      "The requested file is not part of the source browser.";
+  if (NSThread.isMainThread) {
+    error = "Encrypted browser files are read off the main thread.";
+    return nil;
+  }
+  if (format != PCNativeImportSidebarFormatChromiumSession &&
+      format != PCNativeImportSidebarFormatDiaTabs) {
+    error = "This encrypted browser file format is unsupported.";
+    return nil;
+  }
+  if (!data || data->source->family != 0 ||
+      data->source->key_service.empty() || data->root.empty()) {
+    error = "This browser's encrypted files cannot be read.";
+    return nil;
+  }
+  if (!file.isFileURL || !file.path.isAbsolutePath) {
+    error = kOutside;
+    return nil;
+  }
+  if (!SourceReady(*data, error))
+    return nil;
+  const bool dia = format == PCNativeImportSidebarFormatDiaTabs;
+  const base::FilePath requested(base::SysNSStringToUTF8(file.path));
+  const base::FilePath parent =
+      requested.ReferencesParent()
+          ? base::FilePath()
+          : base::MakeAbsoluteFilePath(requested.DirName());
+  const base::FilePath directory = dia ? parent : parent.DirName();
+  const std::string name = requested.BaseName().value();
+  if (parent.empty() ||
+      (dia ? name != kDiaTabs
+           : parent.BaseName().value() != kChromiumEncryptedSessions) ||
+      !(directory == data->root || data->root.IsParent(directory)) ||
+      !base::PathExists(directory.AppendASCII("Preferences"))) {
+    error = kOutside;
+    return nil;
+  }
+  auto request = std::make_shared<SidebarDecryption>();
+  const base::FilePath target = parent.Append(name);
+  const auto kind = dia ? mojom::SidebarFormat::kDiaTabs
+                        : mojom::SidebarFormat::kChromiumSession;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (!request->Done())
+      RequestSourceKey(data->source,
+                       base::BindOnce(&SidebarKeyReady, request, data, target,
+                                      directory, kind));
+  });
+  NSData* plain = request->Wait(error);
+  if (!plain)
+    dispatch_async(dispatch_get_main_queue(), ^{
+      SidebarReaders().erase(request.get());
+    });
+  return plain;
 }
 }
+}
+@implementation PCNativeImportProfile (SidebarFiles)
+- (BOOL)canDecryptSidebarFiles {
+  auto data = [self profileData];
+  return data && data->source->family == 0 &&
+         !data->source->key_service.empty();
+}
+- (NSData*)decryptSidebarFile:(NSURL*)file
+                       format:(PCNativeImportSidebarFormat)format
+                        error:(NSError**)error {
+  std::string failure;
+  NSData* plain = parc::importer::DecryptProfileFile(
+      [self profileData], file, format, failure);
+  if (!plain && error)
+    *error = parc::importer::ImportError(base::SysUTF8ToNSString(failure));
+  return plain;
+}
+@end
 @implementation PCNativeImportSession {
   void (^_cancel)(void);
 }

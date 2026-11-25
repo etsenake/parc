@@ -354,6 +354,9 @@ ProfilesResult Load(std::shared_ptr<const Installation> source,
     for (const auto& store : stores)
       AddProfileGroup(result, source, root, store, listing);
   }
+  const auto resolved_root = base::MakeAbsoluteFilePath(root);
+  for (auto& profile : result.profiles)
+    profile->root = resolved_root.empty() ? root : resolved_root;
   if (result.restricted)
     result.constraints.push_back(
         "macOS has restricted access to this browser’s files. Grant Full Disk "

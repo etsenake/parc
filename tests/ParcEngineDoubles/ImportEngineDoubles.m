@@ -41,6 +41,10 @@ NS_ASSUME_NONNULL_END
 @property(nonatomic) PCNativeImportCategories fixtureCategories;
 @property(nonatomic) PCNativeImportAccess fixtureAccess;
 @property(nonatomic, copy) NSArray<PCNativeImportExtension *> *fixtureExtensions;
+@property(atomic) BOOL fixtureDecryptable;
+@property(atomic, copy, nullable) NSData *fixtureDecrypted;
+@property(atomic, strong, nullable) NSError *fixtureDecryptionError;
+@property(atomic, strong) NSMutableArray<NSString *> *fixtureDecryptionRequests;
 @end
 
 @implementation ImportTestProfileDouble
@@ -51,6 +55,18 @@ NS_ASSUME_NONNULL_END
 - (PCNativeImportAccess)access { return self.fixtureAccess; }
 - (NSArray<PCNativeImportExtension *> *)extensions { return self.fixtureExtensions; }
 - (NSArray<NSString *> *)constraints { return @[]; }
+- (BOOL)canDecryptSidebarFiles { return self.fixtureDecryptable; }
+- (NSData *)decryptSidebarFile:(NSURL *)file format:(PCNativeImportSidebarFormat)format error:(NSError **)error {
+    @synchronized(self) {
+        [self.fixtureDecryptionRequests addObject:[NSString stringWithFormat:@"%ld %@", (long)format, file.path]];
+    }
+    NSData *data = self.fixtureDecrypted;
+    if (!data && error) {
+        *error = self.fixtureDecryptionError
+                     ?: [NSError errorWithDomain:@"ImportEngineDoubles" code:1 userInfo:nil];
+    }
+    return data;
+}
 @end
 
 @interface ImportTestProfileResultDouble : PCNativeImportProfileResult
@@ -210,7 +226,22 @@ NSObject *ImportTestProfile(NSString *identifier, NSString *displayName, NSStrin
     profile.fixtureCategories = categories;
     profile.fixtureAccess = access;
     profile.fixtureExtensions = extensions;
+    profile.fixtureDecryptionRequests = [NSMutableArray array];
     return profile;
+}
+
+void ImportTestSetSidebarDecryption(NSObject *profile, BOOL available, NSData *data, NSError *error) {
+    ImportTestProfileDouble *fixture = (ImportTestProfileDouble *)profile;
+    fixture.fixtureDecryptable = available;
+    fixture.fixtureDecrypted = data;
+    fixture.fixtureDecryptionError = error;
+}
+
+NSArray<NSString *> *ImportTestSidebarDecryptionRequests(NSObject *profile) {
+    ImportTestProfileDouble *fixture = (ImportTestProfileDouble *)profile;
+    @synchronized(fixture) {
+        return [fixture.fixtureDecryptionRequests copy];
+    }
 }
 
 NSObject *ImportTestProfileResult(NSArray *profiles, NSInteger access, NSArray<NSString *> *constraints, NSError *error) {

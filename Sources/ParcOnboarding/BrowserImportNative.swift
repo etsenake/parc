@@ -90,4 +90,14 @@ struct EngineBrowserImport: BrowserImportNative {
     nonisolated func main(_ work: @escaping @Sendable @MainActor () -> Void) {
         DispatchQueue.main.async { work() }
     }
+
+    func sidebarDecryptor(for profile: PCNativeImportProfile) -> SidebarDecryptor? {
+        guard PCImportedSidebarFiles.canDecrypt(from: profile) else { return nil }
+        return { url, format in
+            switch format {
+            case .chromiumSession: try PCImportedSidebarFiles.decrypt(url, format: .chromiumSession, from: profile)
+            case .diaTabs: try PCImportedSidebarFiles.decrypt(url, format: .diaTabs, from: profile)
+            }
+        }
+    }
 }

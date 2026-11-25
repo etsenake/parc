@@ -176,6 +176,41 @@ account copy on a tie). The password store replaces a saved login with the same
 site, address, username and field names instead of adding a second one, so a
 repeated import updates rather than duplicates.
 
+### Encrypted sidebar files
+
+The sidebar importer reads tab layouts itself, but two Chromium-family files
+need the browser's key: Chromium's `Sessions_Encrypted` session files and
+Dia's `tabs.db`. `-[PCNativeImportProfile decryptSidebarFile:format:error:]`
+returns their plaintext to the app's background reader; the app reaches it
+through `PCImportedSidebarFiles`, which reports an older engine as unable to
+decrypt. The call blocks its caller, refuses the main thread, joins the
+profile's shared key slot (so the import still asks the Keychain at most once
+per browser) and gives up after five minutes waiting for the key or one
+minute waiting for the reader. Atlas and non-Chromium sources offer no
+decryption. The file must sit in a profile folder, one holding `Preferences`,
+inside the folder discovery found that browser's profiles in, because one
+import may read several profiles: `<profile>/Sessions_Encrypted/` with a
+`Session_`, `Tabs_` or `Apps_` name, or `<profile>/tabs.db`. The utility reader
+checks the same placement again, follows no symbolic link and never writes.
+
+A session file (version 5, at most 64 MiB) comes back as Chromium's plain
+version 3 stream: the same header with the version rewritten, then each
+command's `v10` value decrypted, with the fallback key as for cookies, and
+written back as a 16-bit size, id and payload. A torn tail ends the stream as
+Chromium ends it; a first command that cannot be decrypted refuses the file.
+Dia's `tabs.db` (at most 128 MiB, with its `-wal`) is SQLCipher 4: 4096-byte
+pages with 80 reserved bytes, AES-256-CBC per page and an HMAC-SHA512 over
+each page, keyed by HKDF-SHA256 from the Safe Storage key with the label
+`profile/<folder>/tabs`. The database and WAL are read until both stay
+unchanged, committed WAL frames whose salts and checksums hold replace their
+pages, uncommitted or foreign frames are dropped, and every page must pass its
+HMAC. Dia's salt constant can change between releases, so when the built-in
+one fails the reader tries the 32-byte base64 constants in Dia's executable.
+The result is an ordinary SQLite database marked for a rollback journal, so it
+opens without a WAL. `tests/BrowserImport/SidebarDecryption.cc` builds a
+made-up encrypted session and a SQLCipher database with WAL from test keys; it
+is not yet wired into a runner.
+
 The target writes use the original regular Profile's genuine services:
 
 - History schedules `HistoryBackend::ImportPagesWithDetails` on the actual

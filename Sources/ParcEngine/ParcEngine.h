@@ -113,6 +113,17 @@ NS_SWIFT_UI_ACTOR
 - (instancetype)init NS_UNAVAILABLE;
 @end
 
+@interface PCImportedSidebarFiles : NSObject
++ (BOOL)canDecryptFromProfile:(PCNativeImportProfile*)profile
+    NS_SWIFT_NAME(canDecrypt(from:));
++ (nullable NSData*)decryptFile:(NSURL*)file
+    format:(PCNativeImportSidebarFormat)format
+    fromProfile:(PCNativeImportProfile*)profile
+    error:(NSError**)error
+    NS_SWIFT_NAME(decrypt(_:format:from:));
+- (instancetype)init NS_UNAVAILABLE;
+@end
+
 NS_SWIFT_UI_ACTOR
 @interface PCBrowserView : NSView
 - (instancetype)initWithFrame:(NSRect)frame
