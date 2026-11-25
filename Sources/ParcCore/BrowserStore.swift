@@ -5872,7 +5872,7 @@ package final class BrowserStore: ObservableObject {
                           warn: (String) -> Void = { _ in }) throws
         -> [SidebarImport.ProfileKey: BrowserImportDestination] {
         guard !isEphemeral else { throw CocoaError(.userCancelled) }
-        let previous = state, now = clock(), files = noteFiles ?? .shared
+        let previous = state, now = clock()
         var chosen: (key: SidebarImport.ProfileKey, profileID: UUID)?
         if let primary, let target { chosen = (primary, target) }
         var excluded = Set<String>(), placed: [String: String] = [:]
@@ -5880,21 +5880,23 @@ package final class BrowserStore: ObservableObject {
             var base = previous
             base.arcImportedNotes.merge(placed) { _, new in new }
             return try sidebar.inserting(into: base, profiles: profiles, standardProfileID: standardProfileID,
-                                         target: chosen, homeSpaceID: home, at: now, noteFiles: files,
+                                         target: chosen, homeSpaceID: home, at: now, noteFiles: noteFiles,
                                          excludingNotes: excluded)
         }
+        func stage(_ result: SidebarImport.Result) -> SidebarImportNoteStaging? {
+            result.notes.writes.isEmpty ? nil : SidebarImportNoteStaging(result.notes, files: noteFiles ?? .shared, date: now)
+        }
         var result = try plan()
-        var staging = SidebarImportNoteStaging(result.notes, files: files, date: now)
-        while !staging.failed.isEmpty {
-            excluded.formUnion(staging.failed)
-            staging.discard()
+        var staging = stage(result)
+        while let failed = staging?.failed, !failed.isEmpty {
+            excluded.formUnion(failed)
+            staging?.discard()
             result = try plan()
-            staging = SidebarImportNoteStaging(result.notes, files: files, date: now)
+            staging = stage(result)
         }
         state = result.state
-        do { try save() } catch { state = previous; staging.discard(); throw error }
-        let committed = staging.commit()
-        if !committed.failed.isEmpty {
+        do { try save() } catch { state = previous; staging?.discard(); throw error }
+        if let committed = staging?.commit(), !committed.failed.isEmpty {
             excluded.formUnion(committed.failed)
             placed = committed.placed
             while let repaired = try? plan() {

@@ -665,7 +665,7 @@ final class SidebarImportNoteWriter {
         if let url = planned[note.id] { return url }
         let url: URL
         if let path = known[note.id], NoteFilePaths.itemExists(atPath: path), !NoteFilePaths.isDirectory(URL(fileURLWithPath: path)) {
-            url = URL(fileURLWithPath: path)
+            url = NoteFilePaths.canonical(URL(fileURLWithPath: path))
         } else {
             let folder = NoteFilePaths.canonical(files.folders.folder(for: profileID))
             if let match = matching(note, in: folder) {

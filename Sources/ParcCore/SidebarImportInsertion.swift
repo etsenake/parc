@@ -1,6 +1,11 @@
 import Foundation
 
 extension SidebarImport {
+    static func importKey(_ url: String) -> String {
+        guard let file = URL(string: url), file.isFileURL else { return SavedTabURLComparison.key(url) }
+        return "file:" + NoteFilePaths.canonical(file).path
+    }
+
     package struct Result {
         var state: BrowserState
         var destinations: [ProfileKey: BrowserImportDestination]
@@ -82,7 +87,7 @@ extension SidebarImport {
         }
         func fresh(_ tab: Tab, _ known: inout Set<String>?) -> Bool {
             guard var keys = known else { return true }
-            let inserted = keys.insert(SavedTabURLComparison.key(tab.url)).inserted
+            let inserted = keys.insert(Self.importKey(tab.url)).inserted
             known = keys
             return inserted
         }
@@ -158,15 +163,15 @@ extension SidebarImport {
             next.sidebarItemOrder[location.key] = order
         }
         func openKeys(in spaceID: UUID) -> Set<String>? {
-            Set(next.openTabs(where: { $0.spaceID == spaceID }).map { SavedTabURLComparison.key($0.savedURL) })
+            Set(next.openTabs(where: { $0.spaceID == spaceID }).map { Self.importKey($0.savedURL) })
         }
         func pinnedKeys(_ items: [Item]) -> [String] {
             items.flatMap { item -> [String] in
                 switch item {
-                case .tab(let tab): return tab.note == nil ? [SavedTabURLComparison.key(tab.url)] : []
+                case .tab(let tab): return tab.note == nil ? [Self.importKey(tab.url)] : []
                 case .folder(_, _, let children, _): return pinnedKeys(children)
                 case .split(_, _, let tabs, _, _), .stackedSplit(_, _, let tabs, _, _):
-                    return tabs.filter { $0.note == nil }.map { SavedTabURLComparison.key($0.url) }
+                    return tabs.filter { $0.note == nil }.map { Self.importKey($0.url) }
                 }
             }.sorted()
         }
@@ -181,7 +186,7 @@ extension SidebarImport {
                     && (space.placement == .profileHome || existing.title?.lowercased() == space.title?.lowercased())
                     && state.openTabs(where: { $0.spaceID == existing.id && $0.kind == .pinned
                         && InternalPage.noteFile($0.savedURL) == nil })
-                        .map { SavedTabURLComparison.key($0.savedURL) }.sorted() == keys
+                        .map { Self.importKey($0.savedURL) }.sorted() == keys
             }
         }
 
@@ -252,17 +257,17 @@ extension SidebarImport {
                 return item
             }
             var existing = Set(next.openTabs(where: { $0.profileID == profileID && $0.kind == .favorite })
-                .map { SavedTabURLComparison.key($0.savedURL) })
+                .map { Self.importKey($0.savedURL) })
             for item in notesWriter.resolving(items, profileID: profileID) {
-                if case .tab(let tab) = item, existing.contains(SavedTabURLComparison.key(tab.url)) { continue }
-                if let tabs = item.splitTabs, tabs.allSatisfy({ existing.contains(SavedTabURLComparison.key($0.url)) }) { continue }
+                if case .tab(let tab) = item, existing.contains(Self.importKey(tab.url)) { continue }
+                if let tabs = item.splitTabs, tabs.allSatisfy({ existing.contains(Self.importKey($0.url)) }) { continue }
                 guard order.count < Self.maximumFavorites else { continue }
                 switch item {
                 case .tab(let tab):
-                    existing.insert(SavedTabURLComparison.key(tab.url))
+                    existing.insert(Self.importKey(tab.url))
                     order.append(.tab(makeTab(tab, spaceID: destination.spaceID, profileID: profileID, kind: .favorite, folderID: nil)))
                 case let .split(title, icon, tabs, orientation, factors):
-                    let fresh = tabs.indices.filter { existing.insert(SavedTabURLComparison.key(tabs[$0].url)).inserted }
+                    let fresh = tabs.indices.filter { existing.insert(Self.importKey(tabs[$0].url)).inserted }
                     if fresh.count == 1 {
                         order.append(.tab(makeTab(tabs[fresh[0]], spaceID: destination.spaceID, profileID: profileID,
                                                   kind: .favorite, folderID: nil)))
@@ -273,7 +278,7 @@ extension SidebarImport {
                             factors: widths, spaceID: destination.spaceID, profileID: profileID, kind: .favorite, folderID: nil))
                     }
                 case let .stackedSplit(title, icon, tabs, orientation, stacks):
-                    let fresh = tabs.indices.filter { existing.insert(SavedTabURLComparison.key(tabs[$0].url)).inserted }
+                    let fresh = tabs.indices.filter { existing.insert(Self.importKey(tabs[$0].url)).inserted }
                     if fresh.count == 1 {
                         order.append(.tab(makeTab(tabs[fresh[0]], spaceID: destination.spaceID, profileID: profileID,
                                                   kind: .favorite, folderID: nil)))
@@ -296,13 +301,13 @@ extension SidebarImport {
         }
         let cutoff = date.addingTimeInterval(-BrowserStore.archiveRetention)
         var archived = Set(next.tabs.compactMap { tab in
-            tab.archivedAt.map { "\(tab.profileID.uuidString) \($0.timeIntervalSince1970) \(SavedTabURLComparison.key(tab.savedURL))" }
+            tab.archivedAt.map { "\(tab.profileID.uuidString) \($0.timeIntervalSince1970) \(Self.importKey(tab.savedURL))" }
         })
         for item in archive where item.archivedAt > cutoff && item.archivedAt <= date {
             guard let profileID = mapped[item.profile],
                   let spaceID = item.spaceID.flatMap({ spaceIDs[$0] }) ?? destinations[item.profile]?.spaceID,
                   next.spaces.contains(where: { $0.id == spaceID && $0.profileID == profileID }) else { continue }
-            let key = "\(profileID.uuidString) \(item.archivedAt.timeIntervalSince1970) \(SavedTabURLComparison.key(item.tab.url))"
+            let key = "\(profileID.uuidString) \(item.archivedAt.timeIntervalSince1970) \(Self.importKey(item.tab.url))"
             guard archived.insert(key).inserted else { continue }
             let spaceName = next.spaces.first { $0.id == spaceID }?.name ?? "Space"
             _ = makeTab(item.tab, spaceID: spaceID, profileID: profileID, kind: .today, folderID: nil,

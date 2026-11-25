@@ -204,7 +204,8 @@ struct ArcNotesImportStoreTests {
             let meeting = try Self.pinnedNote(store.state)
             #expect(warnings.isEmpty)
             #expect(Self.markdownFiles(in: folder) == ["Daily.md", "Meeting notes.md", "Moodboard.md", "Spare.md"])
-            #expect(store.state.arcImportedNotes["DOC-1"] == meeting.path)
+            #expect(store.state.arcImportedNotes["DOC-1"].map { NoteFilePaths.canonical(URL(fileURLWithPath: $0)).path }
+                    == NoteFilePaths.canonical(meeting).path)
             #expect(try String(contentsOf: meeting, encoding: .utf8) == Self.notesByID()["DOC-1"]?.markdown)
         }
     }
