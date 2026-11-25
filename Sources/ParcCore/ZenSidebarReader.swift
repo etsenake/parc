@@ -13,9 +13,9 @@ package enum ZenSidebarReader {
         }
         var result = SidebarImport.merged(parts)
         if regexRoutes == 1 {
-            result.warnings.append("1 Zen routing rule uses a regular expression, which Parc can't match, so it was left out.")
+            result.warnings.append("1 Zen routing rule uses a regular expression, which Air Traffic Control can’t match, so it was left out.")
         } else if regexRoutes > 1 {
-            result.warnings.append("\(regexRoutes) Zen routing rules use regular expressions, which Parc can't match, so they were left out.")
+            result.warnings.append("\(regexRoutes) Zen routing rules use regular expressions, which Air Traffic Control can’t match, so they were left out.")
         }
         return result
     }
@@ -25,33 +25,48 @@ package enum ZenSidebarReader {
         let loaded = session(in: directory)
         guard let root = loaded.root else {
             var empty = SidebarImport(spaces: [])
-            if loaded.unreadable { empty.warnings.append("Parc couldn't read the Zen sidebar of \(profile.name).") }
+            if loaded.unreadable {
+                empty.warnings.append("Parc couldn’t read the Zen sidebar in \(profile.name), so it stayed behind.")
+            }
             return (empty, 0)
         }
-        var session = ZenSidebarSession(root: root, profile: profile.key, profileFolder: directory.lastPathComponent,
-                                        containers: containers(in: directory),
+        let folder = directory.lastPathComponent
+        let known = containers(in: directory)
+        var session = ZenSidebarSession(root: root, profile: profile.key, profileFolder: folder, containers: known,
                                         separateEssentials: separateEssentials(in: directory))
         let routing = routes(in: directory, spaces: Set(session.spaceUUIDs))
         var sidebar = session.sidebar()
-        sidebar.routes = routing.routes + siteRoutes(in: directory, folder: directory.lastPathComponent)
-        if let closed = try? FirefoxSession.read(profile: directory)?.closedTabs {
-            sidebar.archive = closed.map { SidebarImport.ArchivedTab(tab: $0.tab, archivedAt: $0.closedAt, reason: .manual,
-                                                                     spaceID: nil, profile: profile.key) }
+        let sites = siteRoutes(in: directory, folder: folder, containers: known)
+        sidebar.routes = routing.routes + sites.routes
+        for id in sites.containers {
+            let key = SidebarImport.ProfileKey.extra("zen:\(folder):\(id)")
+            guard let name = known[id], !sidebar.extraProfiles.contains(where: { $0.key == key }) else { continue }
+            sidebar.extraProfiles.append(SidebarImport.ExtraProfile(key: key, name: name))
         }
-        return (sidebar, routing.regex)
+        guard let closed = try? FirefoxSession.read(profile: directory)?.closedTabs, !closed.isEmpty else {
+            return (sidebar, routing.regex)
+        }
+        let kept = closed.prefix(SidebarImport.maximumItems).map {
+            SidebarImport.ArchivedTab(tab: $0.tab, archivedAt: $0.closedAt, reason: .manual, spaceID: nil, profile: profile.key)
+        }
+        let archive = SidebarImport(spaces: [], archive: Array(kept), skippedItemCount: closed.count - kept.count)
+        return (SidebarImport.merged([sidebar, archive]), routing.regex)
     }
 
-    static func siteRoutes(in directory: URL, folder: String) -> [SidebarImport.Route] {
+    static func siteRoutes(in directory: URL, folder: String, containers known: [Int: String])
+        -> (routes: [SidebarImport.Route], containers: [Int]) {
         guard let data = plainData(directory.appendingPathComponent("containers.json")),
               let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let associations = root["siteAssociations"] as? [String: Any] else { return [] }
-        let known = containers(in: directory)
-        return associations.keys.sorted().compactMap { host in
+              let associations = root["siteAssociations"] as? [String: Any] else { return ([], []) }
+        var routes: [SidebarImport.Route] = [], targets: [Int] = []
+        for host in associations.keys.sorted() {
             guard let id = (associations[host] as? NSNumber)?.intValue, known[id] != nil,
-                  !host.isEmpty, !host.contains("/"), !host.contains(" ") else { return nil }
-            return SidebarImport.Route(conditions: [.init(style: .contains, pattern: host.lowercased())],
-                                       destination: .profile(.extra("zen:\(folder):\(id)")))
+                  !host.isEmpty, !host.contains("/"), !host.contains(" ") else { continue }
+            routes.append(SidebarImport.Route(conditions: [.init(style: .contains, pattern: "://\(host.lowercased())/")],
+                                              destination: .profile(.extra("zen:\(folder):\(id)"))))
+            if !targets.contains(id) { targets.append(id) }
         }
+        return (routes, targets)
     }
 
     static func sessionCandidates(in directory: URL) -> [URL] {

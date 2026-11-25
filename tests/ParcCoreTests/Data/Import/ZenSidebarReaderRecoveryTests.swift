@@ -52,7 +52,7 @@ struct ZenSidebarReaderRecoveryTests {
             try Data("mozLz40\0broken".utf8).write(to: profile.directory.appendingPathComponent("zen-sessions.jsonlz4"))
             let zen = try ZenSidebarReader.read(profiles: [profile])
             #expect(zen.spaces.isEmpty)
-            #expect(zen.warnings.count == 1)
+            #expect(zen.warnings == ["Parc couldn’t read the Zen sidebar in Zen, so it stayed behind."])
         }
     }
 
@@ -62,7 +62,7 @@ struct ZenSidebarReaderRecoveryTests {
                                                   routing: nil)
             let zen = try ZenSidebarReader.read(profiles: [profile])
             #expect(zen.spaces.map(\.profile) == [Fixture.key])
-            #expect(zen.extraProfiles.isEmpty)
+            #expect(zen.extraProfiles.map(\.key) == [Fixture.clientsKey])
         }
     }
 
@@ -76,10 +76,12 @@ struct ZenSidebarReaderRecoveryTests {
             let secondWork = SidebarImport.ProfileKey.extra("zen:q9w8e7.Second:2")
             #expect(zen.spaces.map(\.title) == ["Personal", "Work", "Side"])
             #expect(zen.spaces.map(\.profile) == [Fixture.key, Fixture.workKey, secondWork])
-            #expect(zen.extraProfiles.map(\.key) == [Fixture.workKey, Fixture.clientsKey, secondWork])
+            #expect(zen.extraProfiles.map(\.key)
+                    == [Fixture.workKey, Fixture.clientsKey, secondWork, .extra("zen:q9w8e7.Second:5")])
             #expect(zen.routes.count == 6)
-            #expect(zen.warnings.count == 1)
-            #expect(zen.warnings.first?.hasPrefix("2 ") == true)
+            #expect(zen.warnings == [
+                "2 Zen routing rules use regular expressions, which Air Traffic Control can’t match, so they were left out.",
+            ])
             #expect(zen.skippedItemCount == 4)
         }
     }

@@ -13,7 +13,7 @@ package enum FirefoxSidebarReader {
         var warnings: [String] = []
         var session: FirefoxSession?
         do { session = try FirefoxSession.read(profile: profile.directory) } catch {
-            warnings.append("Firefox encrypts its saved tabs, so the open tabs in \(profile.name) couldn’t come over.")
+            warnings.append("Firefox keeps the open tabs in \(profile.name) encrypted, so they stayed behind.")
         }
         let folder = profile.directory.lastPathComponent
         var spaces: [SidebarImport.Space] = []
@@ -21,7 +21,7 @@ package enum FirefoxSidebarReader {
         for (index, window) in (session?.windows ?? []).enumerated() {
             let items = builder.window(window)
             guard !items.pinned.isEmpty || !items.today.isEmpty else { continue }
-            let id = "firefox:\(folder):\(index):\(fingerprint(items.pinned + items.today))"
+            let id = spaces.isEmpty ? "firefox:\(folder):home" : "firefox:\(folder):window:\(spaces.count)"
             spaceIDs[index] = id
             spaces.append(SidebarImport.Space(title: nil, icon: nil, theme: nil, profile: profile.key, pinned: items.pinned,
                                               id: id, today: items.today, placement: spaces.isEmpty ? .profileHome : .new))
@@ -33,13 +33,14 @@ package enum FirefoxSidebarReader {
                                             placement: first.placement)
         } else if !saved.isEmpty {
             spaces.append(SidebarImport.Space(title: nil, icon: nil, theme: nil, profile: profile.key, pinned: saved,
-                                              id: "firefox:\(folder):saved:\(fingerprint(saved))", placement: .profileHome))
+                                              id: "firefox:\(folder):home", placement: .profileHome))
         }
         let open = Set(spaces.flatMap { urls($0.pinned) + urls($0.today) }.map { SavedTabURLComparison.key($0) })
-        let archive = (session?.closedTabs ?? []).compactMap { closed -> SidebarImport.ArchivedTab? in
-            guard !open.contains(SavedTabURLComparison.key(closed.tab.url)) else { return nil }
-            return SidebarImport.ArchivedTab(tab: closed.tab, archivedAt: closed.closedAt, reason: .manual,
-                                             spaceID: closed.window.flatMap { spaceIDs[$0] }, profile: profile.key)
+        var archive: [SidebarImport.ArchivedTab] = []
+        for closed in session?.closedTabs ?? [] where !open.contains(SavedTabURLComparison.key(closed.tab.url)) {
+            guard builder.take() else { continue }
+            archive.append(SidebarImport.ArchivedTab(tab: closed.tab, archivedAt: closed.closedAt, reason: .manual,
+                                                     spaceID: closed.window.flatMap { spaceIDs[$0] }, profile: profile.key))
         }
         let shortcuts = favorites(profile: profile.directory)
         var result = SidebarImport(spaces: spaces, favorites: shortcuts.isEmpty ? [] : [(key: profile.key, items: shortcuts)],
@@ -77,12 +78,6 @@ package enum FirefoxSidebarReader {
         }
     }
 
-    static func fingerprint(_ items: [Item]) -> String {
-        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
-        for byte in urls(items).joined(separator: "\n").utf8 { hash = (hash ^ UInt64(byte)) &* 0x100_0000_01b3 }
-        return String(hash, radix: 16)
-    }
-
     private struct Container {
         var entries: [(split: String?, tabs: [Tab])] = []
 
@@ -109,23 +104,37 @@ package enum FirefoxSidebarReader {
         private enum Slot { case tab(Tab), group(String) }
 
         var skipped = 0
+        private var remaining = SidebarImport.maximumItems
+
+        mutating func take(_ count: Int = 1) -> Bool {
+            guard remaining >= count else { skipped += 1; return false }
+            remaining -= count
+            return true
+        }
 
         mutating func window(_ window: [String: Any]) -> (pinned: [Item], today: [Item]) {
             var groups: [String: [String: Any]] = [:]
-            for group in FirefoxSession.list(window["groups"]) {
+            for group in FirefoxSession.list(window["groups"]).prefix(SidebarImport.maximumItems) {
                 if let id = FirefoxSession.key(group["id"]), groups[id] == nil { groups[id] = group }
             }
             var slots: [Slot] = []
             var members: [String: Container] = [:]
             var today = Container()
-            for state in FirefoxSession.list(window["tabs"]) {
+            let states = FirefoxSession.list(window["tabs"])
+            for (offset, state) in states.enumerated() {
+                guard remaining > 0 else { skipped += states.count - offset; break }
                 guard let tab = FirefoxSession.tab(state) else { skipped += 1; continue }
-                if state["pinned"] as? Bool == true { slots.append(.tab(tab)); continue }
+                if state["pinned"] as? Bool == true {
+                    if take() { slots.append(.tab(tab)) }
+                    continue
+                }
                 let split = FirefoxSession.key(state["splitViewId"])
                 if let group = FirefoxSession.key(state["groupId"]), groups[group] != nil {
-                    if members[group] == nil { slots.append(.group(group)) }
+                    let opens = members[group] == nil
+                    guard take(opens ? 2 : 1) else { continue }
+                    if opens { slots.append(.group(group)) }
                     members[group, default: Container()].add(tab, split: split)
-                } else {
+                } else if take() {
                     today.add(tab, split: split)
                 }
             }
@@ -141,14 +150,20 @@ package enum FirefoxSidebarReader {
         }
 
         mutating func savedGroup(_ group: [String: Any]) -> Item? {
+            let records = FirefoxSession.list(group["tabs"])
+            guard !records.isEmpty else { return nil }
+            guard take() else { skipped += records.count - 1; return nil }
             var container = Container()
-            for record in FirefoxSession.list(group["tabs"]) {
+            for (offset, record) in records.enumerated() {
+                guard remaining > 0 else { skipped += records.count - offset; break }
                 guard let state = record["state"] as? [String: Any], let tab = FirefoxSession.tab(state) else {
                     skipped += 1; continue
                 }
+                remaining -= 1
                 container.add(tab, split: FirefoxSession.key(state["splitViewId"]))
             }
             let children = container.items
+            if children.isEmpty { remaining += 1 }
             return children.isEmpty ? nil : Self.folder(group, children: children, isExpanded: false)
         }
 

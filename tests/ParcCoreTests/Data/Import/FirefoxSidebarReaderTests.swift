@@ -141,8 +141,75 @@ struct FirefoxSidebarReaderTests {
         #expect(sidebar.spaces.count == 2)
         #expect(sidebar.spaces.map(\.placement) == [.profileHome, .new])
         #expect(sidebar.spaces.allSatisfy { $0.title == nil && $0.profile == Fixture.profileKey })
-        let ids = sidebar.spaces.compactMap(\.id)
-        #expect(ids.count == 2 && Set(ids).count == 2 && ids.allSatisfy { $0.hasPrefix("firefox:\(Fixture.folder):") })
+        #expect(sidebar.spaces.map(\.id) == ["firefox:\(Fixture.folder):home", "firefox:\(Fixture.folder):window:1"])
+    }
+
+    @Test func spaceIdsStayTheSameAfterTabsChange() throws {
+        let changed = Fixture.session
+            .replacingOccurrences(of: "https://news.example.com/", with: "https://weather.example.com/")
+            .replacingOccurrences(of: "https://maps.example.com/", with: "https://music.example.com/")
+        let before = try Fixture.standard()
+        let after = try Fixture.read(["sessionstore.jsonlz4": Fixture.compressed(changed)])
+        #expect(after.spaces.map(\.today) != before.spaces.map(\.today))
+        #expect(after.spaces.map(\.id) == before.spaces.map(\.id))
+    }
+
+    @Test func windowsWithNothingToImportDoNotTakeANumber() throws {
+        let json = #"""
+        {"version": ["sessionrestore", 1], "windows": [
+          {"tabs": [{"entries": [{"url": "about:blank"}]}]},
+          {"tabs": [{"entries": [{"url": "https://one.example.com/", "title": "One"}]}]},
+          {"tabs": []},
+          {"tabs": [{"entries": [{"url": "https://two.example.com/", "title": "Two"}]}]},
+          {"tabs": [{"entries": [{"url": "https://three.example.com/", "title": "Three"}]}]}]}
+        """#
+        let sidebar = try Fixture.read(["sessionstore.jsonlz4": Fixture.compressed(json)])
+        #expect(sidebar.spaces.map(\.id) == ["firefox:\(Fixture.folder):home", "firefox:\(Fixture.folder):window:1",
+                                             "firefox:\(Fixture.folder):window:2"])
+    }
+
+    @Test func savedGroupsWithNoOpenWindowHeadHomeUnderTheHomeId() throws {
+        let json = #"""
+        {"version": ["sessionrestore", 1], "windows": [], "savedGroups": [
+          {"id": "g", "name": "Trip", "tabs": [
+            {"state": {"entries": [{"url": "https://flights.example.com/", "title": "Flights"}]}}]}]}
+        """#
+        let sidebar = try Fixture.read(["sessionstore.jsonlz4": Fixture.compressed(json)])
+        #expect(sidebar.spaces.map(\.id) == ["firefox:\(Fixture.folder):home"])
+        #expect(sidebar.spaces.map(\.placement) == [.profileHome])
+    }
+
+    @Test func windowsSavedGroupsAndClosedTabsShareOneItemLimit() throws {
+        let open = (0..<(SidebarImport.maximumItems - 2)).map { index in
+            #"{"entries": [{"url": "https://open\#(index).example.com/"}]}"#
+        }
+        let json = #"{"version": ["sessionrestore", 1], "windows": [{"tabs": ["# + open.joined(separator: ",") + #"],"#
+            + #""_closedTabs": ["#
+            + #"{"closedAt": 1764000000000, "state": {"entries": [{"url": "https://closed1.example.com/"}]}},"#
+            + #"{"closedAt": 1764000000000, "state": {"entries": [{"url": "https://closed2.example.com/"}]}}]}],"#
+            + #""savedGroups": [{"id": "g", "name": "Trip", "tabs": ["#
+            + #"{"state": {"entries": [{"url": "https://flights.example.com/", "title": "Flights"}]}},"#
+            + #"{"state": {"entries": [{"url": "https://hotel.example.com/", "title": "Hotel"}]}}]}]}"#
+        let sidebar = try Fixture.read(["sessionstore.jsonlz4": Fixture.compressed(json)])
+        #expect(sidebar.spaces.count == 1)
+        #expect(sidebar.spaces[0].today.count == SidebarImport.maximumItems - 2)
+        #expect(sidebar.spaces[0].pinned == [.folder(title: "Trip", icon: nil,
+            children: [.tab(Fixture.tab("Flights", "https://flights.example.com/"))], isExpanded: false)])
+        #expect(sidebar.archive.isEmpty)
+        #expect(sidebar.skippedItemCount == 3)
+    }
+
+    @Test func tabsPastTheItemLimitInLaterWindowsAreCounted() throws {
+        let open = (0..<SidebarImport.maximumItems).map { index in
+            #"{"entries": [{"url": "https://open\#(index).example.com/"}]}"#
+        }
+        let json = #"{"version": ["sessionrestore", 1], "windows": [{"tabs": ["# + open.joined(separator: ",") + "]},"
+            + #"{"tabs": [{"pinned": true, "entries": [{"url": "https://late.example.com/"}]},"#
+            + #"{"entries": [{"url": "https://later.example.com/"}]}]}]}"#
+        let sidebar = try Fixture.read(["sessionstore.jsonlz4": Fixture.compressed(json)])
+        #expect(sidebar.spaces.map(\.id) == ["firefox:\(Fixture.folder):home"])
+        #expect(sidebar.spaces[0].today.count == SidebarImport.maximumItems)
+        #expect(sidebar.skippedItemCount == 2)
     }
 
     @Test func pinnedTabsGroupsAndSavedGroupsFillPinnedInOrder() throws {
@@ -213,7 +280,7 @@ struct FirefoxSidebarReaderTests {
                                         "sessionstore-backups/recovery.jsonlz4": Fixture.encrypted,
                                         "prefs.js": Data(Fixture.prefs.utf8)])
         #expect(sidebar.spaces.isEmpty && sidebar.archive.isEmpty)
-        #expect(sidebar.warnings.count == 1 && sidebar.warnings[0].contains("Personal"))
+        #expect(sidebar.warnings == ["Firefox keeps the open tabs in Personal encrypted, so they stayed behind."])
         #expect(sidebar.favorites[Fixture.profileKey]?.count == 2)
     }
 

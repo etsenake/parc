@@ -106,4 +106,21 @@ struct ZenSidebarReaderStoreTests {
             #expect(wiki.spaceID == work.id && wiki.kind == .today && wiki.profileID == imported.workID)
         }
     }
+
+    @MainActor @Test func aSiteRouteToAContainerWithNoSpaceOrEssentialStillResolves() throws {
+        try DataFixtures.withTemporaryDirectory { root in
+            let profile = try Fixture.makeProfile(in: root.appendingPathComponent("zen", isDirectory: true),
+                                                  prefs: #"user_pref("zen.workspaces.separate-essentials", false);"#)
+            let zen = try ZenSidebarReader.read(profiles: [profile])
+            let importedAt = Fixture.importedAt
+            let store = try BrowserStore(directory: root.appendingPathComponent("store", isDirectory: true), now: { importedAt })
+            let result = try zen.inserting(into: store.state, profiles: [(Fixture.key, profile.name)],
+                                           standardProfileID: store.state.profiles[0].id, at: importedAt)
+            let clients = try #require(result.destinations[Fixture.clientsKey])
+            #expect(result.state.profiles.first { $0.id == clients.profileID }?.name == "Clients")
+            #expect(result.routes.contains { route in
+                route.conditions.map(\.pattern) == ["://calendar.example.com/"] && route.destination == .space(clients.spaceID)
+            })
+        }
+    }
 }

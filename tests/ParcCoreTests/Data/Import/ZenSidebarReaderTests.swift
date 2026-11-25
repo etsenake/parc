@@ -293,7 +293,9 @@ struct ZenSidebarReaderTests {
             #expect(zen.favorites.count == 1)
             #expect(Fixture.urls(zen.favorites[Fixture.key] ?? [])
                     == ["https://github.com/", "https://mail.example.com/", "https://calendar.example.com/"])
-            #expect(zen.extraProfiles == [SidebarImport.ExtraProfile(key: Fixture.workKey, name: "Work")])
+            #expect(zen.extraProfiles == [SidebarImport.ExtraProfile(key: Fixture.workKey, name: "Work"),
+                                          SidebarImport.ExtraProfile(key: Fixture.clientsKey, name: "Clients")])
+            #expect(zen.routes.last?.destination == .profile(Fixture.clientsKey))
         }
     }
 
@@ -303,11 +305,42 @@ struct ZenSidebarReaderTests {
                 SidebarImport.Route(conditions: [.init(style: .contains, pattern: "jira.example.com")],
                                     destination: .space("zen:\(Fixture.work)")),
                 SidebarImport.Route(conditions: [.init(style: .matches, pattern: "news.example.com")], destination: .mostRecent),
-                SidebarImport.Route(conditions: [.init(style: .contains, pattern: "calendar.example.com")],
+                SidebarImport.Route(conditions: [.init(style: .contains, pattern: "://calendar.example.com/")],
                                     destination: .profile(Fixture.clientsKey)),
             ])
-            #expect(zen.warnings.count == 1)
-            #expect(zen.warnings.first?.contains("regular expression") == true)
+            #expect(zen.warnings == [
+                "1 Zen routing rule uses a regular expression, which Air Traffic Control can’t match, so it was left out.",
+            ])
+        }
+    }
+
+    @Test func siteRoutesMatchOnlyTheExactHost() throws {
+        try Fixture.withRead { zen in
+            let route = try #require(zen.routes.first { $0.destination == .profile(Fixture.clientsKey) })
+            let condition = try #require(route.conditions.first)
+            let rule = LinkRouteCondition(style: condition.style, pattern: condition.pattern)
+            #expect(rule.accepts(try #require(URL(string: "https://calendar.example.com/week"))))
+            #expect(!rule.accepts(try #require(URL(string: "https://calendar.example.com.evil.io/"))))
+            #expect(!rule.accepts(try #require(URL(string: "https://evil.io/login?next=calendar.example.com"))))
+            #expect(!rule.accepts(try #require(URL(string: "https://evil.io/?u=calendar.example.com/"))))
+            #expect(!rule.accepts(try #require(URL(string: "https://work.calendar.example.com/"))))
+        }
+    }
+
+    @Test func theArchiveStopsAtTheItemLimitAndCountsTheRest() throws {
+        try DataFixtures.withTemporaryDirectory { root in
+            let profile = try Fixture.makeProfile(in: root)
+            let closed = (0..<(SidebarImport.maximumItems + 2)).map { index in
+                #"{ "closedAt": 1793000000000, "state": { "index": 1, "entries": [ { "url": "https://closed\#(index).example.com/" } ] } }"#
+            }
+            let store = #"{ "version": ["sessionrestore", 1], "windows": [{ "tabs": [], "_closedTabs": ["#
+                + closed.joined(separator: ",") + "] }] }"
+            try Fixture.writeMozLz4(store, to: profile.directory.appendingPathComponent("sessionstore.jsonlz4"))
+            let zen = try ZenSidebarReader.read(profiles: [profile])
+            #expect(zen.archive.count == SidebarImport.maximumItems)
+            #expect(zen.archive.first?.tab.url == "https://closed0.example.com/")
+            #expect(zen.skippedItemCount == 6)
+            #expect(zen.spaces.map(\.title) == ["Personal", "Work"])
         }
     }
 
