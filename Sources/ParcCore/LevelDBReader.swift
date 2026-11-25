@@ -5,13 +5,21 @@ package enum LevelDBReader {
     static let maximumTotalSize = 512 * 1024 * 1024
     static let maximumKeys = 200_000
     static let logBlockSize = 32 * 1024
+    static let maximumBlockSize = 4 * 1024 * 1024
+    static let maximumDecodedBytesPerScan = 256 * 1024 * 1024
+    static let maximumKeySize = 64 * 1024
+    static let maximumBlockEntries = 65_536
+    static let maximumBlockKeyBytes = 16 * 1024 * 1024
+    static let workspacePrefix = "ParcLevelDB-"
+    static let staleWorkspaceAge: TimeInterval = 60 * 60
     static let tableMagic: UInt64 = 0xdb47_7524_8b80_fb57
 
     package static func read(directory: URL, keyPrefix: [UInt8] = []) throws -> [[UInt8]: [UInt8]] {
         let files = FileManager.default
+        removeStaleWorkspaces(in: files.temporaryDirectory)
         var isDirectory: ObjCBool = false
         guard files.fileExists(atPath: directory.path, isDirectory: &isDirectory), isDirectory.boolValue else { return [:] }
-        let workspace = files.temporaryDirectory.appendingPathComponent("ParcLevelDB-\(UUID().uuidString)", isDirectory: true)
+        let workspace = files.temporaryDirectory.appendingPathComponent("\(workspacePrefix)\(UUID().uuidString)", isDirectory: true)
         try files.createDirectory(at: workspace, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
         defer { try? files.removeItem(at: workspace) }
         var values: [[UInt8]: [UInt8]] = [:]
@@ -26,6 +34,17 @@ package enum LevelDBReader {
             if result.complete { break }
         }
         return values
+    }
+
+    static func removeStaleWorkspaces(in folder: URL, now: Date = Date()) {
+        let files = FileManager.default
+        let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey, .contentModificationDateKey]
+        guard let entries = try? files.contentsOfDirectory(at: folder, includingPropertiesForKeys: keys, options: []) else { return }
+        for entry in entries where entry.lastPathComponent.hasPrefix(workspacePrefix) {
+            guard let values = try? entry.resourceValues(forKeys: Set(keys)), values.isDirectory == true, values.isSymbolicLink != true,
+                  let modified = values.contentModificationDate, now.timeIntervalSince(modified) > staleWorkspaceAge else { continue }
+            try? files.removeItem(at: entry)
+        }
     }
 
     enum StoreFile: Equatable {
@@ -107,9 +126,10 @@ package enum LevelDBReader {
             }
         }
         var collector = Collector(prefix: keyPrefix)
+        var budget = maximumDecodedBytesPerScan
         for (_, name) in tables.sorted(by: { $0.key < $1.key }) {
-            guard let bytes = load(folder.appendingPathComponent(name)) else { continue }
-            readTable(bytes, into: &collector)
+            guard budget > 0, let bytes = load(folder.appendingPathComponent(name)) else { continue }
+            readTable(bytes, into: &collector, budget: &budget)
         }
         for (_, name) in logs.sorted(by: { $0.key < $1.key }) {
             guard let bytes = load(folder.appendingPathComponent(name)) else { continue }
@@ -283,14 +303,16 @@ package enum LevelDBReader {
         }
     }
 
-    static func readTable(_ file: [UInt8], into collector: inout Collector) {
+    static func readTable(_ file: [UInt8], into collector: inout Collector, budget: inout Int) {
         guard file.count >= 48, ByteCursor.fixed64(file, at: file.count - 8) == tableMagic else { return }
         var footer = ByteCursor(file, from: file.count - 48, to: file.count - 8)
         guard blockHandle(&footer) != nil, let indexHandle = blockHandle(&footer),
-              let index = block(file, indexHandle), let indexEntries = blockEntries(index) else { return }
+              let index = block(file, indexHandle, budget: &budget), let indexEntries = blockEntries(index) else { return }
+        var visited: Set<Int> = [indexHandle.lowerBound]
         for indexEntry in indexEntries {
             var cursor = ByteCursor(index, from: indexEntry.value.lowerBound, to: indexEntry.value.upperBound)
-            guard let handle = blockHandle(&cursor), let data = block(file, handle), let entries = blockEntries(data) else { continue }
+            guard budget > 0, let handle = blockHandle(&cursor), visited.insert(handle.lowerBound).inserted,
+                  let data = block(file, handle, budget: &budget), let entries = blockEntries(data) else { continue }
             for entry in entries where entry.key.count >= 8 {
                 let trailer = ByteCursor.fixed64(entry.key, at: entry.key.count - 8)
                 let kind = trailer & 0xff
@@ -307,14 +329,21 @@ package enum LevelDBReader {
         return offset..<(offset + size)
     }
 
-    static func block(_ file: [UInt8], _ handle: Range<Int>) -> [UInt8]? {
+    static func block(_ file: [UInt8], _ handle: Range<Int>, budget: inout Int) -> [UInt8]? {
         guard file.count >= 5, handle.upperBound <= file.count - 5 else { return nil }
-        let contents = Array(file[handle])
+        let limit = min(maximumBlockSize, max(0, budget))
+        let contents: [UInt8]?
         switch file[handle.upperBound] {
-        case 0: return contents
-        case 1: return Snappy.decompress(contents)
-        default: return nil
+        case 0:
+            contents = handle.count <= limit ? Array(file[handle]) : nil
+        case 1:
+            contents = handle.count <= limit + limit / 6 + 32 ? Snappy.decompress(Array(file[handle]), maximumLength: limit) : nil
+        default:
+            contents = nil
         }
+        guard let contents else { return nil }
+        budget -= contents.count
+        return contents
     }
 
     static func blockEntries(_ block: [UInt8]) -> [(key: [UInt8], value: Range<Int>)]? {
@@ -325,6 +354,7 @@ package enum LevelDBReader {
         let restarts = (0..<restartCount).map { Int(ByteCursor.fixed32(block, at: limit + 4 * $0)) }
         guard restarts[0] == 0 else { return nil }
         var entries: [(key: [UInt8], value: Range<Int>)] = []
+        var keyBytes = 0
         for (position, start) in restarts.enumerated() {
             let end = position + 1 < restarts.count ? restarts[position + 1] : limit
             guard start <= end, end <= limit else { return entries }
@@ -334,7 +364,10 @@ package enum LevelDBReader {
                 guard let shared = cursor.varint(maximumBytes: 5).flatMap({ Int(exactly: $0) }), shared <= key.count,
                       let unshared = cursor.varint(maximumBytes: 5).flatMap({ Int(exactly: $0) }),
                       let valueLength = cursor.varint(maximumBytes: 5).flatMap({ Int(exactly: $0) }),
+                      unshared <= maximumKeySize - shared, entries.count < maximumBlockEntries,
+                      shared + unshared <= maximumBlockKeyBytes - keyBytes,
                       let suffix = cursor.take(unshared), let value = cursor.take(valueLength) else { return entries }
+                keyBytes += shared + unshared
                 key.removeLast(key.count - shared)
                 key.append(contentsOf: block[suffix])
                 entries.append((key, value))

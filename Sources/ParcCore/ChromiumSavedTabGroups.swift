@@ -43,7 +43,7 @@ package enum ChromiumSavedTabGroups {
         let title: String
         let color: Int
         let pinnedPosition: Int64?
-        let created: Int64
+        let updated: Int64
     }
 
     struct TabRecord {
@@ -51,10 +51,11 @@ package enum ChromiumSavedTabGroups {
         let created: Int64
     }
 
-    static func groups(from records: [[UInt8]: [UInt8]]) -> [ChromiumSavedTabGroup] {
+    static func groups(from records: [[UInt8]: [UInt8]], maximumRecords: Int = Self.maximumRecords) -> [ChromiumSavedTabGroup] {
         var groups: [String: GroupRecord] = [:]
         var tabs: [String: [TabRecord]] = [:]
-        for (key, value) in records.prefix(maximumRecords) {
+        let kept = records.sorted { $0.key.lexicographicallyPrecedes($1.key) }.prefix(maximumRecords)
+        for (key, value) in kept {
             guard let data = ProtobufReader(value), let specifics = data.message(2) else { continue }
             let named = specifics.string(1) ?? ""
             let guid = (named.isEmpty ? String(decoding: key.dropFirst(dataPrefix.count), as: UTF8.self) : named).lowercased()
@@ -64,7 +65,7 @@ package enum ChromiumSavedTabGroups {
                 guard data.message(3)?.bool(7) != true else { continue }
                 let color = group.varint(3).map { Int(clamping: $0) } ?? 0
                 groups[guid] = GroupRecord(guid: guid, title: group.string(2) ?? "", color: (0...9).contains(color) ? color : 0,
-                                           pinnedPosition: group.int64(4), created: created)
+                                           pinnedPosition: group.int64(4), updated: specifics.int64(3) ?? created)
             } else if let tab = specifics.message(5), let owner = tab.string(1)?.lowercased(), !owner.isEmpty,
                       let url = tab.string(3), !url.isEmpty {
                 let entry = ChromiumSavedTabGroup.Tab(url: url, title: tab.string(4) ?? "", position: Int(clamping: tab.int64(2) ?? 0))
@@ -74,7 +75,7 @@ package enum ChromiumSavedTabGroups {
         let ordered = groups.values.filter { tabs[$0.guid]?.isEmpty == false }.sorted { first, second in
             if let a = first.pinnedPosition, let b = second.pinnedPosition, a != b { return a < b }
             if (first.pinnedPosition == nil) != (second.pinnedPosition == nil) { return first.pinnedPosition != nil }
-            if first.created != second.created { return first.created > second.created }
+            if first.updated != second.updated { return first.updated > second.updated }
             return first.guid < second.guid
         }
         return ordered.enumerated().map { index, group in

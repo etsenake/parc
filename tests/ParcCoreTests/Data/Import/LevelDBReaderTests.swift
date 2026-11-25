@@ -89,6 +89,11 @@ enum LevelDBFixture {
             file += [tableBlock.compressed ? 1 : 0, 0xde, 0xad, 0xbe, 0xef]
             index.append((tableBlock.entries.last?.key ?? [], handle))
         }
+        return assemble(file, index: index)
+    }
+
+    static func assemble(_ data: [UInt8], index: [Entry]) -> [UInt8] {
+        var file = data
         let metaindex = block([])
         let metaHandle = varint(file.count) + varint(metaindex.count)
         file += metaindex
@@ -247,6 +252,91 @@ struct LevelDBReaderTests {
             try F.write(to: directory, edits: nil, tables: [8: table], logs: [9: log])
             let values = try LevelDBReader.read(directory: directory)
             #expect(values == [F.bytes("one"): F.bytes("1"), F.bytes("three"): F.bytes("3")])
+        }
+    }
+
+    @Test func aBlockListedManyTimesInTheIndexIsDecodedOnceWithinTheBudget() {
+        let raw = F.block([(F.internalKey("only", 1), F.bytes("once"))])
+        let stored = F.snappyLiteral(raw)
+        let handle = F.varint(0) + F.varint(stored.count)
+        let index = (0..<5_000).map { (key: F.bytes(String(format: "k%05d", $0)), value: handle) }
+        let file = F.assemble(stored + [1, 0xde, 0xad, 0xbe, 0xef], index: index)
+        let indexSize = F.block(index, restartInterval: 1).count
+        var collector = LevelDBReader.Collector(prefix: [])
+        var budget = LevelDBReader.maximumDecodedBytesPerScan
+        LevelDBReader.readTable(file, into: &collector, budget: &budget)
+        #expect(collector.values == [F.bytes("only"): F.bytes("once")])
+        #expect(LevelDBReader.maximumDecodedBytesPerScan - budget == indexSize + raw.count)
+    }
+
+    @Test func aBlockBeyondTheRemainingScanBudgetIsNotDecoded() {
+        let raw = F.block([(F.internalKey("late", 1), F.bytes("value"))])
+        let table = F.table([F.TableBlock(entries: [(F.internalKey("late", 1), F.bytes("value"))], compressed: true)])
+        let indexSize = F.block([(F.internalKey("late", 1), F.varint(0) + F.varint(F.snappyLiteral(raw).count))], restartInterval: 1).count
+        var collector = LevelDBReader.Collector(prefix: [])
+        var budget = indexSize + raw.count - 1
+        LevelDBReader.readTable(table, into: &collector, budget: &budget)
+        #expect(collector.values.isEmpty)
+        #expect(budget == raw.count - 1)
+    }
+
+    @Test func aBlockLargerThanFourMebibytesIsSkipped() {
+        let huge = [UInt8](repeating: 7, count: LevelDBReader.maximumBlockSize)
+        let table = F.table([
+            F.TableBlock(entries: [(F.internalKey("small", 1), F.bytes("kept"))], compressed: true),
+            F.TableBlock(entries: [(F.internalKey("packed", 2), huge)], compressed: true),
+            F.TableBlock(entries: [(F.internalKey("plain", 3), huge)]),
+        ])
+        var collector = LevelDBReader.Collector(prefix: [])
+        var budget = LevelDBReader.maximumDecodedBytesPerScan
+        LevelDBReader.readTable(table, into: &collector, budget: &budget)
+        #expect(collector.values == [F.bytes("small"): F.bytes("kept")])
+        #expect(LevelDBReader.maximumDecodedBytesPerScan - budget < 1024)
+    }
+
+    @Test func aKeyLongerThanSixtyFourKibibytesEndsTheBlock() {
+        let longest = [UInt8](repeating: 0x61, count: LevelDBReader.maximumKeySize)
+        let accepted = LevelDBReader.blockEntries(F.block([(F.bytes("a"), F.bytes("1")), (longest, F.bytes("2"))], restartInterval: 1))
+        #expect(accepted?.map(\.key) == [F.bytes("a"), longest])
+        let block = F.block([(F.bytes("a"), F.bytes("1")), (longest + [0x62], F.bytes("2")), (F.bytes("z"), F.bytes("3"))], restartInterval: 1)
+        #expect(LevelDBReader.blockEntries(block)?.map(\.key) == [F.bytes("a")])
+    }
+
+    @Test func aBlockStopsAtTheEntryLimit() {
+        let entries = (0..<(LevelDBReader.maximumBlockEntries + 10)).map { (key: F.bytes(String(format: "%06d", $0)), value: [UInt8]()) }
+        let read = LevelDBReader.blockEntries(F.block(entries, restartInterval: 16))
+        #expect(read?.count == LevelDBReader.maximumBlockEntries)
+        #expect(read?.last?.key == entries[LevelDBReader.maximumBlockEntries - 1].key)
+    }
+
+    @Test func sharedPrefixKeysStopAtTheBlockKeyBudget() {
+        let prefix = [UInt8](repeating: 0x70, count: 60 * 1024)
+        let entries = (0..<300).map { (key: prefix + [UInt8($0 >> 8), UInt8($0 & 0xff)], value: [UInt8]()) }
+        let block = F.block(entries, restartInterval: 1_000_000)
+        #expect(block.count < 64 * 1024)
+        let read = LevelDBReader.blockEntries(block) ?? []
+        #expect(read.count == LevelDBReader.maximumBlockKeyBytes / (prefix.count + 2))
+        #expect(read.reduce(0) { $0 + $1.key.count } <= LevelDBReader.maximumBlockKeyBytes)
+        #expect(read.map(\.key) == entries.prefix(read.count).map(\.key))
+    }
+
+    @Test func workspacesOlderThanAnHourAreRemovedAndFreshOnesStay() throws {
+        try DataFixtures.withTemporaryDirectory { folder in
+            let files = FileManager.default
+            let stale = folder.appendingPathComponent("ParcLevelDB-stale")
+            let fresh = folder.appendingPathComponent("ParcLevelDB-fresh")
+            let unrelated = folder.appendingPathComponent("Unrelated-old")
+            for url in [stale, fresh, unrelated] {
+                try files.createDirectory(at: url, withIntermediateDirectories: true)
+                try Data("x".utf8).write(to: url.appendingPathComponent("0"))
+            }
+            let old = Date().addingTimeInterval(-2 * 60 * 60)
+            try files.setAttributes([.modificationDate: old], ofItemAtPath: stale.path)
+            try files.setAttributes([.modificationDate: old], ofItemAtPath: unrelated.path)
+            LevelDBReader.removeStaleWorkspaces(in: folder)
+            #expect(!files.fileExists(atPath: stale.path))
+            #expect(files.fileExists(atPath: fresh.path))
+            #expect(files.fileExists(atPath: unrelated.path))
         }
     }
 

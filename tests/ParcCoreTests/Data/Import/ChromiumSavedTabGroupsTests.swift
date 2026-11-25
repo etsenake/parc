@@ -10,10 +10,11 @@ struct ChromiumSavedTabGroupsTests {
     static func bytes(_ field: Int, _ value: [UInt8]) -> [UInt8] { tag(field, 2) + F.lengthPrefixed(value) }
     static func string(_ field: Int, _ value: String) -> [UInt8] { bytes(field, Array(value.utf8)) }
 
-    static func group(_ guid: String, title: String, color: Int64, pinned: Int64? = nil, created: Int64, hidden: Bool = false) -> [UInt8] {
-        var group = string(2, title) + number(3, color)
+    static func group(_ guid: String, title: String, color: Int64, pinned: Int64? = nil, created: Int64, updated: Int64? = nil,
+                      position: Int64? = nil, hidden: Bool = false) -> [UInt8] {
+        var group = (position.map { number(1, $0) } ?? []) + string(2, title) + number(3, color)
         if let pinned { group += number(4, pinned) }
-        let specifics = string(1, guid) + number(2, created) + number(3, created) + bytes(4, group) + number(7, 2)
+        let specifics = string(1, guid) + number(2, created) + number(3, updated ?? created) + bytes(4, group) + number(7, 2)
         let local = string(1, "local-token") + (hidden ? number(7, 1) : [])
         return number(1, 1) + bytes(2, specifics) + bytes(3, local)
     }
@@ -89,6 +90,40 @@ struct ChromiumSavedTabGroupsTests {
             #expect(groups.map(\.color) == [1, 2, 3])
             #expect(groups.map(\.title) == ["Group 0", "Group 1", "Group 2"])
             #expect(groups.map { $0.tabs.map(\.url) } == [["https://0.example/"], ["https://1.example/"], ["https://2.example/"]])
+        }
+    }
+
+    @Test func unpinnedGroupsFollowChromesUpdateTimeOrderAndIgnoreTheLegacyPosition() {
+        let pinned = "10000000-0000-4000-8000-000000000000"
+        let older = "20000000-0000-4000-8000-000000000000"
+        let touched = "30000000-0000-4000-8000-000000000000"
+        let groups: [(guid: String, record: [UInt8])] = [
+            (pinned, Self.group(pinned, title: "Pinned", color: 1, pinned: 0, created: 50, position: 9)),
+            (older, Self.group(older, title: "Older", color: 2, created: 500, updated: 500, position: 0)),
+            (touched, Self.group(touched, title: "Touched", color: 3, created: 100, updated: 900, position: 5)),
+        ]
+        var records: [[UInt8]: [UInt8]] = [:]
+        for (index, entry) in groups.enumerated() {
+            records[F.bytes(Self.data(entry.guid))] = entry.record
+            let tab = "e000000\(index)-0000-4000-8000-000000000000"
+            records[F.bytes(Self.data(tab))] = Self.tab(tab, group: entry.guid, position: 0, url: "https://\(index).example/", title: "Tab")
+        }
+        #expect(ChromiumSavedTabGroups.groups(from: records).map(\.guid) == [pinned, touched, older])
+    }
+
+    @Test func theRecordCapKeepsTheSameRecordsEveryTime() {
+        var records: [[UInt8]: [UInt8]] = [:]
+        for index in 1...9 {
+            let guid = "\(index)0000000-0000-4000-8000-000000000000"
+            let tab = "\(index)1000000-0000-4000-8000-000000000000"
+            records[F.bytes(Self.data(guid))] = Self.group(guid, title: "Group \(index)", color: 1, created: Int64(index))
+            records[F.bytes(Self.data(tab))] = Self.tab(tab, group: guid, position: 0, url: "https://\(index).example/", title: "Tab")
+        }
+        for _ in 0..<20 {
+            let shuffled = Dictionary(uniqueKeysWithValues: records.shuffled().map { ($0.key, $0.value) })
+            let groups = ChromiumSavedTabGroups.groups(from: shuffled, maximumRecords: 6)
+            #expect(groups.map(\.guid) == ["30000000-0000-4000-8000-000000000000", "20000000-0000-4000-8000-000000000000",
+                                            "10000000-0000-4000-8000-000000000000"])
         }
     }
 
