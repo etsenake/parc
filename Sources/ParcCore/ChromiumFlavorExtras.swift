@@ -29,8 +29,11 @@ package enum ChromiumFlavorExtras {
 
     package static func spaces(_ session: ChromiumSession, flavor: ChromiumFlavor, profile: SidebarImportProfile)
         -> [(space: SidebarImport.Space, windowTabs: [Int32: Set<Int32>])]? {
-        guard flavor == .vivaldi else { return nil }
-        return VivaldiExtras.spaces(session, preferences: preferences(in: profile.directory), profile: profile)
+        switch flavor {
+        case .vivaldi: return VivaldiExtras.spaces(session, preferences: preferences(in: profile.directory), profile: profile)
+        case .opera, .operaGX: return OperaExtras.spaces(session, preferences: preferences(in: profile.directory), profile: profile)
+        default: return nil
+        }
     }
 
     private static func heliumAdjusted(_ session: ChromiumSession) -> ChromiumSession {
@@ -322,5 +325,81 @@ private enum VivaldiExtras {
             result.append((space, perWorkspace[workspace.id] ?? [:]))
         }
         return result
+    }
+}
+
+private enum OperaExtras {
+    static let stateKey = "workspaces_state"
+    static let customIcon = "add-custom-icon"
+
+    struct Workspace {
+        let id: Int
+        let name: String?
+        let emoji: String?
+        let visible: Bool
+    }
+
+    static func integer(_ value: Any?) -> Int? {
+        if let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() {
+            let double = number.doubleValue
+            return double.isFinite && double == double.rounded() && abs(double) < 1e9 ? Int(double) : nil
+        }
+        if let text = value as? String { return Int(text.trimmingCharacters(in: .whitespaces)) }
+        return nil
+    }
+
+    static func entry(_ container: Any?, id: Int) -> Any? {
+        if let dictionary = container as? [String: Any] { return dictionary[String(id)] }
+        if let list = container as? [Any], id >= 0, id < list.count { return list[id] }
+        return nil
+    }
+
+    static func ids(_ container: Any?) -> [Int] {
+        if let dictionary = container as? [String: Any] { return dictionary.keys.compactMap { Int($0) } }
+        if let list = container as? [Any] { return Array(list.indices) }
+        return []
+    }
+
+    static func workspaces(_ preferences: [String: Any]?) -> [Workspace] {
+        let path = ["ui", "workspaces", "config"]
+        func config(_ key: String) -> Any? { ChromiumFlavorExtras.value(in: preferences, path: path + [key]) }
+        guard (config("enabled") as? Bool) != false else { return [] }
+        let names = config("names")
+        var order: [Int] = []
+        var seen = Set<Int>()
+        for value in (config("order") as? [Any]) ?? [] {
+            if let id = integer(value), id >= 0, seen.insert(id).inserted { order.append(id) }
+        }
+        for id in ids(names).sorted() where seen.insert(id).inserted { order.append(id) }
+        return order.map { id in
+            let name = (entry(names, id: id) as? String).flatMap { $0.isEmpty ? nil : $0 }
+            let custom = (entry(config("icons"), id: id) as? String) == customIcon
+            let emoji = custom ? (entry(config("emoji_icons"), id: id) as? String).flatMap { $0.isEmpty ? nil : $0 } : nil
+            let visible = (entry(config("visible_in_ui"), id: id) as? Bool) != false
+            return Workspace(id: id, name: name, emoji: emoji, visible: visible)
+        }
+    }
+
+    static func spaces(_ session: ChromiumSession, preferences: [String: Any]?, profile: SidebarImportProfile)
+        -> [(space: SidebarImport.Space, windowTabs: [Int32: Set<Int32>])]? {
+        let list = workspaces(preferences)
+        guard let first = list.first else { return nil }
+        let known = Set(list.map(\.id))
+        var membership: [Int: [Int32: Set<Int32>]] = [:]
+        for window in session.windows {
+            for tab in window.tabs {
+                let wanted = integer(tab.extraData[stateKey])
+                let id = wanted.flatMap { known.contains($0) ? $0 : nil } ?? first.id
+                membership[id, default: [:]][window.id, default: []].insert(tab.id)
+            }
+        }
+        let folder = profile.directory.lastPathComponent
+        return list.compactMap { workspace in
+            let tabs = membership[workspace.id] ?? [:]
+            guard workspace.visible || !tabs.isEmpty else { return nil }
+            let space = SidebarImport.Space(title: workspace.name, icon: workspace.emoji.map { SidebarGroupIcon.emoji($0) },
+                                            theme: nil, profile: profile.key, pinned: [], id: "opera:\(folder):\(workspace.id)")
+            return (space, tabs)
+        }
     }
 }

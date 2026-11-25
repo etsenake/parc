@@ -208,7 +208,7 @@ struct ChromiumFlavorExtrasTests {
     @Test func vivaldiDropsPanelsMailAndQuarantinedTabs() throws {
         try withProfile(preferences: vivaldiPreferences) { profile in
             let result = ChromiumFlavorExtras.adjusted(vivaldiSession(), flavor: .vivaldi, profileDirectory: profile)
-            #expect(result.windows[0].tabs.map(\.id) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 14])
+            #expect(result.windows[0].tabs.map(\.id) == [1, 2, 3, 4, 6, 5, 7, 8, 9, 12, 14])
         }
     }
 
@@ -322,6 +322,92 @@ struct ChromiumFlavorExtrasTests {
             for flavor in [ChromiumFlavor.chrome, .brave, .helium, .edge] {
                 #expect(ChromiumFlavorExtras.spaces(vivaldiSession(), flavor: flavor, profile: importProfile(profile)) == nil)
             }
+        }
+    }
+
+    private let operaPreferences = """
+    {"ui":{"workspaces":{"config":{
+      "enabled":true,"next_id":3,"order":[1,0,2],
+      "names":{"0":"Workspace 1","1":"Work","2":"Gaming"},
+      "icons":{"0":"star-icon","1":"work-icon","2":"add-custom-icon"},
+      "emoji_icons":{"2":"\u{1F3AE}"},
+      "visible_in_ui":{"0":true,"1":true,"2":false}
+    }}}}
+    """
+
+    private func operaTab(_ id: Int32, _ state: String?) -> Tab {
+        Tab(id: id, url: "https://t\(id).example.com/", title: "", extraData: state.map { ["workspaces_state": $0] } ?? [:])
+    }
+
+    @Test func operaSpacesFollowTheConfiguredOrderAndSortTabsByWorkspace() throws {
+        let input = session([[operaTab(1, "1"), operaTab(2, "0"), operaTab(3, "2"), operaTab(4, "1")], [operaTab(5, "0"), operaTab(6, "2")]])
+        try withProfile(preferences: operaPreferences) { profile in
+            for flavor in [ChromiumFlavor.opera, .operaGX] {
+                let spaces = try #require(ChromiumFlavorExtras.spaces(input, flavor: flavor, profile: importProfile(profile)))
+                let folder = profile.lastPathComponent
+                #expect(spaces.map(\.space.id) == ["opera:\(folder):1", "opera:\(folder):0", "opera:\(folder):2"])
+                #expect(spaces.map(\.space.title) == ["Work", "Workspace 1", "Gaming"])
+                #expect(spaces.map(\.space.icon) == [nil, nil, .emoji("\u{1F3AE}")])
+                #expect(spaces[0].windowTabs == [1: [1, 4]])
+                #expect(spaces[1].windowTabs == [1: [2], 2: [5]])
+                #expect(spaces[2].windowTabs == [1: [3], 2: [6]])
+            }
+        }
+    }
+
+    @Test func operaTabsWithoutAKnownWorkspaceGoToTheFirstWorkspaceInOrder() throws {
+        let input = session([[operaTab(1, nil), operaTab(2, "9"), operaTab(3, "junk"), operaTab(4, "2")]])
+        try withProfile(preferences: operaPreferences) { profile in
+            let spaces = try #require(ChromiumFlavorExtras.spaces(input, flavor: .opera, profile: importProfile(profile)))
+            #expect(spaces.map(\.space.title) == ["Work", "Gaming"])
+            #expect(spaces[0].windowTabs == [1: [1, 2, 3]])
+            #expect(spaces[1].windowTabs == [1: [4]])
+        }
+    }
+
+    @Test func operaHiddenWorkspacesComeOverOnlyWhenTheyHoldTabs() throws {
+        try withProfile(preferences: operaPreferences) { profile in
+            let none = try #require(ChromiumFlavorExtras.spaces(session([[operaTab(1, "1")]]), flavor: .opera, profile: importProfile(profile)))
+            #expect(none.map(\.space.title) == ["Work", "Workspace 1"])
+            let some = try #require(ChromiumFlavorExtras.spaces(session([[operaTab(1, "2")]]), flavor: .opera, profile: importProfile(profile)))
+            #expect(some.map(\.space.title) == ["Work", "Workspace 1", "Gaming"])
+        }
+    }
+
+    @Test func operaEmojiNeedsTheCustomIconMarker() throws {
+        let prefs = #"{"ui":{"workspaces":{"config":{"order":[0],"names":{"0":"Solo"},"icons":{"0":"star-icon"},"emoji_icons":{"0":"X"}}}}}"#
+        try withProfile(preferences: prefs) { profile in
+            let spaces = try #require(ChromiumFlavorExtras.spaces(session([[operaTab(1, "0")]]), flavor: .opera, profile: importProfile(profile)))
+            #expect(spaces.map(\.space.icon) == [nil])
+        }
+    }
+
+    @Test func operaConfigsAreReadDefensively() throws {
+        let listForm = #"{"ui":{"workspaces":{"config":{"names":["A","B"],"order":["1"]}}}}"#
+        try withProfile(preferences: listForm) { profile in
+            let spaces = try #require(ChromiumFlavorExtras.spaces(session([[operaTab(1, "0")]]), flavor: .opera, profile: importProfile(profile)))
+            #expect(spaces.map(\.space.title) == ["B", "A"])
+            #expect(spaces[1].windowTabs == [1: [1]])
+        }
+    }
+
+    @Test func operaWithoutAUsableWorkspaceConfigBuildsNoSpaces() throws {
+        let input = session([[operaTab(1, "0")]])
+        try withProfile { profile in
+            #expect(ChromiumFlavorExtras.spaces(input, flavor: .opera, profile: importProfile(profile)) == nil)
+        }
+        try withProfile(preferences: #"{"ui":{"workspaces":{"config":{"enabled":false,"names":{"0":"Off"},"order":[0]}}}}"#) { profile in
+            #expect(ChromiumFlavorExtras.spaces(input, flavor: .opera, profile: importProfile(profile)) == nil)
+        }
+        try withProfile(preferences: #"{"ui":{"workspaces":{"config":{}}}}"#) { profile in
+            #expect(ChromiumFlavorExtras.spaces(input, flavor: .operaGX, profile: importProfile(profile)) == nil)
+        }
+    }
+
+    @Test func operaWorkspacesDoNotChangeTheSessionItself() throws {
+        let input = session([[operaTab(1, "1"), operaTab(2, "0")]])
+        try withProfile(preferences: operaPreferences) { profile in
+            #expect(ChromiumFlavorExtras.adjusted(input, flavor: .opera, profileDirectory: profile) == input)
         }
     }
 }
