@@ -263,13 +263,24 @@ final class BrowserImportScene {
         ImportFixture.source(BrowserImportCoordinator.arcBundleIdentifier, directory.appendingPathComponent("Arc", isDirectory: true))
     }
 
+    func sidebarHome(arcSidebar: URL?, arcPreferences: URL?) -> URL {
+        let home = directory.appendingPathComponent("Home-\(UUID().uuidString)", isDirectory: true)
+        let files = FileManager.default
+        for (source, target) in [(arcSidebar, ArcSidebarSnapshot.sidebarURL(home: home)),
+                                 (arcPreferences, ArcSidebarSnapshot.preferencesURL(home: home))] {
+            guard let source, files.fileExists(atPath: source.path) else { continue }
+            try? files.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? files.copyItem(at: source, to: target)
+        }
+        return home
+    }
+
     func coordinator(store: BrowserStore? = nil, destination: BrowserImportDestination? = nil, onboarding: Bool = false,
                      iCloud: Bool = false, arcSidebar: URL? = nil, arcPreferences: URL? = nil,
                      exportRoot: URL? = nil) -> BrowserImportCoordinator {
         let coordinator = BrowserImportCoordinator(store: store ?? self.store, destination: destination ?? self.destination,
             window: window, onboarding: onboarding, supportsICloudPasswords: iCloud,
-            arcSidebarURL: arcSidebar ?? directory.appendingPathComponent("NoArc/StorableSidebar.json"),
-            arcPreferencesURL: arcPreferences ?? directory.appendingPathComponent("NoArcPreferences.plist"),
+            sidebarHome: sidebarHome(arcSidebar: arcSidebar, arcPreferences: arcPreferences),
             safariExportRoot: exportRoot ?? directory.appendingPathComponent("ExportRoot"),
             native: engine, ownerIsCurrent: { [unowned self] in self.current })
         coordinators.append(coordinator)

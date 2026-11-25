@@ -4,13 +4,13 @@ import Testing
 @testable import ParcCore
 
 enum ArcSidebarImportTestsSupport {
-    typealias Item = ArcSidebarImport.Item
-    typealias Tab = ArcSidebarImport.Tab
-    typealias Destinations = [ArcSidebarImport.ProfileKey: BrowserImportDestination]
+    typealias Item = SidebarImport.Item
+    typealias Tab = SidebarImport.Tab
+    typealias Destinations = [SidebarImport.ProfileKey: BrowserImportDestination]
 
-    static let profileOne = ArcSidebarImport.ProfileKey.custom(directory: "Profile 1")
-    static let profileTwo = ArcSidebarImport.ProfileKey.custom(directory: "Profile 2")
-    static let profileThree = ArcSidebarImport.ProfileKey.custom(directory: "Profile 3")
+    static let profileOne = SidebarImport.ProfileKey.custom(directory: "Profile 1")
+    static let profileTwo = SidebarImport.ProfileKey.custom(directory: "Profile 2")
+    static let profileThree = SidebarImport.ProfileKey.custom(directory: "Profile 3")
     static let importedAt = Date(timeIntervalSince1970: 1_793_000_000)
 
     static func close(_ a: Double, _ b: Double, _ tolerance: Double = 1e-9) -> Bool { abs(a - b) <= tolerance }
@@ -21,8 +21,8 @@ enum ArcSidebarImportTestsSupport {
         return try Data(contentsOf: file)
     }
 
-    static func loadArc() throws -> ArcSidebarImport {
-        try ArcSidebarImport(data: fixtureData())
+    static func loadArc() throws -> SidebarImport {
+        try SidebarImport(arcData: fixtureData())
     }
 
     static func document(items: [Any], pinned: [String]) throws -> Data {
@@ -38,19 +38,19 @@ enum ArcSidebarImportTestsSupport {
             case let .split(title, icon, tabs, orientation, factors):
                 return .split(title: title, icon: icon, tabs: tabs, orientation: orientation,
                               widthFactors: factors.map { ($0 * 1e6).rounded() / 1e6 })
-            case let .folder(title, icon, children): return .folder(title: title, icon: icon, children: roundingFactors(children))
+            case let .folder(title, icon, children, isExpanded): return .folder(title: title, icon: icon, children: roundingFactors(children), isExpanded: isExpanded)
             case .tab, .stackedSplit: return item
             }
         }
     }
 
-    static var allProfiles: [(key: ArcSidebarImport.ProfileKey, name: String)] {
+    static var allProfiles: [(key: SidebarImport.ProfileKey, name: String)] {
         [(.standard, "Personal"), (profileOne, "Work Profile"), (profileTwo, "Side Projects"), (profileThree, "  Empty  ")]
     }
 
     struct Imported {
         let store: BrowserStore
-        let arc: ArcSidebarImport
+        let arc: SidebarImport
         let standardID: UUID
         let existingID: UUID
         let activeBefore: UUID
@@ -72,7 +72,7 @@ enum ArcSidebarImportTestsSupport {
             let activeBefore = store.activeSpaceID
             let spacesBefore = store.state.spaces.count
             let profilesBefore = store.state.profiles.count
-            let result = try store.importArcSidebar(arc, profiles: allProfiles, standardProfileID: standardID)
+            let result = try store.importSidebar(arc, profiles: allProfiles, standardProfileID: standardID)
             let state = store.state
             let imported = Imported(store: store, arc: arc, standardID: standardID, existingID: existingID,
                                     activeBefore: activeBefore, spacesBefore: spacesBefore,
@@ -98,7 +98,7 @@ enum ArcSidebarImportTestsSupport {
             let namesake = store.createProfile(name: "Work Profile")
             try store.save()
             let before = store.state
-            let result = try store.importArcSidebar(arc, profiles: [(profileOne, "Work Profile"), (profileTwo, "Side Projects")],
+            let result = try store.importSidebar(arc, profiles: [(profileOne, "Work Profile"), (profileTwo, "Side Projects")],
                 standardProfileID: opened.profileID, primary: profileOne, into: opened.profileID)
             try body(CustomPrimary(before: before, state: store.state, result: result,
                                    openedID: opened.profileID, namesake: namesake))

@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 import ParcEngine
 
 @MainActor
@@ -23,6 +24,11 @@ protocol BrowserImportNative: Sendable {
     func extensionRestriction(for error: Error?) -> PCNativeExtensionRestriction
     nonisolated func background(_ qos: DispatchQoS.QoSClass, _ work: @escaping @Sendable () -> Void)
     nonisolated func main(_ work: @escaping @Sendable @MainActor () -> Void)
+    func sidebarDecryptor(for profile: PCNativeImportProfile) -> SidebarDecryptor?
+}
+
+extension BrowserImportNative {
+    func sidebarDecryptor(for profile: PCNativeImportProfile) -> SidebarDecryptor? { nil }
 }
 
 struct EngineBrowserImport: BrowserImportNative {

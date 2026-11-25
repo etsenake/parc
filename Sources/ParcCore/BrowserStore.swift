@@ -2843,7 +2843,7 @@ package final class BrowserStore: ObservableObject {
         return result
     }
 
-    static let archiveRetention: TimeInterval = 60 * 24 * 60 * 60
+    nonisolated static let archiveRetention: TimeInterval = 60 * 24 * 60 * 60
     package func cleanExpiredArchive(now: Date? = nil) {
         let cutoff = (now ?? clock()).addingTimeInterval(-Self.archiveRetention)
         let ids = Set(state.tabs.filter { $0.archivedAt.map { $0 <= cutoff } ?? false }.map(\.id))
@@ -5863,19 +5863,20 @@ package final class BrowserStore: ObservableObject {
         return placements
     }
 
-    package func importArcSidebar(_ arc: ArcSidebarImport, profiles: [(key: ArcSidebarImport.ProfileKey, name: String)],
-                          standardProfileID: UUID, primary: ArcSidebarImport.ProfileKey? = nil,
-                          into target: UUID? = nil) throws
-        -> [ArcSidebarImport.ProfileKey: BrowserImportDestination] {
+    package func importSidebar(_ sidebar: SidebarImport, profiles: [(key: SidebarImport.ProfileKey, name: String)],
+                          standardProfileID: UUID, primary: SidebarImport.ProfileKey? = nil,
+                          into target: UUID? = nil, home: UUID? = nil) throws
+        -> [SidebarImport.ProfileKey: BrowserImportDestination] {
         guard !isEphemeral else { throw CocoaError(.userCancelled) }
         let previous = state
-        var chosen: (key: ArcSidebarImport.ProfileKey, profileID: UUID)?
+        var chosen: (key: SidebarImport.ProfileKey, profileID: UUID)?
         if let primary, let target { chosen = (primary, target) }
-        let result = try arc.inserting(into: state, profiles: profiles, standardProfileID: standardProfileID,
-                                       target: chosen, at: clock())
+        let result = try sidebar.inserting(into: state, profiles: profiles, standardProfileID: standardProfileID,
+                                           target: chosen, homeSpaceID: home, at: clock())
         state = result.state
         do { try save() } catch { state = previous; throw error }
         changed()
+        if !result.routes.isEmpty { linkRouting.importRoutes(result.routes) }
         return result.destinations
     }
 

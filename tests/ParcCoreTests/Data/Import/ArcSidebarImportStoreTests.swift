@@ -19,7 +19,7 @@ struct ArcSidebarImportStoreTests {
             try FileManager.default.moveItem(at: session, to: backup)
             try FileManager.default.createDirectory(at: session, withIntermediateDirectories: false)
             #expect(throws: (any Error).self) {
-                try store.importArcSidebar(arc, profiles: Support.allProfiles, standardProfileID: standardID)
+                try store.importSidebar(arc, profiles: Support.allProfiles, standardProfileID: standardID)
             }
             #expect(store.state == before)
         }
@@ -206,7 +206,7 @@ struct ArcSidebarImportStoreTests {
     @MainActor
     @Test func importingTheSameSpacesAgainAddsNoCopies() throws {
         try Support.withImport { imported, _ in
-            let again = try imported.store.importArcSidebar(imported.arc, profiles: [(.standard, "Personal")],
+            let again = try imported.store.importSidebar(imported.arc, profiles: [(.standard, "Personal")],
                                                             standardProfileID: imported.standardID)
             let standardSpaces = imported.arc.spaces.filter { $0.profile == .standard }
             #expect(standardSpaces.count == 4 && imported.store.state.spaces.count == imported.state.spaces.count
@@ -219,7 +219,7 @@ struct ArcSidebarImportStoreTests {
     @Test func aLaterImportReusesTheSameParcProfileAndAnExistingSpace() throws {
         try Support.withImport { imported, _ in
             let spacesBeforeReuse = imported.store.state.spaces.count
-            let secondReuse = try imported.store.importArcSidebar(
+            let secondReuse = try imported.store.importSidebar(
                 imported.arc, profiles: [(Support.profileOne, "work profile"), (Support.profileTwo, "Side Projects")],
                 standardProfileID: imported.standardID)
             #expect(secondReuse[Support.profileOne]?.profileID == imported.existingID)

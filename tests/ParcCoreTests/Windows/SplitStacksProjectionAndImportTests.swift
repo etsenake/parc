@@ -53,10 +53,10 @@ struct SplitStacksProjectionAndImportTests {
             [id, ["id": id, "childrenIds": children, "data": ["splitView": ["layoutOrientation": orientation, "itemWidthFactors": weights]]]]
         }
 
-        static func nested() throws -> ArcSidebarImport {
+        static func nested() throws -> SidebarImport {
             var items: [Any] = split("G", ["A", "N"], "horizontal", ["A", 0.4, "N", 0.6]) + split("N", ["B", "C"], "vertical", ["B", 1, "C", 3])
             items += tab("A") + tab("B") + tab("C")
-            return try ArcSidebarImport(data: document(items, pinned: ["G"]))
+            return try SidebarImport(arcData: document(items, pinned: ["G"]))
         }
     }
 
@@ -75,7 +75,7 @@ struct SplitStacksProjectionAndImportTests {
     @Test func aSameDirectionNestedArcSplitJoinsTheMainRow() throws {
         var items: [Any] = Arc.split("G", ["A", "N"], "horizontal", ["A", 1, "N", 1]) + Arc.split("N", ["B", "C"], "horizontal", ["B", 1, "C", 1])
         items += Arc.tab("A") + Arc.tab("B") + Arc.tab("C")
-        let same = try ArcSidebarImport(data: Arc.document(items, pinned: ["G"]))
+        let same = try SidebarImport(arcData: Arc.document(items, pinned: ["G"]))
         guard case let .split(_, _, sameTabs, _, factors)? = same.spaces[0].pinned.first else {
             Issue.record("Arc same-direction split should flatten")
             return
@@ -87,7 +87,7 @@ struct SplitStacksProjectionAndImportTests {
     @Test func aThirdArcLevelFlattensWithoutDroppingTabs() throws {
         var items: [Any] = Arc.split("G", ["A", "N"], "horizontal", []) + Arc.split("N", ["B", "M"], "vertical", []) + Arc.split("M", ["C", "D"], "horizontal", [])
         items += Arc.tab("A") + Arc.tab("B") + Arc.tab("C") + Arc.tab("D")
-        let deep = try ArcSidebarImport(data: Arc.document(items, pinned: ["G"]))
+        let deep = try SidebarImport(arcData: Arc.document(items, pinned: ["G"]))
         guard case let .split(_, _, deepTabs, _, _)? = deep.spaces[0].pinned.first else {
             Issue.record("Arc third level should flatten")
             return
@@ -99,7 +99,7 @@ struct SplitStacksProjectionAndImportTests {
     @Test func aNestedArcSplitOverFourPanesFlattensAndKeepsEveryTab() throws {
         var items: [Any] = Arc.split("G", ["A", "N", "E"], "horizontal", []) + Arc.split("N", ["B", "C", "D"], "vertical", [])
         items += Arc.tab("A") + Arc.tab("B") + Arc.tab("C") + Arc.tab("D") + Arc.tab("E")
-        let crowded = try ArcSidebarImport(data: Arc.document(items, pinned: ["G"]))
+        let crowded = try SidebarImport(arcData: Arc.document(items, pinned: ["G"]))
         let titles = crowded.spaces[0].pinned.flatMap { item -> [String] in
             switch item {
             case .split(_, _, let tabs, _, _), .stackedSplit(_, _, let tabs, _, _): return tabs.map(\.title)
@@ -112,7 +112,7 @@ struct SplitStacksProjectionAndImportTests {
 
     @Test func anEmptyNestedArcSplitCountsAsSkipped() throws {
         let items: [Any] = Arc.split("G", ["A", "N", "E"], "horizontal", []) + Arc.split("N", [], "vertical", []) + Arc.tab("A") + Arc.tab("E")
-        let hollow = try ArcSidebarImport(data: Arc.document(items, pinned: ["G"]))
+        let hollow = try SidebarImport(arcData: Arc.document(items, pinned: ["G"]))
         #expect(hollow.skippedItemCount == 1)
     }
 
@@ -125,11 +125,11 @@ struct SplitStacksProjectionAndImportTests {
         var items: [Any] = Arc.tab("A0") + Arc.split("G", ["A", "N"], "horizontal", []) + Arc.split("N", ["B", "C"], "vertical", ["B", 1, "C", 3])
         items += Arc.tab("A") + Arc.tab("B") + Arc.tab("C")
         items[1] = ["id": "A0", "data": ["tab": ["savedURL": "https://a.test/", "savedTitle": "A"]]]
-        let favoriteArc = try ArcSidebarImport(data: favorites(items, top: ["A0", "G"]))
+        let favoriteArc = try SidebarImport(arcData: favorites(items, top: ["A0", "G"]))
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-split-stacks-arc-fav-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try BrowserStore(directory: root, now: { Date(timeIntervalSince1970: 1_800_000_000) })
-        _ = try store.importArcSidebar(favoriteArc, profiles: [(.standard, "Personal")], standardProfileID: store.state.profiles[0].id)
+        _ = try store.importSidebar(favoriteArc, profiles: [(.standard, "Personal")], standardProfileID: store.state.profiles[0].id)
         let partial = store.state.splitLayouts.first
         #expect(partial?.tabIDs.count == 2)
         #expect(partial?.orientation == .vertical)
@@ -142,7 +142,7 @@ struct SplitStacksProjectionAndImportTests {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-split-stacks-arc-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try BrowserStore(directory: root, now: { Date(timeIntervalSince1970: 1_800_000_000) })
-        _ = try store.importArcSidebar(nested, profiles: [(.standard, "Personal")], standardProfileID: store.state.profiles[0].id)
+        _ = try store.importSidebar(nested, profiles: [(.standard, "Personal")], standardProfileID: store.state.profiles[0].id)
         guard case let .stackedSplit(_, _, _, _, stacks)? = nested.spaces[0].pinned.first else {
             Issue.record("Arc nested split should stay stacked")
             return

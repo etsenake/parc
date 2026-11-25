@@ -8,7 +8,7 @@ struct ArcSidebarImportParsingTests {
 
     struct ProfileDirectory: Sendable, CustomTestStringConvertible {
         let directory: String
-        let expected: ArcSidebarImport.ProfileKey
+        let expected: SidebarImport.ProfileKey
         var testDescription: String { directory }
     }
 
@@ -17,7 +17,7 @@ struct ArcSidebarImportParsingTests {
         ProfileDirectory(directory: "Profile 1", expected: Support.profileOne),
     ])
     func profileDirectoriesResolveToTheirArcProfile(_ entry: ProfileDirectory) {
-        #expect(ArcSidebarImport.profileKey(directory: entry.directory) == entry.expected)
+        #expect(SidebarImport.profileKey(directory: entry.directory) == entry.expected)
     }
 
     @Test func profilesListStandardFirstThenSpacesThenFavorites() throws {
@@ -143,7 +143,7 @@ struct ArcSidebarImportParsingTests {
 
     @Test(arguments: ["not json", "[]", #"{"sidebar":{"containers":[{"global":{}}]}}"#])
     func aFileWithoutArcsSidebarShapeFails(bad: String) {
-        #expect(throws: (any Error).self) { try ArcSidebarImport(data: Data(bad.utf8)) }
+        #expect(throws: (any Error).self) { try SidebarImport(arcData: Data(bad.utf8)) }
     }
 
     @Test func nestingIsBoundedAt128() throws {
@@ -152,21 +152,21 @@ struct ArcSidebarImportParsingTests {
             let child = level < 199 ? ["F\(level + 1)"] : []
             deep += ["F\(level)", ["id": "F\(level)", "title": "L\(level)", "childrenIds": child, "data": ["list": [:]]]]
         }
-        let deepArc = try ArcSidebarImport(data: Support.document(items: deep, pinned: ["F0"]))
+        let deepArc = try SidebarImport(arcData: Support.document(items: deep, pinned: ["F0"]))
         var depth = 0
         var level = deepArc.spaces[0].pinned
-        while case let .folder(_, _, children)? = level.first { depth += 1; level = children }
-        #expect(depth == ArcSidebarImport.maximumDepth && deepArc.skippedItemCount == 1)
+        while case let .folder(_, _, children, _)? = level.first { depth += 1; level = children }
+        #expect(depth == SidebarImport.maximumDepth && deepArc.skippedItemCount == 1)
     }
 
     @Test func itemCountIsBoundedAt50000IncludingTheContainer() throws {
         var many: [Any] = []
         var ids: [String] = []
-        for index in 0...ArcSidebarImport.maximumItems {
+        for index in 0...SidebarImport.maximumItems {
             ids.append("T\(index)")
             many += ["T\(index)", ["id": "T\(index)", "data": ["tab": ["savedURL": "https://example.test/\(index)", "savedTitle": "T"]]]]
         }
-        let manyArc = try ArcSidebarImport(data: Support.document(items: many, pinned: ids))
-        #expect(manyArc.spaces[0].pinned.count == ArcSidebarImport.maximumItems - 1 && manyArc.skippedItemCount == 4)
+        let manyArc = try SidebarImport(arcData: Support.document(items: many, pinned: ids))
+        #expect(manyArc.spaces[0].pinned.count == SidebarImport.maximumItems - 1 && manyArc.skippedItemCount == 4)
     }
 }

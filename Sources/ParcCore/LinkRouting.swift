@@ -232,6 +232,19 @@ package final class LinkRoutingStore: ObservableObject {
     }
 
     @discardableResult
+    func importRoutes(_ routes: [LinkRoute]) -> Bool {
+        guard !unreadableFile else { return false }
+        func signature(_ route: LinkRoute) -> [String] {
+            route.conditions.map { "\($0.style.rawValue) \($0.pattern.lowercased())" }.sorted() + ["\(route.destination)"]
+        }
+        var next = state, known = Set(state.rules.map(signature))
+        for route in LinkRoutingDraft.savable(routes) where known.insert(signature(route)).inserted {
+            next.rules.append(route)
+        }
+        return next == state || commit(next)
+    }
+
+    @discardableResult
     func remove(_ id: UUID) -> Bool {
         var next = state; next.rules.removeAll { $0.id == id }; return commit(next)
     }

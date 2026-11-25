@@ -1,79 +1,7 @@
 import Foundation
 
-package struct ArcSidebarImport: Equatable {
-    package enum ProfileKey: Hashable { case standard; case custom(directory: String) }
-
-    package struct Tab: Equatable {
-        let title: String
-        let url: String
-        var customTitle: String? = nil
-        var isMuted = false
-
-        init(title: String, url: String, customTitle: String? = nil, isMuted: Bool = false) {
-            self.title = title
-            self.url = url
-            self.customTitle = customTitle
-            self.isMuted = isMuted
-        }
-    }
-
-    package indirect enum Item: Equatable {
-        case tab(Tab)
-        case folder(title: String, icon: SidebarGroupIcon?, children: [Item])
-        case split(title: String?, icon: SidebarGroupIcon?, tabs: [Tab], orientation: SplitOrientation, widthFactors: [Double])
-        case stackedSplit(title: String?, icon: SidebarGroupIcon?, tabs: [Tab], orientation: SplitOrientation, stacks: BrowserSplitStacks)
-
-        var splitTabs: [Tab]? {
-            switch self {
-            case .split(_, _, let tabs, _, _), .stackedSplit(_, _, let tabs, _, _): return tabs
-            case .tab, .folder: return nil
-            }
-        }
-    }
-
-    struct Space: Equatable {
-        let title: String?
-        let icon: SidebarGroupIcon?
-        let theme: SpaceTheme?
-        let profile: ProfileKey
-        let pinned: [Item]
-        var id: String? = nil
-        var today: [Item] = []
-
-        init(title: String?, icon: SidebarGroupIcon?, theme: SpaceTheme?, profile: ProfileKey, pinned: [Item], id: String? = nil, today: [Item] = []) {
-            self.title = title
-            self.icon = icon
-            self.theme = theme
-            self.profile = profile
-            self.pinned = pinned
-            self.id = id
-            self.today = today
-        }
-    }
-
-    let spaces: [Space]
-    let favorites: [ProfileKey: [Item]]
-    package var autoArchiveHours: [ProfileKey: Double] = [:]
-    let skippedItemCount: Int
-
-    var profiles: [ProfileKey] {
-        let referenced = spaces.map(\.profile) + favoriteOrder
-        var result: [ProfileKey] = []
-        for key in (referenced.contains(.standard) ? [.standard] : []) + referenced where !result.contains(key) {
-            result.append(key)
-        }
-        return result
-    }
-    private let favoriteOrder: [ProfileKey]
-
-    package static func profileKey(directory: String) -> ProfileKey {
-        directory == "Default" ? .standard : .custom(directory: directory)
-    }
-
-    static let maximumDepth = 128
-    static let maximumItems = 50_000
-
-    package init(data: Data) throws {
+extension SidebarImport {
+    package init(arcData data: Data) throws {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let containers = (root["sidebar"] as? [String: Any])?["containers"] as? [Any],
               let container = containers.lazy.compactMap({ $0 as? [String: Any] }).first(where: { $0["spaces"] is [Any] }) else {
@@ -102,10 +30,8 @@ package struct ArcSidebarImport: Equatable {
             favorites[key] = parser.children(of: item, depth: 0, inFavorites: true)
             order.append(key)
         }
-        self.spaces = spaces
-        self.favorites = favorites
-        favoriteOrder = order
-        skippedItemCount = parser.skipped
+        self.init(spaces: spaces, favorites: order.compactMap { key in favorites[key].map { (key, $0) } },
+                  skippedItemCount: parser.skipped)
     }
 
     private static func containerID(_ space: [String: Any], _ section: String) -> String? {
@@ -236,7 +162,7 @@ package struct ArcSidebarImport: Equatable {
         init(container: [String: Any]) {
             for (id, value) in Self.pairs(container["items"]) {
                 guard let id = id as? String, let item = value as? [String: Any], items[id] == nil,
-                      items.count < ArcSidebarImport.maximumItems else { skipped += 1; continue }
+                      items.count < SidebarImport.maximumItems else { skipped += 1; continue }
                 items[id] = item
             }
         }
@@ -256,7 +182,7 @@ package struct ArcSidebarImport: Equatable {
         }
 
         mutating func children(of container: [String: Any], depth: Int, inFavorites: Bool) -> [Item] {
-            guard depth < ArcSidebarImport.maximumDepth else { skipped += 1; return [] }
+            guard depth < SidebarImport.maximumDepth else { skipped += 1; return [] }
             var result: [Item] = []
             for child in container["childrenIds"] as? [Any] ?? [] {
                 guard let taken = take(child) else { continue }
@@ -269,7 +195,7 @@ package struct ArcSidebarImport: Equatable {
             let title = (item["title"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             if Self.data(item, "tab") != nil { return tab(item).map { [.tab($0)] } ?? [] }
             if let list = Self.data(item, "list"), !inFavorites {
-                let icon = ArcSidebarImport.icon((list["customInfo"] as? [String: Any])?["iconType"])
+                let icon = SidebarImport.icon((list["customInfo"] as? [String: Any])?["iconType"])
                 return [.folder(title: title ?? "Imported folder", icon: icon,
                                 children: children(of: item, depth: depth, inFavorites: false))]
             }
@@ -277,7 +203,7 @@ package struct ArcSidebarImport: Equatable {
                 var entries: [SplitEntry] = []
                 for child in item["childrenIds"] as? [Any] ?? [] {
                     guard let taken = take(child) else { continue }
-                    if let nested = Self.data(taken.item, "splitView"), depth + 1 < ArcSidebarImport.maximumDepth {
+                    if let nested = Self.data(taken.item, "splitView"), depth + 1 < SidebarImport.maximumDepth {
                         let found = nestedTabs(of: taken.item, depth: depth + 1)
                         if found.tabs.isEmpty { skipped += 1; continue }
                         entries.append(SplitEntry(id: taken.id, tabs: found.tabs, orientation: Self.orientation(nested),
@@ -292,7 +218,7 @@ package struct ArcSidebarImport: Equatable {
                 guard members.count > 1 else { return members.map { .tab($0.tab) } }
                 let weights = Self.weights(split)
                 let orientation = Self.orientation(split)
-                let icon = ArcSidebarImport.icon((split["customInfo"] as? [String: Any])?["iconType"])
+                let icon = SidebarImport.icon((split["customInfo"] as? [String: Any])?["iconType"])
                 if entries.contains(where: { $0.orientation != nil }) {
                     return Self.nestedSplit(title: title, icon: icon, orientation: orientation, weights: weights, entries: entries)
                 }
@@ -329,7 +255,7 @@ package struct ArcSidebarImport: Equatable {
             var tabs: [(id: String, tab: Tab)] = [], deeper = false
             for child in item["childrenIds"] as? [Any] ?? [] {
                 guard let taken = take(child) else { continue }
-                if Self.data(taken.item, "splitView") != nil, depth + 1 < ArcSidebarImport.maximumDepth {
+                if Self.data(taken.item, "splitView") != nil, depth + 1 < SidebarImport.maximumDepth {
                     let found = nestedTabs(of: taken.item, depth: depth + 1).tabs
                     if found.isEmpty { skipped += 1 } else { tabs += found; deeper = true }
                 } else if Self.data(taken.item, "tab") == nil { drop(taken.item, depth: depth + 1) }
@@ -370,7 +296,7 @@ package struct ArcSidebarImport: Equatable {
 
         private mutating func drop(_ item: [String: Any], depth: Int) {
             skipped += 1
-            guard depth < ArcSidebarImport.maximumDepth else { return }
+            guard depth < SidebarImport.maximumDepth else { return }
             for child in item["childrenIds"] as? [Any] ?? [] {
                 if let taken = take(child) { drop(taken.item, depth: depth + 1) }
             }
@@ -388,226 +314,5 @@ package struct ArcSidebarImport: Equatable {
                        customTitle: (item["title"] as? String).flatMap { $0.isEmpty ? nil : $0 },
                        isMuted: tab["savedMuteStatus"] as? String == "mute")
         }
-    }
-}
-
-extension ArcSidebarImport {
-    package struct Result {
-        var state: BrowserState
-        var destinations: [ProfileKey: BrowserImportDestination]
-
-        init(state: BrowserState, destinations: [ProfileKey: BrowserImportDestination]) {
-            self.state = state
-            self.destinations = destinations
-        }
-    }
-
-    func inserting(into state: BrowserState, profiles: [(key: ProfileKey, name: String)],
-                   standardProfileID: UUID, target: (key: ProfileKey, profileID: UUID)? = nil, at date: Date) throws -> Result {
-        func live(_ id: UUID) -> Bool {
-            state.profiles.contains { $0.id == id } && !state.profileRemovals.contains { $0.profileID == id }
-        }
-        guard live(standardProfileID), target.map({ live($0.profileID) }) != false else { throw CocoaError(.userCancelled) }
-        var next = state
-        var mapped: [ProfileKey: UUID] = [:], names: [ProfileKey: String] = [:]
-        for (key, rawName) in profiles where mapped[key] == nil {
-            let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
-            names[key] = name.isEmpty ? "Imported Profile" : name
-            if let target, target.key == key {
-                mapped[key] = target.profileID
-                names[key] = next.profiles.first { $0.id == target.profileID }?.name ?? names[key]
-                continue
-            }
-            if key == .standard && target == nil { mapped[key] = standardProfileID; continue }
-            if let existing = next.profiles.first(where: { profile in live(profile.id)
-                && profile.id != standardProfileID && profile.id != target?.profileID && !mapped.values.contains(profile.id)
-                && profile.name.caseInsensitiveCompare(names[key]!) == .orderedSame }) {
-                mapped[key] = existing.id
-            } else {
-                let profile = BrowserProfile(id: UUID(), name: names[key]!, autoArchiveHours: next.autoArchiveDefaultHours)
-                next.profiles.append(profile); mapped[key] = profile.id
-            }
-        }
-
-        var destinations: [ProfileKey: BrowserImportDestination] = [:]
-        func appendSpace(title: String?, icon: SidebarGroupIcon?, theme: SpaceTheme?, profileID: UUID) -> UUID {
-            var space = BrowserSpace(id: UUID(), name: title ?? "", symbol: "circle.fill", color: "B9B5D4", profileID: profileID)
-            space.customIcon = icon
-            if let theme { space.theme = theme }
-            space.updateDisplayName(position: next.spaces.count)
-            next.spaces.append(space)
-            return space.id
-        }
-        func makeTab(_ tab: Tab, spaceID: UUID, profileID: UUID, kind: TabKind, folderID: UUID?) -> UUID {
-            let id = UUID()
-            next.tabs.append(BrowserTab(id: id, spaceID: spaceID, profileID: profileID, url: tab.url, title: tab.title,
-                kind: kind, folderID: folderID, createdAt: date, lastAccessed: date,
-                savedURL: tab.url, savedTitle: tab.title, customTitle: tab.customTitle, isMuted: tab.isMuted))
-            return id
-        }
-        func makeSplit(title: String?, icon: SidebarGroupIcon?, tabs: [Tab], orientation: SplitOrientation,
-                       factors: [Double], stacks: BrowserSplitStacks? = nil,
-                       spaceID: UUID, profileID: UUID, kind: TabKind, folderID: UUID?) -> SidebarItemReference {
-            let ids = tabs.map { makeTab($0, spaceID: spaceID, profileID: profileID, kind: kind, folderID: folderID) }
-            next.splitLayouts.append(BrowserSplitLayout(id: UUID(), customTitle: title, customIcon: icon, spaceID: spaceID,
-                tabIDs: ids, orientation: orientation, widthFactors: stacks?.flattenedFactors ?? factors, stacks: stacks))
-            return .tab(ids[0])
-        }
-        func insertPinned(_ items: [Item], spaceID: UUID, profileID: UUID, folderID: UUID?) {
-            let location = SidebarContainerLocation(spaceID: spaceID, folderID: folderID, section: .pinned)
-            var order = next.sidebarItemOrder[location.key] ?? []
-            for item in items {
-                switch item {
-                case .tab(let tab):
-                    order.append(.tab(makeTab(tab, spaceID: spaceID, profileID: profileID, kind: .pinned, folderID: folderID)))
-                case let .folder(title, icon, children):
-                    let folder = BrowserFolder(id: UUID(), spaceID: spaceID, name: title, parentID: folderID, customIcon: icon)
-                    next.folders.append(folder)
-                    order.append(.folder(folder.id))
-                    insertPinned(children, spaceID: spaceID, profileID: profileID, folderID: folder.id)
-                case let .split(title, icon, tabs, orientation, factors):
-                    order.append(makeSplit(title: title, icon: icon, tabs: tabs, orientation: orientation, factors: factors,
-                                           spaceID: spaceID, profileID: profileID, kind: .pinned, folderID: folderID))
-                case let .stackedSplit(title, icon, tabs, orientation, stacks):
-                    order.append(makeSplit(title: title, icon: icon, tabs: tabs, orientation: orientation,
-                                           factors: stacks.flattenedFactors, stacks: stacks,
-                                           spaceID: spaceID, profileID: profileID, kind: .pinned, folderID: folderID))
-                }
-            }
-            next.sidebarItemOrder[location.key] = order
-        }
-
-        func insertToday(_ items: [Item], spaceID: UUID, profileID: UUID) {
-            let location = SidebarContainerLocation(spaceID: spaceID, folderID: nil, section: .today)
-            var order = next.sidebarItemOrder[location.key] ?? []
-            func append(_ items: [Item]) {
-                for item in items {
-                    switch item {
-                    case .tab(let tab):
-                        order.append(.tab(makeTab(tab, spaceID: spaceID, profileID: profileID, kind: .today, folderID: nil)))
-                    case .folder(_, _, let children): append(children)
-                    case let .split(title, icon, tabs, orientation, factors):
-                        order.append(makeSplit(title: title, icon: icon, tabs: tabs, orientation: orientation, factors: factors,
-                                               spaceID: spaceID, profileID: profileID, kind: .today, folderID: nil))
-                    case let .stackedSplit(title, icon, tabs, orientation, stacks):
-                        order.append(makeSplit(title: title, icon: icon, tabs: tabs, orientation: orientation,
-                                               factors: stacks.flattenedFactors, stacks: stacks,
-                                               spaceID: spaceID, profileID: profileID, kind: .today, folderID: nil))
-                    }
-                }
-            }
-            append(items)
-            next.sidebarItemOrder[location.key] = order
-        }
-        func pinnedKeys(_ items: [Item]) -> [String] {
-            items.flatMap { item -> [String] in
-                switch item {
-                case .tab(let tab): return [SavedTabURLComparison.key(tab.url)]
-                case .folder(_, _, let children): return pinnedKeys(children)
-                case .split(_, _, let tabs, _, _), .stackedSplit(_, _, let tabs, _, _): return tabs.map { SavedTabURLComparison.key($0.url) }
-                }
-            }.sorted()
-        }
-        func alreadyImported(_ space: Space, profileID: UUID) -> BrowserSpace? {
-            if let arcID = space.id, let spaceID = state.arcImportedSpaces[arcID] {
-                return state.spaces.first { $0.id == spaceID && $0.profileID == profileID }
-            }
-            let keys = pinnedKeys(space.pinned)
-            guard !keys.isEmpty else { return nil }
-            return state.spaces.first { existing in
-                existing.profileID == profileID && !next.arcImportedSpaces.values.contains(existing.id)
-                    && existing.title?.lowercased() == space.title?.lowercased()
-                    && state.openTabs(where: { $0.spaceID == existing.id && $0.kind == .pinned })
-                        .map { SavedTabURLComparison.key($0.savedURL) }.sorted() == keys
-            }
-        }
-
-        for space in spaces {
-            guard let profileID = mapped[space.profile] else { continue }
-            if let existing = alreadyImported(space, profileID: profileID) {
-                if let arcID = space.id { next.arcImportedSpaces[arcID] = existing.id }
-                if destinations[space.profile] == nil { destinations[space.profile] = .init(spaceID: existing.id, profileID: profileID) }
-                continue
-            }
-            let id = appendSpace(title: space.title, icon: space.icon, theme: space.theme, profileID: profileID)
-            if destinations[space.profile] == nil { destinations[space.profile] = .init(spaceID: id, profileID: profileID) }
-            insertPinned(space.pinned, spaceID: id, profileID: profileID, folderID: nil)
-            insertToday(space.today, spaceID: id, profileID: profileID)
-            if let arcID = space.id { next.arcImportedSpaces[arcID] = id }
-        }
-        var archiveChanged = false
-        for (key, hours) in autoArchiveHours {
-            guard let profileID = mapped[key], let index = next.profiles.firstIndex(where: { $0.id == profileID }),
-                  next.profiles[index].autoArchiveHours != hours else { continue }
-            next.profiles[index].autoArchiveHours = hours
-            archiveChanged = true
-        }
-        if archiveChanged {
-            next.autoArchiveEducationEligible = false
-            let shared = Set(next.profiles.map(\.autoArchiveHours))
-            if shared.count == 1, let hours = shared.first { next.autoArchiveDefaultHours = hours }
-        }
-        for (key, _) in profiles where destinations[key] == nil {
-            guard let profileID = mapped[key] else { continue }
-            let spaceID = next.spaces.first { $0.profileID == profileID }?.id
-                ?? appendSpace(title: names[key], icon: nil, theme: nil, profileID: profileID)
-            destinations[key] = .init(spaceID: spaceID, profileID: profileID)
-        }
-        for key in self.profiles {
-            guard let items = favorites[key], !items.isEmpty else { continue }
-            guard let destination = destinations[key] else { continue }
-            let profileID = destination.profileID
-            let location = SidebarContainerLocation(spaceID: destination.spaceID, folderID: nil, section: .favorite,
-                                                    profileID: profileID)
-            var order = SidebarHierarchy.children(in: location, state: next).map { item -> SidebarItemReference in
-                if case .split(let id) = item, let anchor = next.splitLayouts.first(where: { $0.id == id })?.sidebarAnchorID {
-                    return .tab(anchor)
-                }
-                return item
-            }
-            var existing = Set(next.openTabs(where: { $0.profileID == profileID && $0.kind == .favorite })
-                .map { SavedTabURLComparison.key($0.savedURL) })
-            for item in items {
-                if case .tab(let tab) = item, existing.contains(SavedTabURLComparison.key(tab.url)) { continue }
-                if let tabs = item.splitTabs, tabs.allSatisfy({ existing.contains(SavedTabURLComparison.key($0.url)) }) { continue }
-                guard order.count < 12 else { continue }
-                switch item {
-                case .tab(let tab):
-                    existing.insert(SavedTabURLComparison.key(tab.url))
-                    order.append(.tab(makeTab(tab, spaceID: destination.spaceID, profileID: profileID, kind: .favorite, folderID: nil)))
-                case let .split(title, icon, tabs, orientation, factors):
-                    let fresh = tabs.indices.filter { existing.insert(SavedTabURLComparison.key(tabs[$0].url)).inserted }
-                    if fresh.count == 1 {
-                        order.append(.tab(makeTab(tabs[fresh[0]], spaceID: destination.spaceID, profileID: profileID,
-                                                  kind: .favorite, folderID: nil)))
-                    } else {
-                        let widths = fresh.count == tabs.count ? factors
-                            : Array(repeating: 1 / Double(fresh.count), count: fresh.count)
-                        order.append(makeSplit(title: title, icon: icon, tabs: fresh.map { tabs[$0] }, orientation: orientation,
-                            factors: widths, spaceID: destination.spaceID, profileID: profileID, kind: .favorite, folderID: nil))
-                    }
-                case let .stackedSplit(title, icon, tabs, orientation, stacks):
-                    let fresh = tabs.indices.filter { existing.insert(SavedTabURLComparison.key(tabs[$0].url)).inserted }
-                    if fresh.count == 1 {
-                        order.append(.tab(makeTab(tabs[fresh[0]], spaceID: destination.spaceID, profileID: profileID,
-                                                  kind: .favorite, folderID: nil)))
-                    } else {
-                        let shape = tabs.map { _ in UUID() }
-                        let whole = BrowserSplitLayout(id: UUID(), spaceID: destination.spaceID, tabIDs: shape,
-                            orientation: orientation, widthFactors: stacks.flattenedFactors, stacks: stacks)
-                        var part = BrowserSplitLayout(id: whole.id, spaceID: destination.spaceID, tabIDs: fresh.map { shape[$0] },
-                            orientation: orientation, widthFactors: Array(repeating: 1 / Double(fresh.count), count: fresh.count),
-                            stacks: nil)
-                        part.restack(from: whole)
-                        order.append(makeSplit(title: title, icon: icon, tabs: fresh.map { tabs[$0] }, orientation: part.orientation,
-                            factors: part.widthFactors, stacks: part.stacks,
-                            spaceID: destination.spaceID, profileID: profileID, kind: .favorite, folderID: nil))
-                    }
-                case .folder: break
-                }
-            }
-            next.sidebarItemOrder[location.key] = order
-        }
-        return Result(state: next, destinations: destinations)
     }
 }
