@@ -183,7 +183,8 @@ struct SafariTabsMapping {
     }
 
     private func tab(_ row: Row) -> Tab? {
-        guard let url = webAddress(row.attributes.localURL) ?? webAddress(row.url) else { return nil }
+        if let local = row.attributes.localURL, let tab = Tab.web(url: local, title: title(row)) { return tab }
+        guard let url = webAddress(row.url) else { return nil }
         return .web(url: url, title: title(row))
     }
 
