@@ -359,9 +359,10 @@ struct ChromiumFlavorExtrasTests {
         let input = session([[operaTab(1, nil), operaTab(2, "9"), operaTab(3, "junk"), operaTab(4, "2")]])
         try withProfile(preferences: operaPreferences) { profile in
             let spaces = try #require(ChromiumFlavorExtras.spaces(input, flavor: .opera, profile: importProfile(profile)))
-            #expect(spaces.map(\.space.title) == ["Work", "Gaming"])
+            #expect(spaces.map(\.space.title) == ["Work", "Workspace 1", "Gaming"])
             #expect(spaces[0].windowTabs == [1: [1, 2, 3]])
-            #expect(spaces[1].windowTabs == [1: [4]])
+            #expect(spaces[1].windowTabs.isEmpty)
+            #expect(spaces[2].windowTabs == [1: [4]])
         }
     }
 
