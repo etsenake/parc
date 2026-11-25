@@ -281,6 +281,87 @@ struct ChromiumFlavorExtrasTests {
         }
     }
 
+    @Test func vivaldiWorkspaceIDsBeyondExactIntegerRangeNeverCrashAndKeepTheirTabs() throws {
+        let stack = "33333333-3333-4333-8333-333333333333"
+        let input = session([[
+            vivaldiTab(1, "https://a.example.com/", pinned: true, ext: #"{"workspaceId":1e300,"group":"\#(stack)"}"#),
+            vivaldiTab(2, "https://b.example.com/", pinned: true, ext: #"{"workspaceId":1e300,"group":"\#(stack)"}"#),
+            vivaldiTab(3, "https://c.example.com/", ext: #"{"workspaceId":1e300,"tiling":{"id":"t","index":0,"layout":"row"}}"#),
+            vivaldiTab(4, "https://d.example.com/", ext: #"{"workspaceId":1e300,"tiling":{"id":"t","index":1,"layout":"row"}}"#)
+        ]])
+        try withProfile(preferences: vivaldiPreferences) { profile in
+            let result = ChromiumFlavorExtras.adjusted(input, flavor: .vivaldi, profileDirectory: profile)
+            #expect(result.windows[0].tabs.map(\.id) == [1, 2, 3, 4])
+            #expect(result.windows[0].tabs.filter { $0.group != nil }.map(\.id) == [1, 2])
+            #expect(result.windows[0].tabs.filter { $0.split != nil }.map(\.id) == [3, 4])
+            let spaces = try #require(ChromiumFlavorExtras.spaces(input, flavor: .vivaldi, profile: importProfile(profile)))
+            #expect(spaces[0].windowTabs == [1: [1, 2, 3, 4]])
+        }
+    }
+
+    @Test func vivaldiWorkspaceListsAreCappedAndExtraTabsFallToTheHomeSpace() throws {
+        let entries = (1...70).map { #"{"id":\#($0),"name":"W\#($0)"}"# }.joined(separator: ",")
+        let prefs = #"{"vivaldi":{"workspaces":{"list":[\#(entries)]}}}"#
+        let input = session([[vivaldiTab(1, "https://a.example.com/", ext: #"{"workspaceId":64}"#),
+                              vivaldiTab(2, "https://b.example.com/", ext: #"{"workspaceId":65}"#),
+                              vivaldiTab(3, "https://c.example.com/", ext: #"{"workspaceId":70}"#)]])
+        try withProfile(preferences: prefs) { profile in
+            let spaces = try #require(ChromiumFlavorExtras.spaces(input, flavor: .vivaldi, profile: importProfile(profile)))
+            #expect(spaces.count == 65)
+            #expect(spaces[0].space.placement == .profileHome)
+            #expect(spaces[0].windowTabs == [1: [2, 3]])
+            #expect(spaces[64].windowTabs == [1: [1]])
+        }
+    }
+
+    @Test func vivaldiTilesOfFiveTabsKeepEveryTabExactlyOnce() throws {
+        let orders = [1: 4, 2: 2, 4: 0, 5: 3, 6: 1]
+        let tabs = (1...6).map { id in
+            orders[id].map { vivaldiTab(Int32(id), "https://t\(id).example.com/", ext: #"{"tiling":{"id":"big","index":\#($0),"layout":"row"}}"#) }
+                ?? vivaldiTab(Int32(id), "https://t\(id).example.com/", ext: "{}")
+        }
+        var input = session([tabs])
+        input.windows[0].selectedIndex = 1
+        try withProfile { profile in
+            let result = ChromiumFlavorExtras.adjusted(input, flavor: .vivaldi, profileDirectory: profile)
+            let ids = result.windows[0].tabs.map(\.id)
+            #expect(ids == [1, 4, 3, 6, 2, 5])
+            #expect(Set(ids).count == 6)
+            #expect(result.windows[0].tabs.filter { $0.split != nil }.map(\.id) == [4, 6, 2, 5])
+            #expect(result.windows[0].tabs[result.windows[0].selectedIndex].id == 2)
+        }
+    }
+
+    @Test func vivaldiTilesMovingTabsKeepTheSelectedTabSelected() throws {
+        var input = session([[vivaldiTab(1, "https://a.example.com/", ext: #"{"tiling":{"id":"t","index":1,"layout":"row"}}"#),
+                              vivaldiTab(2, "https://b.example.com/", ext: #"{"tiling":{"id":"t","index":0,"layout":"row"}}"#)]])
+        input.windows[0].selectedIndex = 0
+        try withProfile { profile in
+            let result = ChromiumFlavorExtras.adjusted(input, flavor: .vivaldi, profileDirectory: profile)
+            #expect(result.windows[0].tabs.map(\.id) == [2, 1])
+            #expect(result.windows[0].selectedIndex == 1)
+        }
+    }
+
+    @Test func vivaldiTilesStraddlingPinnedAndUnpinnedTabsUseOnlyTheUnpinnedOnes() throws {
+        let input = session([[
+            vivaldiTab(1, "https://a.example.com/", pinned: true, ext: #"{"tiling":{"id":"t","index":0,"layout":"row"}}"#),
+            vivaldiTab(2, "https://b.example.com/", ext: "{}"),
+            vivaldiTab(3, "https://c.example.com/", ext: #"{"tiling":{"id":"t","index":2,"layout":"row"}}"#),
+            vivaldiTab(4, "https://d.example.com/", ext: #"{"tiling":{"id":"t","index":1,"layout":"row"}}"#),
+            vivaldiTab(5, "https://e.example.com/", pinned: true, ext: #"{"tiling":{"id":"solo","index":0,"layout":"row"}}"#),
+            vivaldiTab(6, "https://f.example.com/", ext: #"{"tiling":{"id":"solo","index":1,"layout":"row"}}"#)
+        ]])
+        try withProfile { profile in
+            let result = ChromiumFlavorExtras.adjusted(input, flavor: .vivaldi, profileDirectory: profile)
+            let tabs = result.windows[0].tabs
+            #expect(tabs.map(\.id) == [1, 2, 4, 3, 5, 6])
+            #expect(tabs.map(\.pinned) == [true, false, false, false, true, false])
+            #expect(tabs.filter { $0.split != nil }.map(\.id) == [4, 3])
+            #expect(result.splits.count == 1)
+        }
+    }
+
     @Test func vivaldiSpacesFollowTheWorkspaceListAndKeepEveryTab() throws {
         try withProfile(preferences: vivaldiPreferences) { profile in
             let spaces = try #require(ChromiumFlavorExtras.spaces(vivaldiSession(), flavor: .vivaldi, profile: importProfile(profile)))
@@ -360,9 +441,38 @@ struct ChromiumFlavorExtrasTests {
         try withProfile(preferences: operaPreferences) { profile in
             let spaces = try #require(ChromiumFlavorExtras.spaces(input, flavor: .opera, profile: importProfile(profile)))
             #expect(spaces.map(\.space.title) == ["Work", "Workspace 1", "Gaming"])
-            #expect(spaces[0].windowTabs == [1: [1, 2, 3]])
-            #expect(spaces[1].windowTabs.isEmpty)
+            #expect(spaces[0].windowTabs == [1: [2, 3]])
+            #expect(spaces[1].windowTabs == [1: [1]])
             #expect(spaces[2].windowTabs == [1: [4]])
+        }
+    }
+
+    @Test func operaTabsWithoutARecordFallBackToTheFirstWorkspaceWhenZeroIsNotConfigured() throws {
+        let prefs = #"{"ui":{"workspaces":{"config":{"order":[3,1],"names":{"1":"One","3":"Three"}}}}}"#
+        try withProfile(preferences: prefs) { profile in
+            let spaces = try #require(ChromiumFlavorExtras.spaces(session([[operaTab(1, nil), operaTab(2, "1")]]), flavor: .opera,
+                                                                  profile: importProfile(profile)))
+            #expect(spaces.map(\.space.title) == ["Three", "One"])
+            #expect(spaces[0].windowTabs == [1: [1]])
+            #expect(spaces[1].windowTabs == [1: [2]])
+        }
+    }
+
+    @Test func operaWorkspaceListsAreCappedAndExtraTabsFallToTheFirstSpace() throws {
+        let order = (0..<70).map(String.init).joined(separator: ",")
+        let names = (0..<70).map { #""\#($0)":"W\#($0)""# }.joined(separator: ",")
+        let prefs = #"{"ui":{"workspaces":{"config":{"order":[\#(order)],"names":{\#(names)}}}}}"#
+        try withProfile(preferences: prefs) { profile in
+            let input = session([[operaTab(1, "63"), operaTab(2, "64"), operaTab(3, "69")]])
+            let spaces = try #require(ChromiumFlavorExtras.spaces(input, flavor: .opera, profile: importProfile(profile)))
+            #expect(spaces.count == 64)
+            #expect(spaces[0].windowTabs == [1: [2, 3]])
+            #expect(spaces[63].windowTabs == [1: [1]])
+        }
+        let onlyNames = (0..<70).map { #""\#($0)":"W\#($0)""# }.joined(separator: ",")
+        try withProfile(preferences: #"{"ui":{"workspaces":{"config":{"names":{\#(onlyNames)}}}}}"#) { profile in
+            let spaces = try #require(ChromiumFlavorExtras.spaces(session([[operaTab(1, "0")]]), flavor: .opera, profile: importProfile(profile)))
+            #expect(spaces.count == 64)
         }
     }
 

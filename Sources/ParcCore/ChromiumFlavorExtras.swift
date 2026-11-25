@@ -152,6 +152,7 @@ private enum VivaldiExtras {
     static let fixedTitleKey = "vivaldi.fixedTitle"
     static let maxExtBytes = 1024 * 1024
     static let maxTileTabs = 4
+    static let maxSpaces = 64
     static let stackedLayouts: Set<String> = ["column"]
 
     struct Workspace {
@@ -185,8 +186,12 @@ private enum VivaldiExtras {
     }
 
     static func workspaceID(_ ext: [String: Any]) -> Double? {
-        guard let value = number(ext["workspaceId"]), value > 0 else { return nil }
+        guard let value = number(ext["workspaceId"]), isWorkspaceID(value) else { return nil }
         return value
+    }
+
+    static func isWorkspaceID(_ id: Double) -> Bool {
+        id > 0 && id < 9_007_199_254_740_992 && id == id.rounded()
     }
 
     static func workspaceSuffix(_ ext: [String: Any]) -> String {
@@ -211,7 +216,7 @@ private enum VivaldiExtras {
         var seen = Set<Double>()
         var result: [Workspace] = []
         for case let entry as [String: Any] in list {
-            guard let id = number(entry["id"]), id > 0, id < 9_007_199_254_740_992, id == id.rounded(),
+            guard result.count < maxSpaces, let id = number(entry["id"]), isWorkspaceID(id),
                   seen.insert(id).inserted else { continue }
             result.append(Workspace(id: id, name: (entry["name"] as? String) ?? "", emoji: string(entry, "emoji")))
         }
@@ -271,10 +276,13 @@ private enum VivaldiExtras {
             members[key, default: []].append((index, number(tiling["index"]) ?? Double(index)))
         }
         for key in keys {
-            guard let group = members[key], group.count >= 2 else { continue }
+            var group = members[key] ?? []
+            let pinnedCount = group.filter { tabs[$0.position].pinned }.count
+            if pinnedCount > 0 && pinnedCount < group.count { group = group.filter { !tabs[$0.position].pinned } }
+            guard group.count >= 2 else { continue }
             let ordered = group.enumerated().sorted { ($0.element.order, $0.offset) < ($1.element.order, $1.offset) }
                 .prefix(maxTileTabs).map { $0.element.position }
-            let positions = group.map { $0.position }.sorted().prefix(ordered.count)
+            let positions = ordered.sorted()
             let moved = ordered.map { tabs[$0] }
             for (slot, tab) in zip(positions, moved) { tabs[slot] = tab }
             let layout = ((exts[moved[0].id]?["tiling"] as? [String: Any])?["layout"] as? String) ?? ""
@@ -289,7 +297,12 @@ private enum VivaldiExtras {
         let keptIDs = Set(tabs.map(\.id))
         let removedBefore = window.tabs.prefix(max(window.selectedIndex, 0)).filter { !keptIDs.contains($0.id) }.count
         copy.tabs = tabs
-        copy.selectedIndex = min(max(window.selectedIndex - removedBefore, 0), max(tabs.count - 1, 0))
+        if window.tabs.indices.contains(window.selectedIndex),
+           let moved = tabs.firstIndex(where: { $0.id == window.tabs[window.selectedIndex].id }) {
+            copy.selectedIndex = moved
+        } else {
+            copy.selectedIndex = min(max(window.selectedIndex - removedBefore, 0), max(tabs.count - 1, 0))
+        }
         return copy
     }
 
@@ -331,6 +344,7 @@ private enum VivaldiExtras {
 private enum OperaExtras {
     static let stateKey = "workspaces_state"
     static let customIcon = "add-custom-icon"
+    static let maxSpaces = 64
 
     struct Workspace {
         let id: Int
@@ -368,9 +382,10 @@ private enum OperaExtras {
         var order: [Int] = []
         var seen = Set<Int>()
         for value in (config("order") as? [Any]) ?? [] {
+            if order.count >= maxSpaces { break }
             if let id = integer(value), id >= 0, seen.insert(id).inserted { order.append(id) }
         }
-        for id in ids(names).sorted() where seen.insert(id).inserted { order.append(id) }
+        for id in ids(names).sorted() where order.count < maxSpaces && seen.insert(id).inserted { order.append(id) }
         return order.map { id in
             let name = (entry(names, id: id) as? String).flatMap { $0.isEmpty ? nil : $0 }
             let custom = (entry(config("icons"), id: id) as? String) == customIcon
@@ -388,7 +403,7 @@ private enum OperaExtras {
         var membership: [Int: [Int32: Set<Int32>]] = [:]
         for window in session.windows {
             for tab in window.tabs {
-                let wanted = integer(tab.extraData[stateKey])
+                let wanted = tab.extraData[stateKey] == nil ? 0 : integer(tab.extraData[stateKey])
                 let id = wanted.flatMap { known.contains($0) ? $0 : nil } ?? first.id
                 membership[id, default: [:]][window.id, default: []].insert(tab.id)
             }
