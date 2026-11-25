@@ -33,8 +33,25 @@ package enum ZenSidebarReader {
                                         separateEssentials: separateEssentials(in: directory))
         let routing = routes(in: directory, spaces: Set(session.spaceUUIDs))
         var sidebar = session.sidebar()
-        sidebar.routes = routing.routes
+        sidebar.routes = routing.routes + siteRoutes(in: directory, folder: directory.lastPathComponent)
+        if let closed = try? FirefoxSession.read(profile: directory)?.closedTabs {
+            sidebar.archive = closed.map { SidebarImport.ArchivedTab(tab: $0.tab, archivedAt: $0.closedAt, reason: .manual,
+                                                                     spaceID: nil, profile: profile.key) }
+        }
         return (sidebar, routing.regex)
+    }
+
+    static func siteRoutes(in directory: URL, folder: String) -> [SidebarImport.Route] {
+        guard let data = plainData(directory.appendingPathComponent("containers.json")),
+              let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let associations = root["siteAssociations"] as? [String: Any] else { return [] }
+        let known = containers(in: directory)
+        return associations.keys.sorted().compactMap { host in
+            guard let id = (associations[host] as? NSNumber)?.intValue, known[id] != nil,
+                  !host.isEmpty, !host.contains("/"), !host.contains(" ") else { return nil }
+            return SidebarImport.Route(conditions: [.init(style: .contains, pattern: host.lowercased())],
+                                       destination: .profile(.extra("zen:\(folder):\(id)")))
+        }
     }
 
     static func sessionCandidates(in directory: URL) -> [URL] {

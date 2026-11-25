@@ -21,11 +21,10 @@ the same name, case-insensitively, or create a named destination. Each destinati
 is rechecked before use. Native imports preserve existing cookies
 (`skipExistingCookies=true`); the current flow has no cookie-replacement control.
 
-Arc imports also read the source sidebar snapshot to bring Spaces, pinned tabs,
-Favorites and automatic-archive settings into the corresponding Parc Profiles.
-If that snapshot cannot be read, ordinary browser-data import still uses the
-normal destination policy. Safari's export file is the file-based route
-(below).
+Every supported browser's tab organisation comes over before its other data, as
+described under [tabs, Spaces and Favorites](#tabs-spaces-and-favorites). If it
+cannot be read, ordinary browser-data import still uses the normal destination
+policy. Safari's export file is the file-based route (below).
 Native category capabilities and access failures determine what can be imported;
 Swift bookmark/progress models never receive native credential contents.
 Choosing a Chromium-family browser replaces the intro line with a note that
@@ -69,12 +68,50 @@ password-then-bookmark order.
 Accepted/discarded result pages cannot reappear later. A cancelled import keeps
 returned bookmarks but suppresses another optional import stage.
 
+## Tabs, Spaces and Favorites
+
+Each supported browser's own reader turns its tab organisation into one
+`SidebarImport`, which the store inserts in a single save before any other data
+imports. Readers work on private copies of the source files, skip what they
+cannot use and report real losses as import warnings. A Space remembers the
+source Space or window it came from, so importing again adds nothing twice.
+Browsers whose windows are not named Spaces put their first window into the
+Space the import started from and give every further window a Space of its own.
+Tab groups become Pinned folders that open or close as they did, split views keep
+their sides and sizes, closed tabs from the last 60 days join the archive, and
+link routing rules join Air Traffic Control without duplicates.
+
+| Browser | What comes over, and from where |
+| --- | --- |
+| Arc | Spaces with their Profiles, pinned tabs, folders and their open state, Tidy Tabs groups, splits, Today tabs, unread dots, a collapsed Pinned section, Favorites, the archive and Air Traffic Control rules, from the sidebar, windows, archive and routing files. |
+| Zen | Spaces with their themes, each container as its own Profile, Essentials as Favorites, pinned tabs, nested folders, splits, renamed tabs, open tabs and space routing, from `zen-sessions.jsonlz4` (or Zen's own backups) and the routing file. |
+| Firefox | Pinned tabs, tab groups, split views, open tabs, saved groups, closed tabs and the sites pinned on the New Tab page as Favorites, from the session file Firefox itself would restore. Profiles made with Firefox's newer profile manager are listed too. |
+| Chrome, Chromium, Brave, Edge, Comet, Helium | Pinned tabs, tab groups, split views, open tabs per window, closed tabs and saved tab groups, from the session files and the saved-group store. Helium's pins keep their home address; Brave's sidebar web panels become Favorites. |
+| Vivaldi | Workspaces as Spaces, stacks as folders, tiles as splits and renamed tabs, from the session files and preferences. |
+| Opera, Opera GX | Workspaces as Spaces with each tab in its own workspace, Tab Islands as folders and split screens, from the session files and preferences. |
+| Dia | Spaces, Favorites, pinned tabs, nested folders, splits and renamed tabs, from Dia's encrypted tab database, unlocked with Dia's Safe Storage key. |
+| Safari | Profiles, Tab Groups as Spaces with their pinned tabs and Favorites, open tabs, window pinned tabs and the Favorites bar as Favorites, from Safari's tab database and bookmarks (with Full Disk Access). |
+
+Chromium-family session files that exist only in Chromium's newer encrypted form
+are unlocked with the same Keychain key as that browser's passwords, so the
+import still asks at most once. Nothing comes over where the browser keeps
+nothing readable on the Mac: Edge Workspaces live only in Microsoft's cloud, and
+ChatGPT Atlas keeps its tabs where only OpenAI's own apps can read them. Firefox
+and Brave containers, Brave's tree tabs, Zen's Glance tabs, live folder feeds and
+pattern-based routes, Vivaldi tile sizes (Vivaldi never saves them), Little Arc
+windows and Safari tabs from other devices have no place to go in Parc.
+
 ## Sidebar bookmarks
 
 Immutable source IDs preserve duplicate names and URLs. Folder selection affects
 its subtree, while expansion is separate. A selected child keeps its ancestor
 chain. Native and selected trees are bounded to 50,000 nodes and 128 levels.
 Bookmarks initially select all source nodes; the user can change that selection.
+Folders carry the names the source browser shows: Firefox and Zen offer Bookmarks
+Toolbar, Other Bookmarks and Mobile Bookmarks with the Bookmarks Menu's items at
+the top, never their tags, queries or Firefox's stock bookmarks; Safari offers
+Favorites and Reading List (newest first); Opera adds its Speed Dial and Unsorted
+folders. Empty folders, Vivaldi's and Opera's trash, and separators stay out.
 
 `BrowserImportDestination` prepares mixed folder/page order for the captured
 Space/Profile with new local UUIDs. The store saves atomically before publication;

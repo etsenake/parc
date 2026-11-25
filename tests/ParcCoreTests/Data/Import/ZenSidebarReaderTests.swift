@@ -303,9 +303,27 @@ struct ZenSidebarReaderTests {
                 SidebarImport.Route(conditions: [.init(style: .contains, pattern: "jira.example.com")],
                                     destination: .space("zen:\(Fixture.work)")),
                 SidebarImport.Route(conditions: [.init(style: .matches, pattern: "news.example.com")], destination: .mostRecent),
+                SidebarImport.Route(conditions: [.init(style: .contains, pattern: "calendar.example.com")],
+                                    destination: .profile(Fixture.clientsKey)),
             ])
             #expect(zen.warnings.count == 1)
             #expect(zen.warnings.first?.contains("regular expression") == true)
+        }
+    }
+
+    @Test func closedTabsFromZensSessionStoreJoinTheArchive() throws {
+        try DataFixtures.withTemporaryDirectory { root in
+            let profile = try Fixture.makeProfile(in: root)
+            let store = """
+            { "version": ["sessionrestore", 1], "windows": [{ "tabs": [], "_closedTabs": [
+              { "closedAt": 1793000000000, "state": { "index": 1, "entries": [
+                { "url": "https://closed.example.com/", "title": "Closed one" } ] } } ] }] }
+            """
+            try Fixture.writeMozLz4(store, to: profile.directory.appendingPathComponent("sessionstore.jsonlz4"))
+            let zen = try ZenSidebarReader.read(profiles: [profile])
+            #expect(zen.archive == [SidebarImport.ArchivedTab(
+                tab: SidebarImport.Tab(title: "Closed one", url: "https://closed.example.com/"),
+                archivedAt: Date(timeIntervalSince1970: 1_793_000_000), reason: .manual, spaceID: nil, profile: Fixture.key)])
         }
     }
 

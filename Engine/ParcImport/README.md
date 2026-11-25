@@ -76,7 +76,17 @@ Zen is built on Firefox and uses the Firefox reader, which names the source
 browser in its messages, so a damaged Zen profile is reported as Zen's. Zen's
 own build sets its profile name to `zen`, so its `profiles.ini` and profiles
 live in `~/Library/Application Support/zen`; its bundle identifier is
-`app.zen-browser.zen`. Reading Firefox's encrypted password store
+`app.zen-browser.zen`. Discovery also lists the profiles Firefox's newer profile
+manager keeps in `Profile Groups/<StoreID>.sqlite`, under their real names. The
+bookmark reader names roots by GUID as Firefox's own interface does (Bookmarks
+Toolbar, Other Bookmarks, Mobile Bookmarks; the Bookmarks Menu stays flattened),
+never shows the tags root, `place:` queries or separators, drops Firefox's stock
+default bookmarks by exact address, and omits roots left empty. The Safari reader
+shows `BookmarksBar` as Favorites and the Reading List under that name, newest
+first; the Chromium reader adds Opera's `custom_root` folders except its trash and
+drops Vivaldi's trash, separators and partner tiles. Tab organisation is not read
+here: the app's own readers handle it, as [browser import](../../docs/browser-import.md#tabs-spaces-and-favorites)
+describes. Reading Firefox's encrypted password store
 (`logins.json` with `key4.db`) directly is decided against: it would rebuild
 Firefox's key handling for its older and its Firefox 144 formats, need a
 primary-password prompt, and chase future format changes, while the CSV export

@@ -77,7 +77,7 @@ struct ZenSidebarReaderRecoveryTests {
             #expect(zen.spaces.map(\.title) == ["Personal", "Work", "Side"])
             #expect(zen.spaces.map(\.profile) == [Fixture.key, Fixture.workKey, secondWork])
             #expect(zen.extraProfiles.map(\.key) == [Fixture.workKey, Fixture.clientsKey, secondWork])
-            #expect(zen.routes.count == 4)
+            #expect(zen.routes.count == 6)
             #expect(zen.warnings.count == 1)
             #expect(zen.warnings.first?.hasPrefix("2 ") == true)
             #expect(zen.skippedItemCount == 4)
