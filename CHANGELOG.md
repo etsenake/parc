@@ -1,5 +1,36 @@
 # Changelog
 
+## 2.19.0 (2026-11-26)
+
+### New
+
+- **import:** Helium, Brave and Vivaldi tabs now arrive with their pins, panels and workspaces sorted out
+- **import:** Teach Parc to read Dia's sealed tabs and unpack its Spaces, pins and splits
+- **import:** Your old archive, link rules, closed folders and tidied tab groups now pack their bags too
+- **import:** Dig Chrome's saved tab groups out of its LevelDB junk drawer
+- **import:** Firefox tabs now move in, tab groups and all, no foxes harmed
+- **import:** Opera and Opera GX workspaces come over as Spaces with their tabs and emoji
+- **import:** Safari's Tab Groups move into Spaces and bring their pinned tabs along for the ride
+- **import:** Zen spaces, folders and splits now move in without a forwarding address
+- **import:** Chrome and friends finally hand over their tabs, pickles and all
+- **import:** Zen's closed tabs land in the archive and its per-site containers become routes
+- **import:** Pick the lock on Chrome's encrypted sessions and Dia's SQLCipher tabs without asking the Keychain twice
+- **import:** Old notes hitch a ride and unpack into Markdown right where they used to sit
+
+### Fixed
+
+- **import:** Imported bookmark folders carry the names your old browser showed, and every Firefox profile shows up
+- **import:** Importing the same browser twice adds only what's new instead of seeing double
+- **import:** Harden Vivaldi and Opera flavor extras against huge ids, tile reordering and oversized workspace lists
+- **import:** Importing tabs from Safari, Dia and other browsers keeps more of them and never writes Dia's tabs to disk
+- **import:** Safari tabs showing a file on your Mac come along too
+- **import:** Importing Chrome's saved tab groups stays fast and safe with damaged profiles, and keeps Chrome's group order
+- **import:** Re-importing Firefox no longer duplicates Spaces, and Zen site rules only match their exact site
+- **import:** Your own Mozilla bookmarks and Safari folders named like Safari's built-in ones now import as you made them
+- **import:** Imported notes keep your edits on a second import and only land once the import has saved
+- **import:** Imported notes are recognised on a second import instead of moving in twice
+- **security:** Close security holes in JavaScript and WebGL with Chromium 158
+
 ## 2.18.3 (2026-11-24)
 
 ### Fixed

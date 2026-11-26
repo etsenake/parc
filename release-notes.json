@@ -1,6 +1,151 @@
 {
   "releases": [
     {
+      "version": "2.19.0",
+      "build": 59,
+      "date": "2026-11-26",
+      "changes": [
+        {
+          "type": "feat",
+          "scope": "import",
+          "summary": "Helium, Brave and Vivaldi tabs now arrive with their pins, panels and workspaces sorted out",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "import",
+          "summary": "Teach Parc to read Dia's sealed tabs and unpack its Spaces, pins and splits",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "import",
+          "summary": "Your old archive, link rules, closed folders and tidied tab groups now pack their bags too",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "import",
+          "summary": "Imported bookmark folders carry the names your old browser showed, and every Firefox profile shows up",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "import",
+          "summary": "dig Chrome's saved tab groups out of its LevelDB junk drawer",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "import",
+          "summary": "Firefox tabs now move in, tab groups and all, no foxes harmed",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "import",
+          "summary": "Opera and Opera GX workspaces come over as Spaces with their tabs and emoji",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "import",
+          "summary": "Safari's Tab Groups move into Spaces and bring their pinned tabs along for the ride",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "import",
+          "summary": "Zen spaces, folders and splits now move in without a forwarding address",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "import",
+          "summary": "Chrome and friends finally hand over their tabs, pickles and all",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "import",
+          "summary": "Zen's closed tabs land in the archive and its per-site containers become routes",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "import",
+          "summary": "Pick the lock on Chrome's encrypted sessions and Dia's SQLCipher tabs without asking the Keychain twice",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "import",
+          "summary": "Importing the same browser twice adds only what's new instead of seeing double",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "import",
+          "summary": "Harden Vivaldi and Opera flavor extras against huge ids, tile reordering and oversized workspace lists",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "import",
+          "summary": "Importing tabs from Safari, Dia and other browsers keeps more of them and never writes Dia's tabs to disk",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "import",
+          "summary": "Safari tabs showing a file on your Mac come along too",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "import",
+          "summary": "Importing Chrome's saved tab groups stays fast and safe with damaged profiles, and keeps Chrome's group order",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "import",
+          "summary": "Re-importing Firefox no longer duplicates Spaces, and Zen site rules only match their exact site",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "import",
+          "summary": "Old notes hitch a ride and unpack into Markdown right where they used to sit",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "import",
+          "summary": "Your own Mozilla bookmarks and Safari folders named like Safari's built-in ones now import as you made them",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "import",
+          "summary": "Imported notes keep your edits on a second import and only land once the import has saved",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "import",
+          "summary": "Imported notes are recognised on a second import instead of moving in twice",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "security",
+          "summary": "Close security holes in JavaScript and WebGL with Chromium 158",
+          "breaking": false
+        }
+      ]
+    },
+    {
       "version": "2.18.3",
       "build": 58,
       "date": "2026-11-24",
