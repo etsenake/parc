@@ -46,14 +46,13 @@ SHIPPING_DEFINES = ('is_component_build=false is_official_build=true chrome_pgo_
                     'target_cpu="arm64" enable_dsyms=false use_remoteexec=false')
 SHIPPING_PGO_PROFILE = {
     "target": "mac-arm",
-    "name": "chrome-mac-arm-8103-1794339562-84ddfc7d1c5fe7fc113e444ab916130f0f2bfbbe-"
-            "daac8bae4a27dc53b769aa796473fc6a5ddd8cdd.profdata",
-    "sha256": "d06b4421e1b0b3d4fc7f6609c8d79aa4df3745380eb7c4c5d5fbc0c8e8330b9f",
+    "name": "chrome-mac-arm-8127-1794355046-b82a3291b4e601ca7bb3204990dee47813d1054d-a059438ae17f35f9bd8a169ce1d97ef2ed8d5029.profdata",
+    "sha256": "7e57c60838e577ccf1e27993bfc320844892b1f990499342d36a22471b34ce2c",
 }
 SHIPPING_V8_BUILTINS_PROFILE = {
-    "version": "15.7.112.43",
+    "version": "15.8.62.31",
     "name": "x64.profile",
-    "sha256": "e577f2839be777bd9c5794773c0357201e170f3b1893443d8cb1f48f064d7076",
+    "sha256": "fe25d0db99744740ffd1c91a50a4c17ea8732e2f3f72c7cecc72f36ea7a9c074",
 }
 GIT = ["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "init.templateDir="]
 READ_ONLY_GIT = {"GIT_OPTIONAL_LOCKS": "0", "GIT_CONFIG_COUNT": "1",
@@ -406,11 +405,30 @@ def ensure_v8_builtins_profile(workspace: Path, env: dict) -> Path:
     if version != SHIPPING_V8_BUILTINS_PROFILE["version"]:
         raise Refusal("The pinned Chromium's V8 " + version + " differs from the shipping recipe's builtins profile")
     profile = internal_path(chromium / "v8/tools/builtins-pgo/profiles" / SHIPPING_V8_BUILTINS_PROFILE["name"], workspace)
-    if not profile.exists():
-        run([sys.executable, "v8/tools/builtins-pgo/download_profiles.py", "download",
-             "--depot-tools", str(locations(workspace)["depot_tools"]), "--check-v8-revision", "--quiet"], chromium, env)
-    if profile.is_symlink() or not profile.is_file() or file_digest(profile) != SHIPPING_V8_BUILTINS_PROFILE["sha256"]:
-        raise Refusal("V8 builtins PGO profile digest mismatch: " + str(profile))
+    metadata = internal_path(profile.parent / "meta.json", workspace)
+    deps = internal_path(chromium / "DEPS", workspace).read_text()
+    revision = re.search(r"'v8_revision'\s*:\s*'([0-9a-f]{40})'", deps)
+    if not revision:
+        raise Refusal("Chromium DEPS does not pin a V8 revision")
+
+    def matches_pin():
+        if not profile.is_file() or profile.is_symlink() or metadata.is_symlink():
+            return False
+        try:
+            details = json.loads(metadata.read_text())
+        except (FileNotFoundError, UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        return (isinstance(details, dict) and details.get("version") == version
+                and details.get("revision") == revision.group(1)
+                and file_digest(profile) == SHIPPING_V8_BUILTINS_PROFILE["sha256"])
+
+    if matches_pin():
+        return profile
+    run([sys.executable, "v8/tools/builtins-pgo/download_profiles.py", "download",
+         "--depot-tools", str(locations(workspace)["depot_tools"]),
+         "--check-v8-revision", "--force", "--quiet"], chromium, env)
+    if not matches_pin():
+        raise Refusal("V8 builtins PGO profile digest mismatch or incorrect revision metadata: " + str(profile))
     return profile
 
 

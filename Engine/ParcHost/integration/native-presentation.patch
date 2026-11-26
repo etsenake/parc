@@ -52,7 +52,7 @@
    // Block tab fullscreen to prevent UI spoofing. The GMC device picker is a
    // trusted browser surface that should not coexist with attacker-controlled
    // fullscreen content.
-@@ -282,10 +299,11 @@
+@@ -283,10 +300,11 @@
    MediaToolbarButton* const media_button = GetMediaButton();
    // If there exists a media button, anchor the dialog to this media button.
    if (media_button) {
@@ -68,7 +68,7 @@
      return;
    }
    BrowserWindowInterface* const browser =
-@@ -296,19 +314,19 @@
+@@ -297,19 +315,19 @@
    // browser_view. This is necessary only for Mac, but works for other
    // platforms.
    if (browser_view) {
@@ -108,14 +108,12 @@
  #include "base/functional/callback_helpers.h"
  #include "base/memory/raw_ptr.h"
  #include "base/memory/weak_ptr.h"
-@@ -38,6 +39,12 @@
+@@ -38,6 +39,10 @@
        const MediaRouterDialogControllerViews&) = delete;
 -
 +
    ~MediaRouterDialogControllerViews() override;
 +
-+  // The handler consumes a context only for its own native WebContents. A
-+  // false return leaves the context untouched for Chrome's ordinary path.
 +  using NativePresentationHandler = base::RepeatingCallback<bool(
 +      content::WebContents*, std::unique_ptr<StartPresentationContext>&)>;
 +  static void SetNativePresentationHandler(NativePresentationHandler handler);
@@ -155,13 +153,11 @@
  #include "components/media_router/common/mojom/media_router.mojom-forward.h"
  #include "content/public/browser/presentation_request.h"
  #include "content/public/browser/presentation_service_delegate.h"
-@@ -42,6 +45,22 @@
+@@ -42,6 +45,20 @@
      return presentation_request_;
    }
 -
 +
-+  // An embedder may revoke the original document while a route is pending.
-+  // The real request and callbacks remain owned by this context.
 +  void SetNativeSuccessValidator(
 +      base::RepeatingCallback<bool()> validator,
 +      base::OnceCallback<void(const MediaRoute&)> stale_route) {
@@ -179,7 +175,7 @@
    // Invokes |success_cb_| or |error_cb_| with the given arguments.
    void InvokeSuccessCallback(const std::string& presentation_id,
                               const GURL& presentation_url,
-@@ -57,6 +76,9 @@
+@@ -57,6 +74,9 @@
    const content::PresentationRequest presentation_request_;
    PresentationConnectionCallback success_cb_;
    PresentationConnectionErrorCallback error_cb_;

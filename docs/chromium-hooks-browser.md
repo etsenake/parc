@@ -83,6 +83,12 @@ code that answers lives in `Engine/ParcNative/` unless a path says otherwise.
 
 ## Page and window hooks
 
+- **`SetColorChangeNotifier`** schedules a redraw for every registered Parc window after Chromium
+  clears a nonempty color cache or finishes notifying its native theme observers. A theme observer
+  alone misses cache clears and runs before notification finishes. The color component exports the
+  notifier. Parc subscribes windows in `native_browser_window.mm` and drops the subscriptions when
+  Chromium destroys their manager.
+
 - **`SetNativeBrowserWindowFactory`**: every Browser gets Parc's AppKit window.
   `chrome/browser/ui/views/frame/browser_window_factory.cc` defines Chromium's single static window
   factory; a null result keeps Chrome's. Answered by `NativeBrowser::CreateWindow`.
@@ -145,7 +151,7 @@ code that answers lives in `Engine/ParcNative/` unless a path says otherwise.
 ## Browser and startup patches
 
 - **`chromium-direct-startup`**: the startup hooks, each an early return or an added condition at
-  its original point rather than a wrapped block, plus the Mac framework path honoring the
+  its original point, including crash setup after the user-data directory and path provider, plus the Mac framework path honoring the
   installed framework, which PathService can't reach for direct callers, a Keychain definition whose
   namespace is mutable in implementation and callers, and the staged content entry. Touches
   `chrome_main_delegate.cc`, `browser_process_impl.cc`, `chrome_browser_main.cc`,
@@ -156,7 +162,9 @@ code that answers lives in `Engine/ParcNative/` unless a path says otherwise.
   creator and DevTools link hooks, the DevTools page-command body and the windows API's native
   window-state check (`windows_api.cc`, where Chromium 157 moved `windows.update`), across 11 files
   in `chrome/browser/ui`, `chrome/browser/devtools` and `chrome/browser/extensions/api/tabs`.
-  The gates sit at Chromium's private construction, deletion and navigation points.
+  The gates sit at Chromium's private construction, deletion and navigation points. A native
+  floating window uses the picture-in-picture shell only when its creation options request
+  document picture in picture. Other floating windows use the popup shell.
 - **`native-page-retirement`**: only the unload-controller hooks, in `unload_controller.cc`.
 - **`native-embedded-pages`**: the three restore-omission hooks, in the three sessions files, and
   one line in `render_widget_host_view_cocoa.mm` that sizes a page from its own bounds rather than
@@ -197,26 +205,28 @@ code that answers lives in `Engine/ParcNative/` unless a path says otherwise.
 - **`native-window-lookup-direct`**, **`native-views-bubble-guards`**: callers that expect a
   BrowserView, toast anchor or Views frame do nothing harmful in a native window. Touches
   `browser_view.cc`, `save_address_bubble_controller.h`, `chrome/test/BUILD.gn` for the owned
-  lookup test, `toast_controller.cc` and two page-info and file-access bubbles.
+  lookup test target, `toast_controller.cc` and two page-info and file-access bubbles.
 - **`native-fullscreen-window`**: leaving full screen recovers the window's original frame. The
   controller's pending transition and frame are private to
   `native_widget_ns_window_fullscreen_controller.{h,mm}`.
 - **`native-input-diagnostics-direct`**: opt-in input and accessibility probes at responder and
   accessibility branches no observer exposes, in four Cocoa, frame-host and accessibility files.
+  The seven Cocoa mouse trace points call a same-layer Parc helper that handles filtering and logging.
 - **`native-external-split-drop`**: dropping a link onto a page can open it in a split, because the
   content view has no drop callback. Touches `web_contents_view_cocoa.mm` and `ui/base/BUILD.gn`,
   which builds Parc's owned `ui/base/cocoa/content_drop_router`.
-- **`color-provider-manager-observer`**: Parc's interface redraws when Chromium resets its color
-  providers; Chromium has no observer for that. Touches `color_provider_manager.{h,cc}` and
-  `native_theme.cc`.
+- **`color-provider-manager-observer`**: Parc windows redraw after a cache clear and after theme
+  notifications finish. The notifier calls live in `color_provider_manager.cc` and `native_theme.cc`.
+  Parc owns the subscription list and coalesces redraws in the native window.
 - **`native-side-panel`**: extension side panels work in Parc's sidebar. There is no deregistration
   observer for a pending entry, no seam for the borrowed host and the load-time mark is private;
   seven side-panel coordinator, manager, entry, registry and interface files.
 - **`paint-preview-pdf`**: a long Full Page capture also carries a vector PDF of the whole page,
   one page at one point per CSS pixel. It adds `PdfForMainFrame` to the Paint Preview compositor,
   which writes the composited main-frame picture, subframes included, through Skia's PDF backend
-  in the sandboxed utility process. The compositor's mojom and implementation and the client
+  in the sandboxed utility process. Parc's same-layer helpers carry the request to the compositor
+  sequence and write the original picture into the PDF. The compositor's mojom and implementation and the client
   interface and implementation are its six files; the client's default answer keeps other clients
   unchanged. The composited picture exists only inside the utility process and the interface
-  offers only bitmaps, so no extension point or Parc-owned code can reach it; recording Skia
+  offers only bitmaps, so the compositor must expose the PDF request. Recording Skia
   pictures in the browser would duplicate Paint Preview's whole frame and image serialization.

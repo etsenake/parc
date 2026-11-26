@@ -39,7 +39,8 @@ constexpr char kPolicyDisabled[] =
     "NetworkTimeServiceQuerying,LiveCaption,MerchantTrust,"
     "PageInfoAboutThisSite,PageInfoAboutThisSiteMoreLangs,"
     "TailoredSecurityIntegration,CredentialManagementUnifiedUi,"
-    "ExtensionsPinnedByDefault,SkillsEnabled,GoogleSearchAiModeWorkspace";
+    "ExtensionsPinnedByDefault,SkillsEnabled,GoogleSearchAiModeWorkspace,"
+    "ContextualTasksSidePanel,ThreeDSecureTelemetry";
 constexpr char kPolicyEnabled[] =
     "CertificateTransparencyAskBeforeEnabling,WebContentsDiscard";
 void CheckStartupPolicy() {
@@ -111,7 +112,7 @@ void CheckStartupPolicy() {
              "PageInfoAboutThisSite,PageInfoAboutThisSiteMoreLangs,"
              "TailoredSecurityIntegration,CredentialManagementUnifiedUi,"
              "ExtensionsPinnedByDefault,SkillsEnabled,"
-             "GoogleSearchAiModeWorkspace",
+             "GoogleSearchAiModeWorkspace,ContextualTasksSidePanel,ThreeDSecureTelemetry",
          "named features skip default disables; product exclusions remain");
 
   base::CommandLine spaced(base::FilePath("/fixture/Parc"));
@@ -151,6 +152,11 @@ void CheckApplication(const std::string& name) {
   Expect(base::apple::OuterBundlePath() == bundle, "real outer application path");
   Expect(base::apple::BaseBundleID() == "org.parc.helper-routing-fixture", "fixture bundle identifier");
   Expect(chrome::GetFrameworkBundlePath() == framework, "Chrome honours the loaded framework override");
+  base::FilePath support, default_data;
+  Expect(base::PathService::Get(base::DIR_APP_DATA, &support) &&
+             chrome::GetDefaultUserDataDirectory(&default_data) &&
+             default_data == support.Append("Parc/Chromium-v1"),
+         "Chromium selects Parc’s standard encrypted data directory from the outer bundle");
   auto expected = [&](const char* suffix) {
     const std::string helper = name + " Helper" + suffix;
     return bundle.Append("Contents/Frameworks").Append(helper + ".app")

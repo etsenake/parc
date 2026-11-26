@@ -188,6 +188,7 @@ class PackagingIconTests(unittest.TestCase):
             self.assertEqual(info["NSDockTilePlugIn"], "ParcDockTile.plugin")
             self.assertEqual(info["LSEnvironment"], {"MallocNanoZone": "0"})
             self.assertEqual(info["CFBundleIdentifier"], "org.parc.Browser")
+            self.assertEqual(info["CrProductDirName"], "Parc/Chromium-v1")
             lock = json.loads((REPO / "Engine/source-lock.json").read_text())
             self.assertEqual(info["ParcChromiumVersion"], lock["chromium"]["tag"])
             self.assertFalse([key for key in info if key.startswith("SU")])
@@ -294,6 +295,7 @@ class PackagingIconTests(unittest.TestCase):
                 helper = app / "Contents/Frameworks" / ("Parc Helper" + suffix + ".app")
                 helper_info = plistlib.loads((helper / "Contents/Info.plist").read_bytes())
                 self.assertEqual(helper_info["CFBundleIdentifier"], "org.parc.Browser.helper" + id_suffix)
+                self.assertNotIn("CrProductDirName", helper_info)
                 self.assertEqual(helper_info["LSEnvironment"], {"MallocNanoZone": "0"})
                 self.assertEqual(helper_info.get("NSUserNotificationAlertStyle"), "alert" if id_suffix == ".alerts" else None)
                 if id_suffix == ".alerts":

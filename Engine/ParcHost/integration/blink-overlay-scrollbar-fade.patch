@@ -1,17 +1,11 @@
 --- a/third_party/blink/renderer/core/scroll/scrollable_area.cc
 +++ b/third_party/blink/renderer/core/scroll/scrollable_area.cc
-@@ -957,6 +957,17 @@
+@@ -958,6 +958,11 @@
  }
 -
 +
  void ScrollableArea::FadeOverlayScrollbarsTimerFired(TimerBase*) {
-+  // The page scrollbar theme can change while the timer is pending, e.g. when
-+  // device emulation is turned off on Mac. Overlay visibility then belongs to
-+  // the new theme's animator, as in
-+  // ScrollingCoordinator::DidChangeScrollbarsHidden.
 +  if (!GetPageScrollbarTheme().BlinkControlsOverlayVisibility()) {
-+    // The new theme's animator starts with hidden overlay scrollbars and
-+    // reports only transitions.
 +    SetScrollbarsHiddenIfOverlayInternal(true);
 +    return;
 +  }

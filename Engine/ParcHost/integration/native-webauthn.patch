@@ -304,15 +304,15 @@
    std::unique_ptr<ReauthWebContentsObserver> reauth_observer_;
 --- a/chrome/browser/webauthn/BUILD.gn
 +++ b/chrome/browser/webauthn/BUILD.gn
-@@ -58,6 +58,7 @@
-       "gpm_enclave_transaction.h",
+@@ -59,6 +59,7 @@
+       "gpm_pin_crypto.h",
        "immediate_request_rate_limiter_factory.h",
        "local_authentication_token.h",
 +      "native_authenticator_request_context.h",
        "passkey_model_factory.h",
        "passkey_unlock_manager.h",
        "passkey_unlock_manager_factory.h",
-@@ -78,6 +79,7 @@
+@@ -79,6 +80,7 @@
        "//components/webauthn/core/browser:passkey_model",
        "//crypto",
        "//google_apis",

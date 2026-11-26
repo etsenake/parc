@@ -101,6 +101,9 @@ which an embedder cannot override without replacing that file.
   **`native-http-auth`**, **`native-tab-sharing-direct`**: each only its hooks, in the files above.
 - **`native-server-certificate-viewer-direct`**: the viewer hook, plus the main `chrome/browser`
   target's build edit adding Parc's build flags and, on Mac, the native picture-in-picture API.
+  Parc handles certificate requests on its pages and displays the viewer while
+  the page is attached. Unowned pages continue through Chromium’s viewer with
+  the original entry point and certificate chain.
 - **`extension_context_menu_native`**: the uninstall hook, plus a pin action that skips its optional
   feedback when a native window registers no Views element.
 - **`native-extension-window-create`**: only its hook, in `windows_api.cc`, after
@@ -113,7 +116,8 @@ which an embedder cannot override without replacing that file.
 - **`chromium-direct-shared`**: the frame-focus and DevTools key hooks; FileSelectHelper's per-type
   filters, built by Parc's `native_file_types.cc` through `SetFileTypeInfoFactory` because Parc's
   dialog factory can't rebuild them from the merged list; and the context-menu observer, which must
-  run first for command dispatch. Touches `web_contents_impl.cc`,
+  run first for command dispatch. The frame-focus notification runs where Chromium changes the
+  focused frame. A DOM focus notification can miss that transition. Touches `web_contents_impl.cc`,
   `devtools_window_views.cc`, `file_select_helper.cc`, `render_view_context_menu.cc` and two BUILD
   files.
 - **`native-devtools-auxiliary`**: app-modal JavaScript dialogs for auxiliary pages such as Developer
@@ -139,7 +143,8 @@ which an embedder cannot override without replacing that file.
 - **`native-constrained-window`**: only its hook, in `constrained_window_views.cc`; when Parc
   declines, Chromium's own path runs unchanged.
 - **`native-extension-install`**: binds consent when the prompt is created, before the icon loads, in
-  `extension_install_prompt.{h,cc}` and the supervised-user delegate
+  `extension_install_prompt.{h,cc}` and the supervised-user delegate. Chromium supplies the default
+  icon and handles a caller-supplied icon through its own prompt code
   ([decisions](chromium-seams.md#decisions)).
 - **`native-webauthn`**: passkey and security-key requests on opted-in pages use Parc's window; other
   pages run Chromium's dialogs unchanged, and the recovery window holds a typed lease. Adds a native
@@ -156,7 +161,9 @@ which an embedder cannot override without replacing that file.
   adopting a possibly missing view and registering its presentation result, through a friend line
   in the base controller header; Parc's added member definitions compile from Parc-owned files in
   their original autofill targets, and the generation, close-order and manager safeguards stay at
-  their original points.
+  their original points. Wallet Direct offers preserve their details link and eligibility. Tab
+  visibility follows Chromium's bubble manager, and clearing the prompt timestamp first checks
+  whether hiding the view synchronously destroyed the controller.
 - **`native-protocol-handler-request`**: exposes a "handle this kind of link" request's handler in
   `register_protocol_handler_permission_request.h`; there is no public alternative.
 - **`native-current-tab-picker`**, **`native-delegated-picker`**: the share-this-tab picker reports its

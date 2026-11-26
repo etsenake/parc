@@ -3,6 +3,7 @@
 #include "chrome/browser/ui/autofill/payments/chrome_payments_autofill_client.h"
 
 #include <utility>
+#include "base/check.h"
 #include "chrome/browser/ui/autofill/payments/virtual_card_enroll_bubble_controller_impl.h"
 #include "components/autofill/content/browser/content_autofill_client.h"
 
@@ -29,6 +30,7 @@ void ChromePaymentsAutofillClient::
   VirtualCardEnrollBubbleControllerImpl::CreateForWebContents(web_contents());
   auto* controller =
       VirtualCardEnrollBubbleControllerImpl::FromWebContents(web_contents());
+  CHECK(controller, base::NotFatalUntil::M162);
   controller->SetupAndShowBubble(fields, std::move(accept), std::move(decline),
                                  std::move(unavailable));
 }

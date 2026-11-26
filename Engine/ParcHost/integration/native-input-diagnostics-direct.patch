@@ -1,52 +1,14 @@
 --- a/content/app_shim_remote_cocoa/render_widget_host_view_cocoa.mm
 +++ b/content/app_shim_remote_cocoa/render_widget_host_view_cocoa.mm
-@@ -16,7 +16,9 @@
--
-+
- #import "base/apple/foundation_util.h"
- #include "base/apple/owned_objc.h"
-+#include "base/command_line.h"
- #include "base/debug/crash_logging.h"
-+#include "base/logging.h"
- #import "base/mac/mac_util.h"
- #include "base/memory/raw_ptr.h"
- #include "base/numerics/safe_conversions.h"
-@@ -77,6 +79,32 @@
--
-+
- namespace {
--
-+
-+bool ParcInputDiagnosticsEnabled() {
-+  return base::CommandLine::InitializedForCurrentProcess() &&
-+         base::CommandLine::ForCurrentProcess()->HasSwitch(
-+             "parc-input-diagnostics");
-+}
-+
-+void ParcTraceMouse(NSView* view,
-+                    NSEvent* event,
-+                    const char* phase,
-+                    bool hit_self = false,
-+                    bool open_mouse_down = false) {
-+  if (!ParcInputDiagnosticsEnabled() ||
-+      (event.type != NSEventTypeLeftMouseDown &&
-+       event.type != NSEventTypeLeftMouseUp)) {
-+    return;
-+  }
-+  NSWindow* window = view.window;
-+  LOG(ERROR) << "[ParcInput] phase=" << phase << " event=" << event.eventNumber
-+             << " time_us=" << static_cast<int64_t>(event.timestamp * 1000000)
-+             << " type=" << static_cast<int>(event.type)
-+             << " window=" << (window ? window.windowNumber : -1)
-+             << " native_hidden=" << view.isHiddenOrHasHiddenAncestor
-+             << " hit_self=" << hit_self
-+             << " open_mouse_down=" << open_mouse_down;
-+}
-+
- constexpr NSString* WebAutomaticQuoteSubstitutionEnabled =
-     @"WebAutomaticQuoteSubstitutionEnabled";
- constexpr NSString* const WebAutomaticDashSubstitutionEnabled =
-@@ -1061,6 +1089,8 @@
+@@ -26,6 +26,7 @@
+ #include "components/input/web_input_event_builders_mac.h"
+ #include "components/remote_cocoa/app_shim/immersive_mode_controller_cocoa.h"
+ #include "components/remote_cocoa/app_shim/ns_view_ids.h"
++#include "content/app_shim_remote_cocoa/parc_cocoa_input_diagnostics.h"
+ #import "content/browser/cocoa/system_hotkey_helper_mac.h"
+ #import "content/browser/cocoa/system_hotkey_map.h"
+ #include "content/browser/renderer_host/render_widget_host_view_mac.h"
+@@ -1063,6 +1064,8 @@
        // the window. Cocoa does this for us. We should handle these events and
        // not ignore (since there is no other render view to handle them). Thus
        // the |!hasOpenMouseDown_| check above.
@@ -55,7 +17,7 @@
        return YES;
      }
      view = [view superview];
-@@ -1068,10 +1098,13 @@
+@@ -1070,10 +1073,13 @@
    // Ignore events which don't hit test to this subtree (and hit, for example,
    // an overlapping view instead). As discussed above, the mouse may go outside
    // the bounds of the view and keep sending events during a drag.
@@ -71,7 +33,7 @@
 -
 +
    _textSelectionChangedForContextualMenu = NO;
-@@ -1110,11 +1143,15 @@
+@@ -1112,11 +1118,15 @@
    if (_responderDelegate &&
        [_responderDelegate respondsToSelector:@selector(handleEvent:)]) {
      BOOL handled = [_responderDelegate handleEvent:theEvent];
@@ -79,9 +41,10 @@
 +    if (handled) {
 +      ParcTraceMouse(self, theEvent, "cocoa-responder-handled");
        return;
-+    }
-   }
+-  }
 -  if (ui::PlatformEventSource::ShouldIgnoreNativePlatformEvents())
++    }
++  }
 +  if (ui::PlatformEventSource::ShouldIgnoreNativePlatformEvents()) {
 +    ParcTraceMouse(self, theEvent, "cocoa-platform-ignore");
      return;
@@ -90,7 +53,7 @@
 +
    // Set the pointer type when we are receiving a NSEventTypeMouseEntered event
    // and the following NSEventTypeMouseExited event should have the same pointer
-@@ -1172,6 +1209,7 @@
+@@ -1174,6 +1184,7 @@
    }
 -
 +
@@ -99,7 +62,7 @@
      // If this is the first such event, send a mouse exit to the host view.
      // Mouse exited events are also delivered for hidden views, so that hover
      // state gets cleared when a view under the cursor is hidden (see the
-@@ -1297,6 +1335,7 @@
+@@ -1299,6 +1310,7 @@
    }
 -
 +
@@ -123,7 +86,7 @@
 +
  #include <algorithm>
  #include <cstdint>
-@@ -28,6 +31,7 @@
+@@ -27,6 +30,7 @@
  #include "base/functional/callback_helpers.h"
  #include "base/json/json_reader.h"
  #include "base/lazy_instance.h"
@@ -131,7 +94,7 @@
  #include "base/memory/ptr_util.h"
  #include "base/memory/raw_ptr.h"
  #include "base/memory_coordinator/traits.h"
-@@ -112,6 +116,8 @@
+@@ -110,6 +114,8 @@
  #include "content/browser/loader/url_loader_factory_utils.h"
  #include "content/browser/log_console_message.h"
  #include "content/browser/media/media_devices_util.h"
@@ -155,7 +118,7 @@
  // Maximum amount of time to wait for beforeunload/unload handlers to be
  // processed by the renderer process.
  constexpr base::TimeDelta kUnloadTimeout = base::Milliseconds(500);
-@@ -3232,15 +3244,18 @@
+@@ -3317,15 +3329,18 @@
            LoadedWithCacheControlNoStoreHeader()
                ? BackForwardCacheImpl::kInCCNSContext
                : BackForwardCacheImpl::kNotInCCNSContext);
@@ -180,7 +143,7 @@
 -
 +
  void RenderFrameHostImpl::DisableBackForwardCache(
-@@ -4038,10 +4053,28 @@
+@@ -4190,10 +4205,28 @@
 -
 +
  void RenderFrameHostImpl::AccessibilityPerformAction(
@@ -211,7 +174,7 @@
    }
 -
 +
-@@ -4055,6 +4088,7 @@
+@@ -4207,6 +4240,7 @@
    // Don't perform the action if the WebContents is set to ignore input events.
    // See WebContents::IgnoreInputEvents for more information.
    if (delegate()->ShouldIgnoreInputEvents()) {
@@ -220,7 +183,7 @@
    }
 -
 +
-@@ -4068,6 +4102,7 @@
+@@ -4220,6 +4254,7 @@
      }
    }
 -
@@ -230,7 +193,7 @@
  }
 -
 +
-@@ -10469,7 +10504,7 @@
+@@ -10697,7 +10732,7 @@
        params->disposition, params->should_replace_current_entry,
        params->user_gesture, params->triggering_event_info,
        params->href_translate, std::move(blob_url_loader_factory),
@@ -307,7 +270,7 @@
    }
 -
 +
-@@ -402,9 +430,13 @@
+@@ -404,9 +432,13 @@
      case ax::mojom::Action::kScrollRight:
      case ax::mojom::Action::kStitchChildTree:
      case ax::mojom::Action::kShowTooltip:
@@ -349,7 +312,7 @@
  // Test-only attribute name used by accessibility dump tests to read
  // aria-actions custom-action names across the AXUIElementCopyAttributeValue
  // marshaling boundary (NSAccessibilityCustomAction is not marshalable).
-@@ -3362,17 +3370,32 @@
+@@ -3365,17 +3373,32 @@
  }
 -
 +

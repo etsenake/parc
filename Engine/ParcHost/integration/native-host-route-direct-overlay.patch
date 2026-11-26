@@ -1,6 +1,6 @@
 --- a/content/browser/renderer_host/navigator.cc
 +++ b/content/browser/renderer_host/navigator.cc
-@@ -1085,7 +1085,8 @@
+@@ -1083,7 +1083,8 @@
      const std::string& href_translate,
      scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory,
      bool has_rel_opener,
@@ -11,7 +11,7 @@
    // if the disposition calls for a different window.
 -
 +
-@@ -1128,6 +1129,7 @@
+@@ -1126,6 +1127,7 @@
        url, disposition, ui::PAGE_TRANSITION_LINK, referrer,
        initiator_navigation_state, /*started_from_context_menu=*/false,
        frame_tree_node_id);
@@ -34,20 +34,18 @@
    // `blink::RemoteFrame`. If `method` is "POST", then `post_body` needs to
 --- a/content/browser/renderer_host/render_frame_host_impl.h
 +++ b/content/browser/renderer_host/render_frame_host_impl.h
-@@ -1803,6 +1803,10 @@
+@@ -1820,6 +1820,8 @@
    // BackForwardCache after time to live.
    void StartBackForwardCacheEvictionTimer();
 -
 +
-+  // Parc: the eviction timer's end, |waited| after it started. A page that
-+  // is still casting a video stays a while longer.
 +  void OnBackForwardCacheEvictionTimeout(base::TimeDelta waited);
 +
    bool IsBackForwardCacheDisabled() const;
 -
 +
    // Prevents this frame (along with its parents/children) from being added to
-@@ -3527,6 +3531,10 @@
+@@ -3564,6 +3566,10 @@
        blink::mojom::PreferredColorScheme color_scheme) override;
    void UpdateEncoding(const std::string& encoding) override;
    void UpdateState(const blink::PageState& state) override;
@@ -61,13 +59,10 @@
 +
 --- a/content/common/frame.mojom
 +++ b/content/common/frame.mojom
-@@ -823,6 +823,15 @@
+@@ -830,6 +830,12 @@
    // listen to the end of the renderer-initiated navigation cancelation window
    // for this navigation. See comment for NavigationRendererCancellationListener
    // for more details.
-+  // The renderer retains its original WebNavigationInfo during this query.
-+  // A null token means continue that exact navigation. A positive one-use
-+  // token may only accompany the original request through OpenURL.
 +  [Sync]
 +  PrepareNativeMainFrameLink(url.mojom.Url url,
 +      blink.mojom.DocumentToken document,
@@ -88,17 +83,13 @@
  #include "content/common/content_export.h"
  #include "content/public/browser/child_process_host.h"
  #include "content/public/browser/frame_tree_node_id.h"
-@@ -96,6 +97,14 @@
+@@ -96,6 +97,10 @@
    bool Valid() const;
  #endif
 -
 +
-+  // One-use native presentation admission for this original request.
 +  std::optional<base::UnguessableToken> native_route_token;
-+  // Browser-owned presentation for an admitted background ATC destination.
-+  // Never populated from renderer IPC. Does not change navigation/gesture data.
 +  bool native_route_background = false;
-+  // Browser-owned split presentation lease; never populated by renderer IPC.
 +  bool native_route_split = false;
 +
    // The URL/referrer to be opened.
@@ -131,14 +122,10 @@
  #include "build/build_config.h"
  #include "content/common/content_export.h"
  #include "content/public/browser/eye_dropper.h"
-@@ -167,6 +168,14 @@
+@@ -167,6 +168,10 @@
    // Returns the WebContents the URL is opened in, or nullptr if the URL wasn't
    // opened immediately. Note that the URL might be opened in another context
    // when a nullptr is returned.
-+  // Synchronous policy query for an existing source document. The renderer
-+  // still owns its complete original request. Read only materialized state:
-+  // no UI, IO, nested event loop, WebContents/profile creation, waiting or
-+  // calls into a renderer. The only mutation is a local one-use admission.
 +  virtual std::optional<base::UnguessableToken> PrepareNativeMainFrameLink(
 +      RenderFrameHost* source, const GURL& url, WindowOpenDisposition disposition,
 +      std::optional<uint32_t> input_modifiers);
@@ -158,7 +145,7 @@
 +
  #include <algorithm>
  #include <memory>
-@@ -4351,6 +4352,7 @@
+@@ -4356,6 +4357,7 @@
          screenshot_destination,
      base::UnguessableToken same_document_metrics_token,
      bool caused_by_ad) {
@@ -166,7 +153,7 @@
    TRACE_EVENT1("navigation,rail",
                 "RenderFrameImpl::didFinishSameDocumentNavigation",
                 "frame_token", frame_token_);
-@@ -4538,6 +4540,7 @@
+@@ -4543,6 +4545,7 @@
 -
 +
  void RenderFrameImpl::AbortClientNavigation(bool for_new_navigation) {
@@ -176,7 +163,7 @@
 +
    // If the navigations are deferred, cancellations should be deferred too.
    client_navigation_throttler_.DispatchOrScheduleNavigation(
-@@ -5033,17 +5036,9 @@
+@@ -5066,17 +5069,9 @@
  }
 -
 +
@@ -190,15 +177,15 @@
 -    return false;
 -  }
 -  const WebLocalFrame* main_frame = web_view->MainFrame()->ToWebLocalFrame();
-+  const WebLocalFrame* local_root = frame_->LocalRoot();
 -
-+
 -  WebDocumentLoader* document_loader = main_frame->GetDocumentLoader();
++  const WebLocalFrame* local_root = frame_->LocalRoot();
++
 +  WebDocumentLoader* document_loader = local_root->GetDocumentLoader();
    DocumentState* document_state =
        document_loader ? DocumentState::FromDocumentLoader(document_loader)
                        : nullptr;
-@@ -5673,6 +5668,7 @@
+@@ -5706,6 +5701,7 @@
    // JS should be running in |this|, and no other frame should have a reference
    // to |this|.
    CHECK(in_frame_tree_);
@@ -207,10 +194,11 @@
 +
    // This might be the first navigation in this RenderFrame.
    const bool first_navigation_in_render_frame = !had_started_any_navigation_;
-@@ -5725,6 +5721,28 @@
+@@ -5756,6 +5752,28 @@
+   if (info->is_unfenced_top_navigation) {
+     OpenURL(std::move(info));
      return;
-   }
--
++  }
 +
 +  if (GetWebView()->GetRendererPreferences().native_main_frame_link_policy &&
 +      parc::MayPrepareNativeMainFrameLink(*frame_, *info, use_archive, url)) {
@@ -232,12 +220,11 @@
 +      OpenURL(std::move(info), token);
 +      return;
 +    }
-+  }
+   }
+-
 +
    // If the browser is interested, then give it a chance to look at the request.
-   if (IsTopLevelNavigation(frame_) &&
-       GetWebView()
-@@ -6092,12 +6110,15 @@
+@@ -6125,12 +6143,15 @@
    std::move(callback).Run(GetWebFrame()->GetFrameToken().value());
  }
 -
@@ -296,12 +283,10 @@
      return false;
 --- a/third_party/blink/public/common/renderer_preferences/renderer_preferences.h
 +++ b/third_party/blink/public/common/renderer_preferences/renderer_preferences.h
-@@ -48,6 +48,9 @@
+@@ -48,6 +48,7 @@
    uint32_t inactive_selection_bg_color{kDefaultInactiveSelectionBgColor};
    uint32_t inactive_selection_fg_color{kDefaultInactiveSelectionFgColor};
    bool browser_handles_all_top_level_requests{false};
-+  // Query native policy for an activated outermost main-frame link before
-+  // beginning its navigation. No match keeps the original BeginNavigation path.
 +  bool native_main_frame_link_policy{false};
    std::optional<base::TimeDelta> caret_blink_interval;
    bool use_custom_colors{true};
@@ -323,11 +308,10 @@
      return data.caret_blink_interval;
 --- a/third_party/blink/public/mojom/frame/remote_frame.mojom
 +++ b/third_party/blink/public/mojom/frame/remote_frame.mojom
-@@ -90,6 +90,8 @@
+@@ -90,6 +90,7 @@
  // in the case that the browser process should look for an existing history item
  // for the frame.
  struct OpenURLParams {
-+  // Native presentation admission only; never bypasses IPC security checks.
 +  mojo_base.mojom.UnguessableToken? native_route_token;
    // The main URL to open.
    url.mojom.Url url;
@@ -346,7 +330,7 @@
    // On Linux, uses |gtk-cursor-blink| from GtkSettings.
 --- a/content/browser/web_contents/web_contents_impl.h
 +++ b/content/browser/web_contents/web_contents_impl.h
-@@ -697,6 +697,8 @@
+@@ -698,6 +698,8 @@
    WindowOpenDisposition GetOriginalWindowOpenDisposition() const override;
 -
 +
@@ -369,13 +353,11 @@
 +
  #include <memory>
  #include <optional>
-@@ -173,6 +175,10 @@
+@@ -173,6 +175,8 @@
    // TODO(crbug.com/1315802): Refactor _unfencedTop handling.
    bool is_unfenced_top_navigation = false;
 -
 +
-+  // Original trusted input only, when its timestamp equals input_start.
-+  // Absent for deferred/script-created events; never sampled after IPC.
 +  std::optional<uint32_t> native_link_input_modifiers;
 +
    // Event information. See TriggeringEventInfo.
@@ -395,8 +377,8 @@
 +
  #include <utility>
  #include <vector>
-@@ -668,6 +671,14 @@
-   }
+@@ -664,6 +667,14 @@
+   navigation_info->script_tool_invocation_id = script_tool_invocation_id;
 -
 +
    navigation_info->triggering_event_info = triggering_event_info;

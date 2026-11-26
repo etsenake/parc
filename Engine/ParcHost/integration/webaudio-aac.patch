@@ -1,37 +1,24 @@
 --- a/media/filters/audio_file_reader.h
 +++ b/media/filters/audio_file_reader.h
-@@ -65,6 +65,29 @@
+@@ -65,6 +65,16 @@
    int channels() const { return config_->channels(); }
    int sample_rate() const { return config_->samples_per_second(); }
 -
 +
-+  // Open() and Read() for a decoder that completes asynchronously, such as a
-+  // MojoAudioDecoder, for codecs this build's FFmpeg demuxes but cannot
-+  // decode. OpenWithoutDecoder() opens the demuxer and `config()`. The caller
-+  // decodes each ReadNextBuffer() result, then an end-of-stream buffer, and
-+  // passes every output to AddDecodedOutput(). TakeDecodedOutput() applies
-+  // Read()'s trimming and returns the audio, at the rate and channel count of
-+  // the decoder's first output rather than the container's, since HE-AAC's
-+  // SBR and parametric stereo change both.
 +  bool OpenWithoutDecoder();
 +  const AudioDecoderConfig& config() const { return *config_; }
-+  // Returns nullptr after the last packet.
 +  scoped_refptr<DecoderBuffer> ReadNextBuffer();
 +  void AddDecodedOutput(scoped_refptr<AudioBuffer> buffer);
-+  // True after an output changed rate or channels, which ends decoding.
 +  bool has_output_error() const { return on_output_error_; }
-+  // `all_packets_decoded` gives the last output Read()'s end trim, which
-+  // Read() applies even if decoding the end of stream fails.
 +  std::vector<std::unique_ptr<AudioBus>> TakeDecodedOutput(
 +      bool all_packets_decoded);
-+  // The decoded audio's format, once AddDecodedOutput() has been called.
 +  int output_sample_rate() const { return output_sample_rate_.value(); }
 +  int output_channels() const { return output_channels_.value(); }
 +
    // Returns true if (an estimated) duration of the audio data is
    // known.  Must be called after Open();
    bool HasKnownDuration() const;
-@@ -95,8 +118,11 @@
+@@ -95,8 +105,11 @@
 -
 +
   private:
@@ -44,18 +31,15 @@
    bool DecodePacket(const ScopedAVPacket& packet);
    void FinalizeDecodedBuffer(scoped_refptr<AudioBuffer> buffer,
                               bool is_final_output);
-@@ -118,6 +144,14 @@
+@@ -118,6 +131,11 @@
 -
 +
    // Set once the decoder is opened.
    std::optional<AudioDecoderConfig> config_;
 +
-+  // Every output must match these. Open() takes them from `config_`;
-+  // OpenWithoutDecoder() takes them from the decoder's first output.
 +  std::optional<int> output_sample_rate_;
 +  std::optional<int> output_channels_;
 +
-+  // AddDecodedOutput()'s destination.
 +  std::vector<std::unique_ptr<AudioBus>> decoded_output_;
 -
 +
@@ -191,18 +175,14 @@
  #include "base/memory/scoped_refptr.h"
  #include "base/sequence_checker.h"
  #include "media/base/audio_decoder.h"
-@@ -107,8 +108,11 @@
+@@ -107,8 +108,7 @@
    OutputCB output_cb_;
    WaitingCB waiting_cb_;
 -
 +
 -  // |decode_cb_| and |reset_cb_| are replaced by every by Decode() and Reset().
 -  DecodeCB decode_cb_;
-+  // Callbacks of the Decode() calls awaiting an answer, oldest first. Unlike
-+  // other audio decoders this one accepts several, which the remote answers in
-+  // order; MojoAudioDecoderService still feeds its decoder one at a time.
 +  base::circular_deque<DecodeCB> decode_cbs_;
-+  // |reset_cb_| is replaced by every Reset().
    base::OnceClosure reset_cb_;
 -
 +
@@ -238,7 +218,7 @@
 +
      task_runner_->PostTask(FROM_HERE, std::move(closure));
      return;
-@@ -205,10 +205,14 @@
+@@ -205,10 +205,13 @@
      return;
    }
 -
@@ -247,7 +227,6 @@
 -    std::move(decode_cb_).Run(DecoderStatus::Codes::kDisconnected);
 -  if (reset_cb_)
 -    std::move(reset_cb_).Run();
-+  // Any of these may destroy |this|.
 +  base::circular_deque<DecodeCB> decode_cbs = std::move(decode_cbs_);
 +  base::OnceClosure reset_cb = std::move(reset_cb_);
 +  for (DecodeCB& decode_cb : decode_cbs) {
@@ -259,7 +238,7 @@
 -
 +
  void MojoAudioDecoder::OnInitialized(const DecoderStatus& status,
-@@ -236,8 +240,10 @@
+@@ -236,8 +239,10 @@
    DVLOG(1) << __func__ << ": status:" << static_cast<int>(status.code());
    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 -
@@ -274,7 +253,7 @@
 -
 +
  void MojoAudioDecoder::OnResetDone() {
-@@ -245,7 +251,7 @@
+@@ -245,7 +250,7 @@
    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 -
 +
@@ -310,19 +289,18 @@
    void OnInitialized(InitializeCallback callback, DecoderStatus status);
 -
 +
-@@ -68,6 +72,9 @@
+@@ -68,6 +72,8 @@
                    DecodeCallback callback,
                    scoped_refptr<DecoderBuffer> buffer);
 -
 +
-+  // Decodes or answers |pending_decodes_| in order while |decoder_| is idle.
 +  void DecodePending();
 +
    // Called by |mojo_decoder_buffer_reader_| when reset is finished.
    void OnReaderFlushDone(ResetCallback callback);
 -
 +
-@@ -75,7 +82,8 @@
+@@ -75,7 +81,8 @@
    void OnDecodeStatus(DecodeCallback callback, DecoderStatus status);
 -
 +
@@ -334,14 +312,12 @@
 +
    // Called by |decoder_| for each decoded buffer.
    void OnAudioBufferReady(scoped_refptr<AudioBuffer> audio_buffer);
-@@ -107,6 +115,11 @@
+@@ -107,6 +114,9 @@
 -
 +
    scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 -
 +
-+  // Clients may send several decodes at once, but an AudioDecoder takes one at
-+  // a time, so the rest wait here in order. A null buffer is a failed read.
 +  base::circular_deque<PendingDecode> pending_decodes_;
 +  bool decoding_ = false;
 +
@@ -360,12 +336,10 @@
    }
 -
 +
-@@ -204,8 +205,10 @@
-     scoped_refptr<DecoderBuffer> buffer) {
+@@ -205,7 +206,8 @@
    DVLOG(3) << __func__ << " success:" << !!buffer;
 -
 +
-+  // A failed read is answered in turn, after the decodes queued before it.
    if (!buffer) {
 -    std::move(callback).Run(DecoderStatus::Codes::kFailedToGetDecoderBuffer);
 +    pending_decodes_.emplace_back(nullptr, std::move(callback));
@@ -374,7 +348,7 @@
    }
 -
 +
-@@ -223,25 +226,58 @@
+@@ -223,25 +225,55 @@
      return;
    }
 -
@@ -394,7 +368,6 @@
 +      std::move(callback).Run(DecoderStatus::Codes::kFailedToGetDecoderBuffer);
 +      continue;
 +    }
-+    // |decoder_| is gone once Initialize() has failed.
 +    if (!decoder_) {
 +      std::move(callback).Run(DecoderStatus::Codes::kNotInitialized);
 +      continue;
@@ -412,8 +385,6 @@
 +    OnResetDone(std::exchange(pending_decodes_, {}), std::move(callback));
 +    return;
 +  }
-+  // The decoder finishes or aborts the decode it has; the ones still queued
-+  // are aborted after it, so the client gets every answer in order.
    decoder_->Reset(base::BindOnce(&MojoAudioDecoderService::OnResetDone,
 -                                 weak_this_, std::move(callback)));
 +                                 weak_this_, std::exchange(pending_decodes_, {}),
@@ -447,7 +418,7 @@
 +
 --- a/third_party/blink/renderer/modules/webaudio/BUILD.gn
 +++ b/third_party/blink/renderer/modules/webaudio/BUILD.gn
-@@ -152,6 +152,8 @@
+@@ -153,6 +153,8 @@
      "periodic_wave.h",
      "periodic_wave_handler.cc",
      "periodic_wave_handler.h",
@@ -456,7 +427,7 @@
      "realtime_analyser.cc",
      "realtime_analyser.h",
      "realtime_audio_destination_handler.cc",
-@@ -192,6 +194,10 @@
+@@ -193,6 +195,10 @@
      sources += [ "cpu/arm/oscillator_kernel_neon.cc" ]
    }
    deps = [
@@ -477,12 +448,11 @@
  class DelayNode;
  class DynamicsCompressorNode;
  class ExceptionState;
-@@ -415,6 +416,9 @@
+@@ -415,6 +416,8 @@
    // to resolve them.
    HeapHashSet<Member<ScriptPromiseResolverBase>> decode_audio_resolvers_;
 -
 +
-+  // Stops decodes running in another process once the document is destroyed.
 +  scoped_refptr<DecodeCancellation> decode_cancellation_;
 +
    // PeriodicWave's for the builtin oscillator types.  These only depend on the
@@ -507,7 +477,7 @@
  #include "third_party/blink/renderer/modules/webaudio/realtime_audio_destination_handler.h"
  #include "third_party/blink/renderer/modules/webaudio/realtime_audio_destination_node.h"
  #include "third_party/blink/renderer/modules/webaudio/script_processor_node.h"
-@@ -106,6 +109,29 @@
+@@ -105,6 +108,29 @@
    }
  }
 -
@@ -538,7 +508,7 @@
  void DecodeOnBackgroundThread(
      ArrayBufferContents audio_data_contents,
      float sample_rate,
-@@ -113,11 +139,31 @@
+@@ -112,10 +138,30 @@
      CrossThreadHandle<V8DecodeErrorCallback> error_callback,
      CrossThreadHandle<ScriptPromiseResolver<AudioBuffer>> resolver,
      CrossThreadHandle<BaseAudioContext> context,
@@ -548,7 +518,6 @@
    DCHECK(!IsMainThread());
    scoped_refptr<AudioBus> bus = AudioBus::CreateBusFromInMemoryAudioFile(
        audio_data_contents.ByteSpan(), false, sample_rate);
--
 +
 +#if BUILDFLAG(ENABLE_FFMPEG) && BUILDFLAG(ENABLE_MOJO_AUDIO_DECODER)
 +  if (!bus) {
@@ -568,11 +537,11 @@
 +    return;
 +  }
 +#endif
+-
 +
    // A reference to `bus` is retained by base::OnceCallback and will be removed
    // after `NotifyDecodingComplete()` is done.
-   PostCrossThreadTask(
-@@ -144,6 +190,7 @@
+@@ -143,6 +189,7 @@
        deferred_task_handler_(DeferredTaskHandler::Create(
            window->GetTaskRunner(TaskType::kInternalMedia),
            render_quantum_frames)),
@@ -580,17 +549,18 @@
        periodic_wave_sine_(nullptr),
        periodic_wave_square_(nullptr),
        periodic_wave_sawtooth_(nullptr),
-@@ -195,6 +242,8 @@
- void BaseAudioContext::Uninitialize() {
-   DCHECK(IsMainThread());
+@@ -193,6 +240,8 @@
 -
 +
+ void BaseAudioContext::Uninitialize() {
+   DCHECK(IsMainThread());
++
 +  decode_cancellation_->Cancel();
+-
 +
    if (!IsDestinationInitialized()) {
      return;
-   }
-@@ -437,7 +486,7 @@
+@@ -436,7 +485,7 @@
              sampleRate(), MakeCrossThreadHandle(success_callback),
              MakeCrossThreadHandle(error_callback),
              MakeCrossThreadHandle(resolver), MakeCrossThreadHandle(this),

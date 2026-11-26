@@ -1391,11 +1391,11 @@ class OmniboxSession final : public AutocompleteController::Observer,
     WindowOpenDisposition native_disposition;
     switch (disposition) {
       case PCNativeOmniboxExtensionDispositionCurrentTab:
-        native_disposition = WindowOpenDisposition::CURRENT_TAB; break;
+        native_disposition = WindowOpenDisposition::kCurrentTab; break;
       case PCNativeOmniboxExtensionDispositionNewForegroundTab:
-        native_disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB; break;
+        native_disposition = WindowOpenDisposition::kNewForegroundTab; break;
       case PCNativeOmniboxExtensionDispositionNewBackgroundTab:
-        native_disposition = WindowOpenDisposition::NEW_BACKGROUND_TAB; break;
+        native_disposition = WindowOpenDisposition::kNewBackgroundTab; break;
       default: return false;
     }
     if (!ExtensionPresentationValid()) return false;

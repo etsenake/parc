@@ -10,7 +10,7 @@ namespace autofill {
 
 void OfferNotificationBubbleControllerImpl::RefusePresentation() {
   MarkPresentationUnavailable();
-  bubble_state_ = BubbleState::kHidden;
+  is_icon_visible_ = false;
   bubble_shown_timestamp_.reset();
   UpdatePageActionIcon();
 }

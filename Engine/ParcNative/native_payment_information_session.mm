@@ -27,7 +27,7 @@ namespace parc {
 using autofill::PaymentsUiClosedReason;
 using Field = autofill::FilledCardInformationBubbleField;
 struct NativePaymentInformationSession::Impl {
-  BrowserWindowInterface* browser_identity = nullptr;  // Compare only.
+  BrowserWindowInterface* browser_identity = nullptr;
   __weak NSView* host;
   __weak NSWindow* window;
   raw_ptr<autofill::OfferNotificationBubbleControllerImpl> offer = nullptr;
@@ -46,7 +46,6 @@ struct NativePaymentInformationSession::Impl {
   std::unique_ptr<OfferController> offer_adapter;
   std::unique_ptr<FilledController> filled_adapter;
   raw_ptr<autofill::AutofillLocationBarBubble> view = nullptr;
-  // The concrete view must be destroyed before the adapters it references.
   std::unique_ptr<views::Widget> widget;
 };
 class NativePaymentInformationSession::Action {
@@ -70,23 +69,11 @@ class NativePaymentInformationSession::OfferController final
                   autofill::OfferNotificationBubbleControllerImpl& actual)
       : session_(session),
         offer_(*actual.GetOffer()),
-        title_(actual.GetWindowTitle()),
-        tooltip_(actual.GetPromoCodeButtonTooltip()) {
-    if (const auto* card = actual.GetLinkedCard())
-      card_ = *card;
-    if (offer_.GetOfferType() ==
-        autofill::AutofillOfferData::OfferType::GPAY_CARD_LINKED_OFFER)
-      ok_ = actual.GetOkButtonLabel();
-  }
+        title_(actual.GetWindowTitle()) {}
   std::u16string GetWindowTitle() const override { return title_; }
-  std::u16string GetOkButtonLabel() const override { return ok_; }
-  std::u16string GetPromoCodeButtonTooltip() const override { return tooltip_; }
   autofill::AutofillBubbleBase* GetOfferNotificationBubbleView()
       const override {
     return session_.get();
-  }
-  const autofill::CreditCard* GetLinkedCard() const override {
-    return card_ ? &*card_ : nullptr;
   }
   const autofill::AutofillOfferData* GetOffer() const override {
     return &offer_;
@@ -103,8 +90,7 @@ class NativePaymentInformationSession::OfferController final
  private:
   base::WeakPtr<NativePaymentInformationSession> session_;
   const autofill::AutofillOfferData offer_;
-  std::optional<autofill::CreditCard> card_;
-  std::u16string title_, tooltip_, ok_;
+  std::u16string title_;
 };
 class NativePaymentInformationSession::FilledController final
     : public autofill::FilledCardInformationBubbleController {
@@ -208,18 +194,9 @@ class NativePaymentInformationSession::FilledController final
 bool NativePaymentInformationSession::Supports(
     const autofill::OfferNotificationBubbleControllerImpl& actual) {
   const auto* offer = actual.GetOffer();
-  if (!actual.IsIconVisible() || !offer)
-    return false;
-  switch (offer->GetOfferType()) {
-    case autofill::AutofillOfferData::OfferType::GPAY_CARD_LINKED_OFFER:
-      return actual.GetLinkedCard() != nullptr;
-    case autofill::AutofillOfferData::OfferType::GPAY_PROMO_CODE_OFFER:
-      return true;
-    case autofill::AutofillOfferData::OfferType::WALLET_DIRECT_OFFER:
-      return offer->GetOfferDetailsUrl().is_valid();
-    case autofill::AutofillOfferData::OfferType::UNKNOWN:
-      return false;
-  }
+  return actual.IsIconVisible() && offer &&
+         offer->GetOfferType() == autofill::AutofillOfferData::OfferType::WALLET_DIRECT_OFFER &&
+         offer->GetOfferDetailsUrl().is_valid();
 }
 bool NativePaymentInformationSession::Supports(
     const autofill::FilledCardInformationBubbleControllerImpl& actual) {
@@ -362,8 +339,6 @@ void NativePaymentInformationSession::Start() {
   view->set_parent_window(gfx::NativeView(impl_->host));
   view->set_close_on_deactivate(false);
   impl_->widget = views::BubbleDialogDelegate::CreateBubble(view);
-  // These are information/copy tools, not consent sheets. Preserve access to
-  // the originating form, with automatic presentation leaving focus in it.
   view->AdjustForFullscreen(web_contents()->GetContainerBounds());
   impl_->widget->AddObserver(this);
   impl_->observing_widget = true;
@@ -371,7 +346,7 @@ void NativePaymentInformationSession::Start() {
   view->ShowForReason(impl_->user_gesture
                           ? LocationBarBubbleDelegateView::USER_GESTURE
                           : LocationBarBubbleDelegateView::AUTOMATIC,
-                      /*allow_refocus_alert=*/false);
+                      false);
   if (weak && !weak->impl_->finishing && weak->impl_->widget->IsVisible())
     weak->ReportPresentation(true);
 }
@@ -481,4 +456,4 @@ base::WeakPtr<NativePaymentInformationSession>
 NativePaymentInformationSession::GetWeakPtr() {
   return weak_factory_.GetWeakPtr();
 }
-}  // namespace parc
+}

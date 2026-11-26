@@ -55,7 +55,7 @@ def main():
     compiler = tree / 'third_party/llvm-build/Release+Asserts/bin/clang++'
     objects = [build / 'obj/parc/browser/parc_bundle_mac.o',
                build / 'obj/chrome/common/constants/chrome_paths_mac.o',
-               build / 'obj/chrome/common/constants/chrome_constants.o']
+               build / 'obj/chrome/common/non_code_constants/chrome_constants.o']
     libraries = [build / name for name in ('libcontent.dylib', 'libbase.dylib', 'libbase_i18n.dylib', 'libc++_chrome.dylib')]
     inputs = [source, policy, flags_file, compiler, *objects, *libraries]
     receipt = {'scope': 'actual selected-engine bundle objects, native startup policy and Chromium routing; no browser initialization',
@@ -71,7 +71,8 @@ def main():
         (macos / name).touch()
         (bundle / 'Contents/Info.plist').write_bytes(plistlib.dumps({
             'CFBundleIdentifier': 'org.parc.helper-routing-fixture',
-            'CFBundleExecutable': name, 'CFBundlePackageType': 'APPL'}))
+            'CFBundleExecutable': name, 'CFBundlePackageType': 'APPL',
+            'CrProductDirName': 'Parc/Chromium-v1'}))
         framework = bundle / 'Contents/Frameworks/Chromium Embedded Framework.framework'
         version = framework / 'Versions/A'
         (version / 'Resources').mkdir(parents=True, exist_ok=True)

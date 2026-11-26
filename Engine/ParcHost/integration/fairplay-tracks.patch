@@ -1,27 +1,22 @@
 --- a/third_party/blink/renderer/core/html/track/text_track.idl
 +++ b/third_party/blink/renderer/core/html/track/text_track.idl
-@@ -26,7 +26,10 @@
+@@ -26,7 +26,7 @@
  // https://html.spec.whatwg.org/C/#texttrack
 -
 +
  enum TextTrackMode { "disabled",  "hidden",  "showing" };
 -enum TextTrackKind { "subtitles",  "captions",  "descriptions",  "chapters",  "metadata" };
-+// Parc: "forced" is WebKit's kind for forced-only subtitles (native HLS
-+// FORCED=YES renditions). Documents without Safari's identity refuse it where
-+// Chromium's enum would (HTMLMediaElement::addTextTrack, HTMLTrackElement).
 +enum TextTrackKind { "subtitles",  "captions",  "descriptions",  "chapters",  "metadata", "forced" };
 -
 +
  [Exposed=Window]
  interface TextTrack : EventTarget {
-@@ -35,7 +38,9 @@
+@@ -35,7 +35,7 @@
      readonly attribute DOMString language;
 -
 +
      readonly attribute DOMString id;
 -    // readonly attribute DOMString inBandMetadataTrackDispatchType;
-+    // Parc: WebKit's attribute on Safari-identity documents; the native HLS
-+    // metadata track answers "com.apple.streaming", other tracks "".
 +    [ContextEnabled=ParcSafariIdentity] readonly attribute DOMString inBandMetadataTrackDispatchType;
 -
 +
@@ -30,13 +25,10 @@
 +
 --- a/third_party/blink/renderer/core/html/track/text_track.cc
 +++ b/third_party/blink/renderer/core/html/track/text_track.cc
-@@ -111,8 +111,11 @@
- }
+@@ -112,7 +112,8 @@
 -
 +
  bool TextTrack::IsVisualKind() const {
-+  // Parc: WebKit renders forced subtitles like subtitles
-+  // (TextTrack::isRendered).
    return kind() == V8TextTrackKind::Enum::kSubtitles ||
 -         kind() == V8TextTrackKind::Enum::kCaptions;
 +         kind() == V8TextTrackKind::Enum::kCaptions ||
@@ -47,25 +39,20 @@
  void TextTrack::setMode(const V8TextTrackMode& mode) {
 --- a/third_party/blink/renderer/core/html/track/automatic_track_selection.cc
 +++ b/third_party/blink/renderer/core/html/track/automatic_track_selection.cc
-@@ -85,6 +85,11 @@
+@@ -85,6 +85,8 @@
 -
 +
      if (text_track->kind() == PreferredTrackKind())
        track_score += 1;
-+    // Parc: Safari's native HLS tracks (M156's only in-band text tracks)
-+    // follow WebKit's choice, which the player makes from the system caption
-+    // settings and reports as the track's default, not Chrome's preferences.
 +    if (text_track->TrackType() == TextTrack::kInBand)
 +      track_score = 0;
      if (track_score) {
        // * If the text track kind is subtitles or captions and the user has
        // indicated an interest in having a track with this text track kind, text
-@@ -172,6 +177,9 @@
+@@ -172,6 +174,7 @@
      switch (text_track->kind().AsEnum()) {
        case V8TextTrackKind::Enum::kSubtitles:
        case V8TextTrackKind::Enum::kCaptions:
-+      // Parc: WebKit groups forced subtitles with captions and subtitles
-+      // (HTMLMediaElement::configureTextTracks).
 +      case V8TextTrackKind::Enum::kForced:
          current_group = &caption_and_subtitle_tracks;
          break;
@@ -80,13 +67,10 @@
  #include "third_party/blink/renderer/core/html/cross_origin_attribute.h"
  #include "third_party/blink/renderer/core/html/media/html_media_element.h"
  #include "third_party/blink/renderer/core/html/track/loadable_text_track.h"
-@@ -102,6 +103,16 @@
+@@ -102,6 +103,13 @@
        kind = V8TextTrackKind(V8TextTrackKind::Enum::kSubtitles);
      } else {
        kind = V8TextTrackKind::Create(lower_case_value);
-+      // Parc: "forced" is a kind only under Safari's identity, as in WebKit
-+      // (TextTrack::setKindKeywordIgnoringASCIICase); elsewhere it stays an
-+      // invalid value.
 +      if (kind.has_value() &&
 +          kind->AsEnum() == V8TextTrackKind::Enum::kForced) {
 +        ExecutionContext* context = GetExecutionContext();
@@ -99,12 +83,10 @@
        }
 --- a/third_party/blink/renderer/modules/media_controls/elements/media_control_text_track_list_element.cc
 +++ b/third_party/blink/renderer/modules/media_controls/elements/media_control_text_track_list_element.cc
-@@ -271,6 +271,10 @@
+@@ -271,6 +271,8 @@
      TextTrack* track = track_list->AnonymousIndexedGetter(i);
      if (!track->CanBeRendered())
        continue;
-+    // Parc: forced subtitles (Safari's identity) aren't offered, as in
-+    // WebKit's caption menu (CaptionUserPreferences::sortedTrackListForMenu).
 +    if (track->kind() == V8TextTrackKind::Enum::kForced)
 +      continue;
      auto* track_item = CreateTextTrackListItem(track);
@@ -112,13 +94,12 @@
                               AtomicString::Number(track_list->length() + 1));
 --- a/third_party/blink/renderer/core/html/track/text_track_list.h
 +++ b/third_party/blink/renderer/core/html/track/text_track_list.h
-@@ -69,6 +69,11 @@
+@@ -69,6 +69,10 @@
 -
 +
    bool HasShowingTracks();
 -
 +
-+  // Parc: the in-band tracks (Safari's native HLS route), in order.
 +  const HeapVector<Member<TextTrack>>& InbandTracks() const {
 +    return inband_tracks_;
 +  }
@@ -127,7 +108,7 @@
 -
 +
   private:
-@@ -83,6 +88,7 @@
+@@ -83,6 +87,7 @@
 -
 +
    HeapVector<Member<TextTrack>> add_track_tracks_;
@@ -211,17 +192,16 @@
    } else {
      NOTREACHED();
    }
-@@ -144,6 +169,9 @@
+@@ -144,6 +169,8 @@
      // Insert tracks added for <track> element in tree order.
      wtf_size_t index = loadable_text_track->TrackElementIndex();
      element_tracks_.insert(index, track);
 +  } else if (track->TrackType() == TextTrack::kInBand) {
-+    // The player lists in-band tracks in media order, new ones last.
 +    inband_tracks_.push_back(track);
    } else {
      NOTREACHED();
    }
-@@ -163,6 +191,8 @@
+@@ -163,6 +190,8 @@
      tracks = &element_tracks_;
    } else if (track->TrackType() == TextTrack::kAddTrack) {
      tracks = &add_track_tracks_;
@@ -230,7 +210,7 @@
    } else {
      NOTREACHED();
    }
-@@ -188,6 +218,8 @@
+@@ -188,6 +217,8 @@
      tracks = &element_tracks_;
    } else if (track->TrackType() == TextTrack::kAddTrack) {
      tracks = &add_track_tracks_;
@@ -239,7 +219,7 @@
    } else {
      NOTREACHED();
    }
-@@ -260,6 +292,7 @@
+@@ -260,6 +291,7 @@
    visitor->Trace(owner_);
    visitor->Trace(add_track_tracks_);
    visitor->Trace(element_tracks_);
@@ -250,12 +230,11 @@
 +
 --- a/third_party/blink/renderer/core/html/track/vtt/vtt_parser.h
 +++ b/third_party/blink/renderer/core/html/track/vtt/vtt_parser.h
-@@ -113,6 +113,9 @@
+@@ -113,6 +113,8 @@
    // Transfers ownership of last parsed style sheets to caller.
    void GetNewStyleSheets(HeapVector<Member<CSSStyleSheet>>&);
 -
 +
-+  // Parc: the regions parsed so far (a native HLS track's WebVTT header).
 +  const VTTRegionMap& RegionMap() const { return region_map_; }
 +
    void Trace(Visitor*) const;
@@ -264,7 +243,7 @@
   private:
 --- a/third_party/blink/renderer/core/html/build.gni
 +++ b/third_party/blink/renderer/core/html/build.gni
-@@ -506,6 +506,16 @@
+@@ -512,6 +512,16 @@
    "media/html_media_element.h",
    "media/html_media_element_controls_list.cc",
    "media/html_media_element_controls_list.h",
@@ -281,7 +260,7 @@
    "media/html_video_element.cc",
    "media/html_video_element.h",
    "media/lazy_load_media_observer.cc",
-@@ -564,6 +574,8 @@
+@@ -570,6 +580,8 @@
    "track/automatic_track_selection.h",
    "track/cue_timeline.cc",
    "track/cue_timeline.h",
@@ -290,7 +269,7 @@
    "track/html_track_element.cc",
    "track/html_track_element.h",
    "track/loadable_text_track.cc",
-@@ -792,6 +804,7 @@
+@@ -798,6 +810,7 @@
    "media/autoplay_uma_helper_test.cc",
    "media/html_media_element_event_listeners_test.cc",
    "media/html_media_element_test.cc",
@@ -322,12 +301,11 @@
 +
 --- a/third_party/blink/renderer/core/html/track/track_list_base.h
 +++ b/third_party/blink/renderer/core/html/track/track_list_base.h
-@@ -67,6 +67,20 @@
+@@ -67,6 +67,19 @@
      NOTREACHED();
    }
 -
 +
-+  // Parc: removes `track` itself, for lists whose ids can repeat.
 +  void RemoveTrack(T* track) {
 +    for (unsigned i = 0; i < tracks_.size(); ++i) {
 +      if (tracks_[i] != track) {
@@ -346,15 +324,7 @@
        track->SetMediaElement(nullptr);
 --- a/third_party/blink/renderer/core/html/track/audio_track.h
 +++ b/third_party/blink/renderer/core/html/track/audio_track.h
-@@ -16,12 +16,15 @@
-   DEFINE_WRAPPERTYPEINFO();
--
-+
-  public:
-+  // Parc: `webkit_kinds` also takes WebKit's "description" keyword, for
-+  // Safari's native HLS route's tracks (Safari-identity documents).
-   AudioTrack(const String& id,
-              const AtomicString& kind,
+@@ -21,7 +21,8 @@
               const AtomicString& label,
               const AtomicString& language,
               bool enabled,
@@ -367,13 +337,11 @@
 +
 --- a/third_party/blink/renderer/core/html/track/text_track.h
 +++ b/third_party/blink/renderer/core/html/track/text_track.h
-@@ -124,6 +124,11 @@
+@@ -124,6 +124,9 @@
    void SetHasBeenConfigured(bool flag) { has_been_configured_ = flag; }
 -
 +
    virtual bool IsDefault() const { return false; }
-+  // Parc: TextTrack.inBandMetadataTrackDispatchType on Safari-identity
-+  // documents (WebKit's TextTrack); ParcInbandTextTrack overrides it.
 +  virtual String inBandMetadataTrackDispatchType() const {
 +    return g_empty_string;
 +  }
@@ -384,7 +352,7 @@
 +
 --- a/third_party/blink/renderer/bindings/idl_in_core.gni
 +++ b/third_party/blink/renderer/bindings/idl_in_core.gni
-@@ -517,10 +517,13 @@
+@@ -518,10 +518,13 @@
    "//third_party/blink/renderer/core/html/media/html_media_element.idl",
    "//third_party/blink/renderer/core/html/media/html_video_element.idl",
    "//third_party/blink/renderer/core/html/media/media_error.idl",
@@ -400,7 +368,7 @@
    "//third_party/blink/renderer/core/html/track/text_track_cue.idl",
 --- a/third_party/blink/renderer/bindings/generated_in_core.gni
 +++ b/third_party/blink/renderer/bindings/generated_in_core.gni
-@@ -1008,6 +1008,8 @@
+@@ -1014,6 +1014,8 @@
    "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_custom_state_set.h",
    "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_container_query_list.cc",
    "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_container_query_list.h",
@@ -422,7 +390,7 @@
  #include "third_party/blink/renderer/bindings/core/v8/v8_align_setting.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_line_align_setting.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_position_align_setting.h"
-@@ -156,6 +159,20 @@
+@@ -157,6 +160,20 @@
    // Applies CSS override style from user settings.
    void ApplyUserOverrideCSSProperties();
 -
@@ -446,7 +414,7 @@
 +
 -
 +
-@@ -230,6 +247,9 @@
+@@ -231,6 +248,9 @@
    Member<VTTCueBackgroundBox> cue_background_box_;
    Member<VTTCueBox> display_tree_;
 -
@@ -459,19 +427,19 @@
  };
 --- a/third_party/blink/renderer/core/html/track/vtt/vtt_cue.cc
 +++ b/third_party/blink/renderer/core/html/track/vtt/vtt_cue.cc
-@@ -29,6 +29,8 @@
+@@ -28,6 +28,8 @@
+  */
 -
 +
  #include "third_party/blink/renderer/core/html/track/vtt/vtt_cue.h"
--
 +
 +#include "third_party/blink/renderer/core/html/media/parc_generic_cue_style.h"
+-
 +
  #include <cmath>
 -
 +
- #include "third_party/blink/renderer/bindings/core/v8/v8_direction_setting.h"
-@@ -871,6 +873,8 @@
+@@ -873,6 +875,8 @@
    if (!region()) {
      VTTDisplayParameters display_parameters = CalculateDisplayParameters();
      display_tree_->ApplyCSSProperties(display_parameters);

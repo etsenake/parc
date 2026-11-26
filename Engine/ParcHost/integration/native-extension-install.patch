@@ -8,12 +8,11 @@
  #include "extensions/buildflags/buildflags.h"
  #include "extensions/common/extension.h"
  #include "extensions/common/extension_resource.h"
-@@ -43,14 +44,36 @@
- using extensions::PermissionMessages;
+@@ -44,6 +45,28 @@
  using extensions::PermissionSet;
 -
 +
-+namespace {
+ namespace {
 +using ExtensionInstallCapture =
 +    std::shared_ptr<extensions::ExtensionInstallNativeBinding> (*)(
 +        ExtensionInstallPromptShowParams&);
@@ -27,29 +26,19 @@
 +  return g_extension_install_capture ? g_extension_install_capture(params)
 +                                     : nullptr;
 +}
-+}  // namespace extensions
++}
 +
 +namespace parc_hooks {
 +void SetExtensionInstallCapture(ExtensionInstallCapture capture) {
 +  g_extension_install_capture = capture;
 +}
-+}  // namespace parc_hooks
++}
 +
- namespace {
++namespace {
 -
 +
  // Returns bitmap for the default icon with size equal to the default icon's
  // pixel size under maximal supported scale factor.
- SkBitmap GetDefaultIconBitmapForMaxScaleFactor(bool is_app) {
--  const gfx::ImageSkia& image = is_app ?
--      extensions::util::GetDefaultAppIcon() :
--      extensions::util::GetDefaultExtensionIcon();
-+  const gfx::ImageSkia& image =
-+      is_app ? extensions::util::GetDefaultAppIcon()
-+             : extensions::util::GetDefaultExtensionIcon();
-   return image
-       .GetRepresentation(ui::GetScaleForMaxSupportedResourceScaleFactor())
-       .GetBitmap();
 @@ -86,7 +109,10 @@
        install_ui_(ExtensionInstallUI::Create(profile_)),
        show_params_(new ExtensionInstallPromptShowParams(contents)),
@@ -93,20 +82,7 @@
 +
  void ExtensionInstallPrompt::ShowDialog(
      DoneCallback done_callback,
-@@ -123,8 +165,9 @@
--
-+
-   extension_ = extension;
-   done_callback_ = std::move(done_callback);
--  if (icon && !icon->empty())
-+  if (icon && !icon->empty()) {
-     SetIcon(icon);
-+  }
-   custom_permissions_ = std::move(custom_permissions);
-   show_dialog_callback_ = show_dialog_callback;
--
-+
-@@ -138,6 +181,13 @@
+@@ -138,6 +180,13 @@
      return;
    }
 -
@@ -122,7 +98,7 @@
  }
 -
 +
-@@ -147,19 +197,38 @@
+@@ -147,19 +196,38 @@
    extension_ = extension;
    SetIcon(icon);
 -
@@ -166,7 +142,7 @@
  }
 -
 +
-@@ -216,10 +285,11 @@
+@@ -216,10 +284,11 @@
  }
 -
 +
@@ -181,7 +157,7 @@
    if (icon_.empty()) {
      // Let's set default icon bitmap whose size is equal to the default icon's
      // pixel size under maximal supported scale factor. If the bitmap is larger
-@@ -259,6 +329,10 @@
+@@ -259,6 +328,10 @@
  }
 -
 +
@@ -194,7 +170,7 @@
 -
 +
    if (custom_permissions_.get()) {
-@@ -276,6 +350,18 @@
+@@ -276,6 +349,16 @@
 -
 +
    prompt_->set_icon(gfx::Image::CreateFrom1xBitmap(icon_));
@@ -206,8 +182,6 @@
 +    show_params_.reset();
 +    g_last_prompt_type_for_tests = prompt->type();
 +    did_call_show_dialog_ = true;
-+    // Native binding owns prompt, callback and observer delivery together.
-+    // No caller state is accessed after the handoff.
 +    binding->Show(std::move(prompt));
 +    return;
 +  }
@@ -215,7 +189,7 @@
    if (show_params_->WasParentDestroyed()) {
      std::move(done_callback_).Run(DoneCallbackPayload(Result::ABORTED));
      return;
-@@ -288,11 +374,13 @@
+@@ -288,11 +371,13 @@
    prompt_->OnDialogOpened();
 -
 +
@@ -236,21 +210,19 @@
    auto cb = std::move(done_callback_);
 --- a/chrome/browser/extensions/extension_install_prompt.h
 +++ b/chrome/browser/extensions/extension_install_prompt.h
-@@ -30,2 +30,5 @@
+@@ -29,6 +29,9 @@
+-
++
  class ExtensionInstallPromptShowParams;
  class Profile;
 +namespace gfx {
 +class ImageSkia;
 +}
-@@ -33,12 +36,32 @@
- namespace content {
- class BrowserContext;
- class WebContents;
--}
-+}  // namespace content
 -
 +
- namespace extensions {
+ namespace content {
+ class BrowserContext;
+@@ -39,6 +42,26 @@
  class CrxInstallError;
  class Extension;
  class PermissionSet;
@@ -278,13 +250,11 @@
 -
 +
  // Displays all the UI around extension installation.
-@@ -78,6 +101,13 @@
+@@ -78,6 +101,11 @@
    ExtensionInstallPrompt(Profile* profile,
                           gfx::NativeWindow native_window,
                           std::unique_ptr<extensions::InstallPromptData> prompt);
 +
-+  // An explicitly owned non-browser importer may supply its real native consent
-+  // binding. The normal Browser/WebContents capture path remains unchanged.
 +  ExtensionInstallPrompt(Profile* profile,
 +                         gfx::NativeWindow native_window,
 +                         std::unique_ptr<extensions::InstallPromptData> prompt,
@@ -293,13 +263,11 @@
 +
    ExtensionInstallPrompt(const ExtensionInstallPrompt&) = delete;
    ExtensionInstallPrompt& operator=(const ExtensionInstallPrompt&) = delete;
-@@ -178,6 +208,12 @@
+@@ -178,6 +206,10 @@
    // Used to show the confirm dialog.
    ShowDialogCallback show_dialog_callback_;
 -
 +
-+  // Exact native origin, captured before icon loading. Never resolve a new
-+  // frontmost window at presentation or install completion.
 +  std::shared_ptr<extensions::ExtensionInstallNativeBinding> native_;
 +  bool skip_native_post_install_ui_ = false;
 +  bool native_app_installed_bubble_ = false;
@@ -329,14 +297,12 @@
  #include "ui/gfx/native_ui_types.h"
 -
 +
-@@ -28,6 +31,38 @@
+@@ -28,6 +31,36 @@
  #endif  // BUILDFLAG(IS_ANDROID)
 -
 +
  namespace {
 +
-+// The existing native binding captures the original page/profile before
-+// credentials or asynchronous work. Non-native browsers retain the Views UI.
 +class NativeParentPermissionDialog final : public ParentPermissionDialog {
 + public:
 +  NativeParentPermissionDialog(
@@ -370,14 +336,13 @@
 +
  void OnParentPermissionDialogComplete(
      extensions::SupervisedUserExtensionsDelegate::ExtensionApprovalDoneCallback
-@@ -133,12 +168,31 @@
+@@ -133,12 +166,30 @@
 -
 +
    done_callback_ = std::move(extension_approval_callback);
 -
 +
 -  // Fetch icon from local resources and then show enable flow.
-+  // Capture native page/document/profile ownership before icon loading.
 +  std::shared_ptr<ExtensionInstallNativeBinding> native;
 +  if (web_contents && web_contents->GetBrowserContext() == context_) {
 +    ExtensionInstallPromptShowParams params(web_contents);
@@ -409,7 +374,7 @@
    icon_loader_ = std::make_unique<ExtensionIconLoader>();
    icon_loader_->Load(extension, context_, std::move(icon_callback));
  }
-@@ -203,6 +257,16 @@
+@@ -203,6 +254,16 @@
                                             const gfx::ImageSkia& icon) {
    ParentPermissionDialog::DoneCallback inner_done_callback = base::BindOnce(
        &::OnParentPermissionDialogComplete, std::move(done_callback_));

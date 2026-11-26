@@ -16,6 +16,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
+#include "base/observer_list.h"
 #include "base/task/bind_post_task.h"
 #include "base/task/single_thread_task_runner.h"
 #include "browser_window.h"
@@ -23,6 +24,7 @@
 #include "chrome/browser/ui/browser_active_state_manager/browser_active_state_manager.h"
 #include "chrome/browser/ui/browser_init_state.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+#include "chrome/browser/ui/browser_window/public/desktop_browser_window_capabilities.h"
 #include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
 #include "chrome/browser/ui/exclusive_access/exclusive_access_context.h"
 #include "chrome/browser/ui/exclusive_access/exclusive_access_manager.h"
@@ -40,6 +42,7 @@
 #include "ui/base/mojom/window_show_state.mojom.h"
 #include "ui/color/color_provider_manager.h"
 #include "ui/color/color_provider_utils.h"
+#include "ui/color/parc_color_changes.h"
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/mac/coordinate_conversion.h"
 #include "ui/native_theme/native_theme.h"
@@ -86,8 +89,7 @@ static_assert(!std::is_abstract_v<NativeBrowserWindow>,
               "Implement every required BrowserWindow and color-source method");
 
 class NativeBrowserWindow::Impl final
-    : public NativeModalDialogHostDelegate,
-      public ui::ColorProviderManagerObserver {
+    : public NativeModalDialogHostDelegate {
  public:
   class ExclusiveContext final : public ExclusiveAccessContext {
    public:
@@ -163,7 +165,14 @@ class NativeBrowserWindow::Impl final
     cancelled_subscription_ =
         browser.RegisterBrowserCloseCancelled(base::BindRepeating(
             &Impl::OnBrowserCloseCancelled, weak_factory_.GetWeakPtr()));
-    ui::ColorProviderManager::Get().AddObserver(this);
+    auto& manager = ui::ColorProviderManager::Get();
+    auto& colors = ColorObservers();
+    if (!colors.windows) {
+      colors.manager = &manager;
+      colors.windows.emplace();
+      parc_hooks::SetColorChangeNotifier(&Impl::ColorChanged);
+    }
+    colors.windows->AddObserver(this);
     Registry().push_back(weak_factory_.GetWeakPtr());
   }
 
@@ -329,8 +338,7 @@ class NativeBrowserWindow::Impl final
 
   bool CanChangeWindowState() const {
     return !tearing_down_ && browser_ && !browser_->IsDeleteScheduled() &&
-           association_.window && browser_->GetType() !=
-                                      BrowserWindowInterface::TYPE_PICTURE_IN_PICTURE;
+           association_.window && !DesktopBrowserWindowCapabilities::IsDocumentPictureInPicture(browser_);
   }
 
   void ClearPendingWindowState() {
@@ -469,8 +477,30 @@ class NativeBrowserWindow::Impl final
     host_->BrowserCloseCancelled(status);
   }
 
-  void OnColorProviderCacheReset() override { QueueColorChange(); }
-  void OnAfterNativeThemeUpdated() override { QueueColorChange(); }
+  struct ColorSubscriptions {
+    raw_ptr<ui::ColorProviderManager> manager = nullptr;
+    std::optional<base::ObserverList<Impl>::UncheckedAndDanglingUntriaged> windows;
+  };
+
+  static ColorSubscriptions& ColorObservers() {
+    static base::NoDestructor<ColorSubscriptions> subscriptions;
+    return *subscriptions;
+  }
+
+  static void ColorChanged(ui::ColorProviderManager& manager,
+                           parc_hooks::ColorChange change) {
+    auto& colors = ColorObservers();
+    if (colors.manager != &manager)
+      return;
+    if (change == parc_hooks::ColorChange::kRetire) {
+      colors.manager = nullptr;
+      colors.windows.reset();
+      return;
+    }
+    for (Impl& window : *colors.windows)
+      window.QueueColorChange();
+  }
+
   void QueueColorChange() {
     RequireUIThread();
     if (tearing_down_ || color_change_pending_) {
@@ -511,7 +541,10 @@ class NativeBrowserWindow::Impl final
     browser_->GetFeatures().TearDownPreBrowserWindowDestruction();
     weak_factory_.InvalidateWeakPtrs();
     std::erase_if(Registry(), [](const auto& value) { return !value; });
-    ui::ColorProviderManager::Get().RemoveObserver(this);
+    auto& manager = ui::ColorProviderManager::Get();
+    auto& colors = ColorObservers();
+    if (colors.manager == &manager)
+      colors.windows->RemoveObserver(this);
     closed_subscription_ = {};
     cancelled_subscription_ = {};
     modal_.Invalidate();
@@ -557,7 +590,7 @@ std::optional<std::string> PrepareNativeWindowStateUpdate(
     ui::mojom::WindowShowState state,
     const gfx::Rect* bounds) {
   RequireUIThread();
-  if (browser.GetType() == BrowserWindowInterface::TYPE_PICTURE_IN_PICTURE) {
+  if (DesktopBrowserWindowCapabilities::IsDocumentPictureInPicture(&browser)) {
     return std::nullopt;
   }
   for (const auto& entry : NativeBrowserWindow::Impl::Registry()) {
@@ -676,8 +709,7 @@ gfx::Rect NativeBrowserWindow::GetBounds() const {
 void NativeBrowserWindow::SetBounds(const gfx::Rect& bounds) {
   RequireUIThread();
   if (!impl_->tearing_down_ && impl_->browser_ && !bounds.IsEmpty()) {
-    if (impl_->browser_->GetType() ==
-        BrowserWindowInterface::TYPE_PICTURE_IN_PICTURE) {
+    if (DesktopBrowserWindowCapabilities::IsDocumentPictureInPicture(impl_->browser_)) {
       if (impl_->association_.window) {
         impl_->host_->SetWindowBounds(GetNativeWindow(), bounds);
       }
@@ -695,8 +727,7 @@ void NativeBrowserWindow::Show() {
   }
   NSWindow* const window = impl->association_.window;
   const bool initial = !std::exchange(impl->has_been_shown_, true);
-  if (initial && impl->browser_->GetType() !=
-                     BrowserWindowInterface::TYPE_PICTURE_IN_PICTURE) {
+  if (initial && !DesktopBrowserWindowCapabilities::IsDocumentPictureInPicture(impl->browser_)) {
     const auto* state = BrowserInitState::From(impl->browser_);
     const auto show_state = state ? state->initial_show_state()
                                  : ui::mojom::WindowShowState::kDefault;
@@ -962,14 +993,12 @@ void NativeBrowserWindow::ShowHatsDialog(
 
 bool NativeBrowserWindow::IsMaximized() const {
   RequireUIThread();
-  return impl_->browser_ && impl_->browser_->GetType() !=
-             BrowserWindowInterface::TYPE_PICTURE_IN_PICTURE &&
+  return impl_->browser_ && !DesktopBrowserWindowCapabilities::IsDocumentPictureInPicture(impl_->browser_) &&
          !IsFullscreen() && impl_->association_.window.isZoomed;
 }
 gfx::Rect NativeBrowserWindow::GetRestoredBounds() const {
   RequireUIThread();
-  if (!impl_->browser_ || impl_->browser_->GetType() ==
-      BrowserWindowInterface::TYPE_PICTURE_IN_PICTURE) {
+  if (!impl_->browser_ || DesktopBrowserWindowCapabilities::IsDocumentPictureInPicture(impl_->browser_)) {
     return {};
   }
   return impl_->association_.window
@@ -977,8 +1006,7 @@ gfx::Rect NativeBrowserWindow::GetRestoredBounds() const {
              : gfx::Rect();
 }
 ui::mojom::WindowShowState NativeBrowserWindow::GetRestoredState() const {
-  if (!impl_->browser_ || impl_->browser_->GetType() ==
-      BrowserWindowInterface::TYPE_PICTURE_IN_PICTURE) {
+  if (!impl_->browser_ || DesktopBrowserWindowCapabilities::IsDocumentPictureInPicture(impl_->browser_)) {
     return ui::mojom::WindowShowState::kNormal;
   }
   return GetWindowShowState();
@@ -993,8 +1021,7 @@ void NativeBrowserWindow::Hide() {
 }
 void NativeBrowserWindow::ShowInactive() {
   RequireUIThread();
-  if (impl_->browser_->GetType() ==
-      BrowserWindowInterface::TYPE_PICTURE_IN_PICTURE) {
+  if (DesktopBrowserWindowCapabilities::IsDocumentPictureInPicture(impl_->browser_)) {
     return;
   }
   const auto impl = impl_->weak_factory_.GetWeakPtr();
@@ -1117,8 +1144,7 @@ bool NativeBrowserWindow::GetCanResize() {
 }
 ui::mojom::WindowShowState NativeBrowserWindow::GetWindowShowState() const {
   RequireUIThread();
-  if (!impl_->browser_ || impl_->browser_->GetType() ==
-      BrowserWindowInterface::TYPE_PICTURE_IN_PICTURE) {
+  if (!impl_->browser_ || DesktopBrowserWindowCapabilities::IsDocumentPictureInPicture(impl_->browser_)) {
     return ui::mojom::WindowShowState::kNormal;
   }
   if (IsFullscreen()) {

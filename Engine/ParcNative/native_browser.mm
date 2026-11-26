@@ -29,6 +29,7 @@
 #include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 #include "native_appkit_host.h"
 #include "native_auxiliary_services.h"
 #include "native_browser_web_contents_delegate.h"
@@ -405,7 +406,7 @@ bool DeferNativePrivateOpen(
     const content::OpenURLParams& params,
     base::OnceCallback<void(content::NavigationHandle&)>&
         navigation_handle_callback) {
-  if (params.disposition != WindowOpenDisposition::OFF_THE_RECORD) {
+  if (params.disposition != WindowOpenDisposition::kOffTheRecord) {
     return false;
   }
   Profile* parent = Profile::FromBrowserContext(source.GetBrowserContext());
@@ -504,7 +505,9 @@ bool PrepareNativeBrowserWindow(BrowserWindowCreateParams& params) {
         params.type == BrowserWindowInterface::TYPE_DEVTOOLS
             ? NativeWindowReason::kDevTools
             : (params.type == BrowserWindowInterface::TYPE_POPUP ||
-               params.type == BrowserWindowInterface::TYPE_APP_POPUP)
+               params.type == BrowserWindowInterface::TYPE_APP_POPUP ||
+               (params.type == BrowserWindowInterface::TYPE_FLOATING &&
+                !params.is_pip()))
                   ? NativeWindowReason::kPopup
                   : NativeWindowReason::kInternal,
         opener, nullptr, params.from_user_gesture};
@@ -518,6 +521,8 @@ bool PrepareNativeBrowserWindow(BrowserWindowCreateParams& params) {
     request.can_resize = params.can_resize;
     request.can_maximize = params.can_maximize;
     request.can_fullscreen = params.can_fullscreen;
+    request.is_document_picture_in_picture =
+        params.type == BrowserWindowInterface::TYPE_FLOATING && params.is_pip();
     auto prepared = PrepareAppKitWindow(request);
     if (!prepared.has_value()) {
       return fail(prepared.error());
@@ -570,7 +575,10 @@ void OpenNativeDevtoolsLink(Profile& profile, const GURL& url) {
     return;
   }
   NavigateParams params(&profile, url, ui::PAGE_TRANSITION_LINK);
-  params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+  params.initiator_origin = url::Origin();
+  params.web_app_navigation_data.emplace();
+  params.web_app_navigation_data->SetNavigationCapturingForceOff(true);
+  params.disposition = WindowOpenDisposition::kNewForegroundTab;
   params.window_action = NavigateParams::WindowAction::kShowWindow;
   Navigate(&params);
 }

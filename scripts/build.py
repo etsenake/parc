@@ -1117,6 +1117,7 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
             else:
                 raise Refusal("Swift runtime lacks ARM64: " + library.name)
         info = info_plist("Parc", "org.parc.Browser", version)
+        info["CrProductDirName"] = "Parc/Chromium-v1"
         info["ParcChromiumVersion"] = read_json(repo / "Engine/source-lock.json")["chromium"]["tag"]
         unsplash_key = unsplash_access_key()
         if unsplash_key:

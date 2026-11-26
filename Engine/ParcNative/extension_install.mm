@@ -73,7 +73,7 @@ class RefusedInstallBinding final
                             const SkBitmap*,
                             bool) override {}
 };
-}  // namespace
+}
 
 class NativeExtensionInstallService::Request final
     : public extensions::ExtensionInstallNativeBinding,
@@ -228,8 +228,6 @@ class NativeExtensionInstallService::Request final
     }
     CHECK(began_ && !prompt_ && prompt);
     prompt_ = std::move(prompt);
-    // Keep the real prompt alive across arbitrary observer reentry. Complete
-    // moves it into a non-nestable callback task before marking cancellation.
     prompt_->OnDialogOpened();
     if (decided_ || !Valid()) {
       Complete(Result::ABORTED);
@@ -266,7 +264,6 @@ class NativeExtensionInstallService::Request final
       [messages addObject:base::SysUTF16ToNSString(permissions.permissions[i])];
       [details addObject:base::SysUTF16ToNSString(permissions.details[i])];
     }
-    // Same actual policy and Web Store branch as the current Views presenter.
     withhold_ = prompt_->ShouldWithheldPermissionsOnDialogAccept() &&
                 !prompt_->has_webstore_data();
     std::weak_ptr<Request> weak = keep;
@@ -366,9 +363,6 @@ class NativeExtensionInstallService::Request final
                             const std::u16string&, const SkBitmap*,
                             bool app_installed_bubble) override {
     auto keep = shared_from_this();
-    // Installer results present no native UI. Only a non-bubble app opens the
-    // Apps page, reusing an open one in the original window like the engine's
-    // own install UI.
     if (result_seen_) {
       return;
     }
@@ -379,7 +373,7 @@ class NativeExtensionInstallService::Request final
       return;
     }
     auto params = content::OpenURLParams::CreateBrowserInitiated(
-        GURL(chrome::kChromeUIAppsURL), WindowOpenDisposition::SINGLETON_TAB,
+        GURL(chrome::kChromeUIAppsURL), WindowOpenDisposition::kSingletonTab,
         ui::PAGE_TRANSITION_AUTO_BOOKMARK);
     params.user_gesture = true;
     web_contents()->OpenURL(params, {});
@@ -430,16 +424,11 @@ class NativeExtensionInstallService::Request final
                   prompt->OnDialogCanceled();
                 }
               }
-              // Prompt observers can destroy/navigate the page or replace the
-              // UI.
               if (accepted() &&
                   (!self->Valid() ||
                    PCNativeWindowHasSecurityReservation(self->window_))) {
                 result = Result::ABORTED;
               }
-              // A request result returns to Chromium's enterprise controller;
-              // it does not install, grant permissions or approve parent access.
-              // Never retain submitted text for an aborted/canceled request.
               std::move(done).Run(Payload(
                   result, accepted() ? std::move(justification) : std::string()));
             },
@@ -587,8 +576,6 @@ NativeExtensionInstallService::CaptureFor(
   if (page) {
     owner = collection->FindBrowserWithTab(page);
   } else if (auto window = params.GetParentWindow()) {
-    // Several native Browsers can share one NSWindow. An ambiguous bare
-    // window cannot choose one Profile/Space or page for consent.
     bool ambiguous = false;
     collection->ForEach([&](BrowserWindowInterface* browser) {
       if (browser->GetProfile() == profile && browser->GetWindow() &&
@@ -651,4 +638,4 @@ void NativeExtensionInstallService::Shutdown() {
     }
   }
 }
-}  // namespace parc
+}

@@ -1,7 +1,5 @@
 // Copyright 2026 Parc contributors.
-// This fixture is derived from Chromium's key_system_config_selector_unittest.cc
 // (Chromium Authors; BSD-style license in Chromium's LICENSE) and contains
-// only Parc regressions.
 
 #include "third_party/blink/public/platform/media/key_system_config_selector.h"
 
@@ -39,13 +37,9 @@ using ::media::EmeMediaType;
 using MediaKeysRequirement = WebMediaKeySystemConfiguration::Requirement;
 using EncryptionScheme = WebMediaKeySystemMediaCapability::EncryptionScheme;
 
-// Key system strings. Clear Key support is hardcoded in KeySystemConfigSelector
-// so media::kClearKeyKeySystem is the real key system string. The rest key
-// system strings are for testing purpose only.
 const char kSupportedKeySystem[] = "keysystem.test.supported";
 const char kSupportedSubKeySystem[] = "keysystem.test.supported.sub";
 
-// Robustness strings for kSupportedKeySystem.
 const char kSupportedRobustness[] = "supported";
 const char kRecommendIdentifierRobustness[] = "recommend_identifier";
 const char kRequireIdentifierRobustness[] = "require_identifier";
@@ -62,31 +56,18 @@ const char kRequireIdentifierPersistenceAndHwSecureCodecRobustness[] =
     "require_identifier_persistence_and_hw_secure_codec";
 const char kUnsupportedRobustness[] = "unsupported";
 
-// Test container mime types. Supported types are prefixed with audio/video so
-// that the test can perform EmeMediaType check.
 const char kSupportedAudioContainer[] = "audio/supported";
 const char kUnsupportedContainer[] = "video/unsupported";
 const char kInvalidContainer[] = "video/invalid";
 
-// The codec strings. Supported types are prefixed with audio/video so
-// that the test can perform EmeMediaType check.
-// TODO(sandersd): Extended codec variants (requires proprietary codec support).
-// TODO(xhwang): Platform Opus is not available on all Android versions, where
-// some encrypted Opus related tests may fail. See
-// MediaCodecUtil::IsOpusDecoderAvailable() for more details.
 const char kSupportedAudioCodec[] = "audio_codec";
 const char kUnsupportedCodec[] = "unsupported_codec";
 const char kInvalidCodec[] = "foo";
 const char kRequireHwSecureCodec[] = "require_hw_secure_codec";
 const char kDisallowHwSecureCodec[] = "disallow_hw_secure_codec";
 const char kExtendedVideoCodecStripped[] = "video_extended_codec";
-// A special codec that is supported by the key systems, but is not supported
-// in IsSupportedMediaType() when |use_aes_decryptor| is true.
 const char kUnsupportedByAesDecryptorCodec[] = "unsupported_by_aes_decryptor";
 
-// Encryption schemes. For testing 'cenc' is supported, while 'cbcs' is not.
-// Note that WebMediaKeySystemMediaCapability defaults to kNotSpecified,
-// which is treated as 'cenc' by KeySystemConfigSelector.
 constexpr EncryptionScheme kSupportedEncryptionScheme = EncryptionScheme::kCenc;
 constexpr EncryptionScheme kDisallowHwSecureCodecEncryptionScheme =
     EncryptionScheme::kCbcs;
@@ -101,7 +82,6 @@ media::EncryptionScheme ConvertEncryptionScheme(
     case EncryptionScheme::kCbcs_1_9:
       return media::EncryptionScheme::kCbcs;
     case EncryptionScheme::kUnrecognized:
-      // Not used in these tests.
       break;
   }
 
@@ -116,7 +96,6 @@ bool IsValidCodec(const std::string& codec) {
   return codec != kInvalidCodec;
 }
 
-// Returns whether |type| is compatible with |media_type|.
 bool IsCompatibleWithEmeMediaType(EmeMediaType media_type,
                                   const std::string& type) {
   if (media_type == EmeMediaType::AUDIO && base::MatchPattern(type, "video*"))
@@ -128,8 +107,6 @@ bool IsCompatibleWithEmeMediaType(EmeMediaType media_type,
   return true;
 }
 
-// Pretend that we support all |container_mime_type| and |codecs| except for
-// those explicitly marked as invalid.
 bool IsSupportedMediaType(const std::string& container_mime_type,
                           const std::string& codecs,
                           bool use_aes_decryptor) {
@@ -152,14 +129,7 @@ bool IsSupportedMediaType(const std::string& container_mime_type,
   return true;
 }
 
-// The IDL for MediaKeySystemConfiguration specifies some defaults, so
-// create a config object that mimics what would be created if an empty
-// dictionary was passed in.
 WebMediaKeySystemConfiguration EmptyConfiguration() {
-  // http://w3c.github.io/encrypted-media/#mediakeysystemconfiguration-dictionary
-  // If this member (sessionTypes) is not present when the dictionary
-  // is passed to requestMediaKeySystemAccess(), the dictionary will
-  // be treated as if this member is set to [ "temporary" ].
   std::vector<WebEncryptedMediaSessionType> session_types;
   session_types.push_back(WebEncryptedMediaSessionType::kTemporary);
 
@@ -169,12 +139,7 @@ WebMediaKeySystemConfiguration EmptyConfiguration() {
   return config;
 }
 
-// EME spec requires that at least one of |video_capabilities| and
-// |audio_capabilities| be specified. Add a single valid audio capability
-// to the EmptyConfiguration().
 WebMediaKeySystemConfiguration UsableConfiguration() {
-  // Blink code parses the contentType into mimeType and codecs, so mimic
-  // that here.
   std::vector<WebMediaKeySystemMediaCapability> audio_capabilities(1);
   audio_capabilities[0].mime_type = kSupportedAudioContainer;
   audio_capabilities[0].codecs = kSupportedAudioCodec;
@@ -188,8 +153,7 @@ class FakeKeySystems : public media::KeySystems {
  public:
   ~FakeKeySystems() override = default;
 
-  void UpdateIfNeeded(base::OnceClosure done_cb) override {
-    // Call the callback directly since it's always up to date.
+  void UpdateIfNeeded(const std::string&, base::OnceClosure done_cb) override {
     std::move(done_cb).Run();
   }
 
@@ -201,7 +165,6 @@ class FakeKeySystems : public media::KeySystems {
   }
 
   bool IsSupportedKeySystem(const std::string& key_system) const override {
-    // Based on EME spec, Clear Key key system is always supported.
     return key_system == media::kClearKeyKeySystem ||
            key_system == kSupportedKeySystem ||
            key_system == kSupportedSubKeySystem;
@@ -216,12 +179,10 @@ class FakeKeySystems : public media::KeySystems {
     return key_system == media::kClearKeyKeySystem;
   }
 
-  // TODO(sandersd): Move implementation into KeySystemConfigSelector?
   bool IsSupportedInitDataType(const std::string& key_system,
                                EmeInitDataType init_data_type) const override {
     switch (init_data_type) {
       case EmeInitDataType::UNKNOWN:
-      // Parc: FairPlay's types.
       case EmeInitDataType::SINF:
       case EmeInitDataType::SKD:
       case EmeInitDataType::MPTS:
@@ -302,8 +263,6 @@ class FakeKeySystems : public media::KeySystems {
       const std::string& requested_robustness,
       const bool* hw_secure_requirement) const override {
     // TODO(crbug.com/40179944): Remove the `hw_secure_requirement` parameter.
-    // This only exists as a temporary solution until a larger refactoring is
-    // done. We are only testing the explicit thing it is fixing here.
     if (hw_secure_requirement && *hw_secure_requirement &&
         distinctive_identifier == EmeFeatureSupport::NOT_SUPPORTED) {
       return EmeConfig::UnsupportedRule();
@@ -359,8 +318,6 @@ class FakeKeySystems : public media::KeySystems {
     return persistent_license;
   }
 
-  // Parc: FairPlay's persistent-usage-record support, which tells the
-  // selector whether a Safari-identity page may persist FairPlay state.
   EmeConfig::Rule GetPersistentUsageRecordSessionSupport(
       const std::string& key_system) const override {
     return persistent_usage_record;
@@ -383,17 +340,12 @@ class FakeKeySystems : public media::KeySystems {
   EmeConfig::Rule persistent_license = EmeConfig::UnsupportedRule();
   EmeConfig::Rule persistent_usage_record = EmeConfig::UnsupportedRule();
 
-  // Every test implicitly requires these, so they must be set. They are set to
-  // values that are likely to cause tests to fail if they are accidentally
-  // depended on. Test cases explicitly depending on them should set them, as
-  // the default values may be changed.
   EmeFeatureSupport persistent_state = EmeFeatureSupport::NOT_SUPPORTED;
   EmeFeatureSupport distinctive_identifier = EmeFeatureSupport::REQUESTABLE;
 };
 
 class FakeMediaPermission : public media::MediaPermission {
  public:
-  // MediaPermission implementation.
   void HasPermission(Type type,
                      PermissionStatusCB permission_status_cb) override {
     std::move(permission_status_cb).Run(is_granted);
@@ -412,14 +364,14 @@ class FakeMediaPermission : public media::MediaPermission {
       IsHardwareSecureDecryptionAllowedCB cb) override {
     std::move(cb).Run(is_hardware_secure_decryption_allowed);
   }
-#endif  // BUILDFLAG(IS_WIN)
+#endif
 
   int requests = 0;
   bool is_granted = false;
   bool is_encrypted_media_enabled = true;
 #if BUILDFLAG(IS_WIN)
   bool is_hardware_secure_decryption_allowed = true;
-#endif  // BUILDFLAG(IS_WIN)
+#endif
 };
 
 class FakeWebLocalFrameDelegate
@@ -439,7 +391,7 @@ class FakeWebLocalFrameDelegate
   bool local_storage_allowed_ = true;
 };
 
-}  // namespace
+}
 
 class ParcKeySystemConfigSelectorTest : public testing::Test {
  public:
@@ -459,9 +411,6 @@ class ParcKeySystemConfigSelectorTest : public testing::Test {
     KeySystemConfigSelector key_system_config_selector(
         key_systems_.get(), media_permission_.get(),
         std::move(web_frame_delegate_));
-    // Replace the delegate with a new one to handle tests that call this
-    // method multiple times. This is safe because they don't use the delegate
-    // in testing.
     web_frame_delegate_ = std::make_unique<FakeWebLocalFrameDelegate>();
 
     key_system_config_selector.SetIsSupportedMediaTypeCBForTesting(
@@ -504,11 +453,9 @@ class ParcKeySystemConfigSelectorTest : public testing::Test {
   std::unique_ptr<FakeMediaPermission> media_permission_;
   std::unique_ptr<FakeWebLocalFrameDelegate> web_frame_delegate_;
 
-  // Held values for the call to SelectConfig().
   WebString key_system_ = WebString::FromUtf8(kSupportedKeySystem);
   std::vector<WebMediaKeySystemConfiguration> configs_;
 
-  // Holds the selected key system configuration.
   WebMediaKeySystemConfiguration config_;
 
   int succeeded_count_;
@@ -516,9 +463,6 @@ class ParcKeySystemConfigSelectorTest : public testing::Test {
 };
 
 // Parc: Safari's FairPlay on macOS takes "persistent-license" beside
-// "temporary" (CDMPrivateFairPlayStreaming::supportsConfiguration), so only
-// MediaKeys creation fails, and refuses it alone or after "temporary" is
-// refused by a required persistent state.
 TEST_F(ParcKeySystemConfigSelectorTest,
        ParcSafariFairPlay_PersistentLicenseBesideTemporary) {
   key_systems_->persistent_state = EmeFeatureSupport::REQUESTABLE;
@@ -573,7 +517,6 @@ TEST_F(ParcKeySystemConfigSelectorTest,
 
 TEST_F(ParcKeySystemConfigSelectorTest,
        ParcSafariFairPlay_PersistentLicenseWithoutPersistentState) {
-  // A process that can't persist data (a private window).
   key_systems_->persistent_state = EmeFeatureSupport::REQUESTABLE;
   key_systems_->persistent_usage_record = EmeConfig::UnsupportedRule();
 
@@ -587,4 +530,4 @@ TEST_F(ParcKeySystemConfigSelectorTest,
   SelectConfigReturnsError();
 }
 
-}  // namespace blink
+}

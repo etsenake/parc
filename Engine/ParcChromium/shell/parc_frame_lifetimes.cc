@@ -31,10 +31,10 @@ void RenderFrameHostImpl::PrepareNativeMainFrameLink(
     WindowOpenDisposition disposition, std::optional<uint32_t> input_modifiers,
     PrepareNativeMainFrameLinkCallback callback) {
   auto* contents = WebContents::FromRenderFrameHost(this);
-  const bool option = disposition == WindowOpenDisposition::SAVE_TO_DISK;
-  if ((disposition != WindowOpenDisposition::CURRENT_TAB &&
-       disposition != WindowOpenDisposition::NEW_FOREGROUND_TAB &&
-       disposition != WindowOpenDisposition::NEW_BACKGROUND_TAB && !option) ||
+  const bool option = disposition == WindowOpenDisposition::kSaveToDisk;
+  if ((disposition != WindowOpenDisposition::kCurrentTab &&
+       disposition != WindowOpenDisposition::kNewForegroundTab &&
+       disposition != WindowOpenDisposition::kNewBackgroundTab && !option) ||
       !contents || !(option ? GetPage().IsPrimary() : IsInPrimaryMainFrame()) ||
       !IsActive() ||
       IsNestedWithinFencedFrame() ||

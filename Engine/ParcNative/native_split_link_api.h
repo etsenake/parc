@@ -2,8 +2,10 @@
 
 #ifndef PARC_NATIVE_NATIVE_SPLIT_LINK_API_H_
 #define PARC_NATIVE_NATIVE_SPLIT_LINK_API_H_
+#include <cstdint>
+
 class BrowserWindowInterface;
-enum class WindowOpenDisposition;
+namespace ui::mojom { enum class WindowOpenDisposition : int32_t; }
 namespace content { class WebContents; }
 namespace parc {
 enum class NativeSplitDecision { kUnmanaged, kOrdinary, kAdmitted };
@@ -17,6 +19,6 @@ bool HasNativeSplitOwner(BrowserWindowInterface& browser, content::WebContents& 
 bool PrepareNativeCreatedSplit(BrowserWindowInterface& browser,
                                content::WebContents* source,
                                content::WebContents* child,
-                               WindowOpenDisposition& disposition);
+                               ui::mojom::WindowOpenDisposition& disposition);
 }
 #endif

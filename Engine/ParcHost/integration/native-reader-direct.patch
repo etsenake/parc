@@ -1,6 +1,6 @@
 --- a/chrome/browser/dom_distiller/dom_distiller_service_factory.cc
 +++ b/chrome/browser/dom_distiller/dom_distiller_service_factory.cc
-@@ -58,13 +58,12 @@
+@@ -57,13 +57,9 @@
  DomDistillerServiceFactory::DomDistillerServiceFactory()
      : ProfileKeyedServiceFactory(
            "DomDistillerService",
@@ -11,21 +11,16 @@
 -              // TODO(crbug.com/40257657): Check if this service is needed in
 -              // Guest mode.
 -              .WithGuest(ProfileSelection::kRedirectedToOriginal)
-+              // Parc: reader extraction, article cache, network and
-+              // preference writes belong to the actual profile, including
-+              // private windows.
 +              .WithRegular(ProfileSelection::kOwnInstance)
 +              .WithGuest(ProfileSelection::kOwnInstance)
                // TODO(crbug.com/41488885): Check if this service is needed for
                // Ash Internals.
                .WithAshInternals(ProfileSelection::kRedirectedToOriginal)
-@@ -101,10 +100,13 @@
+@@ -89,10 +85,11 @@
 -
 +
    std::unique_ptr<DistilledPagePrefs> distilled_page_prefs =
        std::make_unique<DistilledPagePrefs>(profile->GetPrefs());
-+  // Off-record profiles inherit default zoom but do not own ChromeZoomLevelPrefs.
-+  // The distilled-page prefs above still write to the actual private PrefService.
 +  Profile* zoom_profile = profile->GetOriginalProfile();
    distilled_page_prefs->SetDefaultFontScaling(
 -      profile->GetZoomLevelPrefs()->GetDefaultZoomFactor());
@@ -36,13 +31,11 @@
            base::BindRepeating(&DomDistillerServiceFactory::
                                    UpdateDistilledPagePrefsDefaultFontScaling,
                                weak_ptr_factory_.GetWeakPtr(),
-@@ -130,8 +132,11 @@
+@@ -118,8 +115,9 @@
    DistilledPagePrefs* distilled_page_prefs = service->GetDistilledPagePrefs();
 -
 +
    Profile* profile = Profile::FromBrowserContext(context);
-+  // Off-record profiles inherit default zoom but do not own ChromeZoomLevelPrefs.
-+  // The distilled-page prefs above still write to the actual private PrefService.
 +  Profile* zoom_profile = profile->GetOriginalProfile();
    distilled_page_prefs->SetDefaultFontScaling(
 -      profile->GetZoomLevelPrefs()->GetDefaultZoomFactor());

@@ -37,7 +37,8 @@ class ParcContentBrowserClient final : public ChromeContentBrowserClient {
   std::unique_ptr<content::BrowserMainParts> CreateBrowserMainParts(
       bool is_integration_test) override;
   std::unique_ptr<HttpAuthCoordinator> CreateHttpAuthCoordinator() override;
-  base::FilePath GetChildProcessPath(int flags) override;
+  base::FilePath GetChildProcessPath(
+      int flags, content::ChildProcessId child_process_id) override;
   void AppendExtraCommandLineSwitches(base::CommandLine* command_line,
                                       int child_process_id) override;
   void RegisterBrowserInterfaceBindersForFrame(

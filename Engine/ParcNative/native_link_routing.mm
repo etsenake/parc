@@ -531,7 +531,7 @@ class HeldShiftOpening final : public content::WebContentsObserver {
     if (!opener || !source_ || !NativeHeldShiftNavigationJoinsPeek(held)) return nullptr;
     auto params = std::make_unique<content::OpenURLParams>(
         content::OpenURLParams::CreateRendererInitiated(navigation.GetURL(),
-            WindowOpenDisposition::CURRENT_TAB, ui::PAGE_TRANSITION_LINK, content::Referrer(),
+            WindowOpenDisposition::kCurrentTab, ui::PAGE_TRANSITION_LINK, content::Referrer(),
             opener->GetCurrentInitiatorNavigationState()));
     params->user_gesture = true;
     params->initiator_origin = opener->GetLastCommittedOrigin();
@@ -554,7 +554,7 @@ class HeldShiftOpening final : public content::WebContentsObserver {
     if (source && browser) {
       CreatedPage admission(*source, *source->GetPrimaryMainFrame(), *browser);
       if (!CanNavigatePeekSource(admission))
-        params->disposition = WindowOpenDisposition::NEW_WINDOW;
+        params->disposition = WindowOpenDisposition::kNewWindow;
       auto* delegate = source && browser ?
           BrowserWebContentsDelegate::From(browser.get()) : nullptr;
       if (delegate)
@@ -635,10 +635,10 @@ std::optional<base::UnguessableToken> PrepareNativeCurrentLink(
     BrowserWindowInterface& browser, content::RenderFrameHost* frame,
     const GURL& target, WindowOpenDisposition disposition,
     std::optional<uint32_t> input_modifiers) {
-  const bool modified = disposition == WindowOpenDisposition::NEW_FOREGROUND_TAB ||
-      disposition == WindowOpenDisposition::NEW_BACKGROUND_TAB;
+  const bool modified = disposition == WindowOpenDisposition::kNewForegroundTab ||
+      disposition == WindowOpenDisposition::kNewBackgroundTab;
 
-  if (disposition != WindowOpenDisposition::CURRENT_TAB && !modified) return std::nullopt;
+  if (disposition != WindowOpenDisposition::kCurrentTab && !modified) return std::nullopt;
   if (modified && (!input_modifiers ||
       (*input_modifiers & blink::WebInputEvent::kAltKey))) return std::nullopt;
   auto* source = frame ? content::WebContents::FromRenderFrameHost(frame) : nullptr;
@@ -736,7 +736,7 @@ std::unique_ptr<NativePeekNavigation> PrepareNativeSplitNavigation(
     const content::OpenURLParams& params) {
   if (!source || !params.is_renderer_initiated || !params.user_gesture ||
       params.started_from_context_menu || !params.url.SchemeIsHTTPOrHTTPS() ||
-      params.disposition != WindowOpenDisposition::NEW_SPLIT_VIEW ||
+      params.disposition != WindowOpenDisposition::kNewSplitView ||
       !params.initiator_frame_token || params.native_route_token ||
       !ui::PageTransitionCoreTypeIs(params.transition, ui::PAGE_TRANSITION_LINK)) return nullptr;
   auto* frame = content::RenderFrameHost::FromFrameToken(content::GlobalRenderFrameHostToken(
@@ -776,7 +776,7 @@ std::unique_ptr<content::OpenURLParams> TakeNativeOptionLink(
   auto* pending = source ? static_cast<PendingOptionLink*>(
       source->GetUserData(&kPendingOptionLinkKey)) : nullptr;
   if (!pending || !params.native_route_token || pending->token != *params.native_route_token ||
-      params.disposition != WindowOpenDisposition::SAVE_TO_DISK) return nullptr;
+      params.disposition != WindowOpenDisposition::kSaveToDisk) return nullptr;
   auto data = source->TakeUserData(&kPendingOptionLinkKey);
   pending = static_cast<PendingOptionLink*>(data.get());
   auto* frame = pending->document.AsRenderFrameHostIfValid();
@@ -792,7 +792,7 @@ std::unique_ptr<content::OpenURLParams> TakeNativeOptionLink(
     return nullptr;
   auto split = std::make_unique<content::OpenURLParams>(params);
   split->native_route_token.reset();
-  split->disposition = WindowOpenDisposition::NEW_SPLIT_VIEW;
+  split->disposition = WindowOpenDisposition::kNewSplitView;
   return split;
 }
 std::unique_ptr<NativePeekNavigation> PrepareNativePeekNavigation(
@@ -802,7 +802,7 @@ std::unique_ptr<NativePeekNavigation> PrepareNativePeekNavigation(
     auto* pending = source ? static_cast<PendingCurrentLink*>(
         source->GetUserData(&kPendingCurrentLinkKey)) : nullptr;
     if (!pending || pending->route ||
-        pending->disposition != WindowOpenDisposition::CURRENT_TAB ||
+        pending->disposition != WindowOpenDisposition::kCurrentTab ||
         pending->token != *params.native_route_token) return nullptr;
 
     auto creation = std::move(pending->creation);
@@ -813,7 +813,7 @@ std::unique_ptr<NativePeekNavigation> PrepareNativePeekNavigation(
     source->RemoveUserData(&kPendingCurrentLinkKey);
     if (!creation || creation->browser_.get() != &browser ||
         !params.is_renderer_initiated || !params.user_gesture ||
-        params.disposition != WindowOpenDisposition::NEW_FOREGROUND_TAB ||
+        params.disposition != WindowOpenDisposition::kNewForegroundTab ||
         params.url != target || !params.initiator_frame_token ||
         !ui::PageTransitionCoreTypeIs(params.transition, ui::PAGE_TRANSITION_LINK))
       return nullptr;
@@ -833,8 +833,8 @@ std::unique_ptr<NativePeekNavigation> PrepareNativePeekNavigation(
 
   if (source && source->GetBrowserContext() == browser.GetProfile() &&
       AppKitBrowserAcceptsNewPages(browser) &&
-      (params.disposition == WindowOpenDisposition::NEW_FOREGROUND_TAB ||
-       params.disposition == WindowOpenDisposition::NEW_BACKGROUND_TAB)) {
+      (params.disposition == WindowOpenDisposition::kNewForegroundTab ||
+       params.disposition == WindowOpenDisposition::kNewBackgroundTab)) {
     auto* frame = params.initiator_frame_token ?
         content::RenderFrameHost::FromFrameToken(content::GlobalRenderFrameHostToken(
             params.initiator_process_id, *params.initiator_frame_token)) :
@@ -851,7 +851,7 @@ std::unique_ptr<NativePeekNavigation> PrepareNativePeekNavigation(
 
   if (!source || !params.is_renderer_initiated || !params.user_gesture ||
       params.started_from_context_menu || !params.url.SchemeIsHTTPOrHTTPS() ||
-      params.disposition != WindowOpenDisposition::NEW_WINDOW ||
+      params.disposition != WindowOpenDisposition::kNewWindow ||
       !ui::PageTransitionCoreTypeIs(params.transition, ui::PAGE_TRANSITION_LINK) ||
       !params.initiator_frame_token || !AppKitBrowserAcceptsNewPages(browser))
     return nullptr;
@@ -870,8 +870,8 @@ std::unique_ptr<NativePeekNavigation> PrepareNativePeekNavigation(
                                            : CanPresentSource(*creation))) return nullptr;
   auto state = std::make_unique<NativePeekNavigation::State>(std::move(creation), params);
   state->peek = link == NativeShiftLink::kPeek;
-  RetargetNativeShiftLink(state->params, link, WindowOpenDisposition::CURRENT_TAB,
-                          WindowOpenDisposition::NEW_FOREGROUND_TAB);
+  RetargetNativeShiftLink(state->params, link, WindowOpenDisposition::kCurrentTab,
+                          WindowOpenDisposition::kNewForegroundTab);
   return std::unique_ptr<NativePeekNavigation>(
       new NativePeekNavigation(std::move(state)));
 }
@@ -889,7 +889,7 @@ class MatchedLinkOperation final : public content::WebContentsObserver,
         params_(params), callback_(std::move(callback)) {
     params_.native_route_token.reset();
     params_.native_route_background =
-        params_.disposition == WindowOpenDisposition::NEW_BACKGROUND_TAB;
+        params_.disposition == WindowOpenDisposition::kNewBackgroundTab;
   }
   void DidStartNavigation(content::NavigationHandle* navigation) override {
     if (navigation->IsInPrimaryMainFrame()) invalid_ = true;
@@ -1026,8 +1026,8 @@ bool HandleNativeMatchedLink(BrowserWindowInterface& browser, content::WebConten
   auto creation = std::move(pending->creation);
   const auto sequence = pending->sequence;
   const auto original_disposition = pending->disposition;
-  const auto expected_disposition = original_disposition == WindowOpenDisposition::CURRENT_TAB
-      ? WindowOpenDisposition::NEW_FOREGROUND_TAB : original_disposition;
+  const auto expected_disposition = original_disposition == WindowOpenDisposition::kCurrentTab
+      ? WindowOpenDisposition::kNewForegroundTab : original_disposition;
   const GURL source_url = pending->source_url;
   const GURL target = pending->url;
   source->RemoveUserData(&kPendingCurrentLinkKey);
@@ -1043,7 +1043,7 @@ bool HandleNativeMatchedLink(BrowserWindowInterface& browser, content::WebConten
     callback.Reset(); return true;
   }
   auto operation = std::make_shared<MatchedLinkOperation>(std::move(creation), route,
-      sequence, original_disposition == WindowOpenDisposition::CURRENT_TAB,
+      sequence, original_disposition == WindowOpenDisposition::kCurrentTab,
       source_url, params, std::move(callback));
   operation->Start();
   return true;
@@ -1073,7 +1073,7 @@ static void PrepareAutomaticCreatedPeek(BrowserWindowInterface& browser,
   auto* state = Creation(created);
   if (!state || state->source_.get() != source || state->browser_.get() != &browser ||
       state->offered_ || !user_gesture ||
-      disposition != WindowOpenDisposition::NEW_FOREGROUND_TAB ||
+      disposition != WindowOpenDisposition::kNewForegroundTab ||
       !target.SchemeIsHTTPOrHTTPS()) return;
   PCNativePage* parent = state->Parent(created);
   PCNativeBrowserWindow* binding = AppKitBindingForBrowser(&browser);
@@ -1110,8 +1110,8 @@ static bool PrepareShiftCreatedPage(
   NativeShiftCreatedPage page{
       .click = NativeShiftClick(admission, *source, *frame, opened.modifiers),
       .user_gesture = user_gesture, .web_url = target.SchemeIsHTTPOrHTTPS(),
-      .new_window = disposition == WindowOpenDisposition::NEW_WINDOW,
-      .foreground_tab = disposition == WindowOpenDisposition::NEW_FOREGROUND_TAB,
+      .new_window = disposition == WindowOpenDisposition::kNewWindow,
+      .foreground_tab = disposition == WindowOpenDisposition::kNewForegroundTab,
       .popup = features.is_popup,
       .sized_by_page = features.has_x || features.has_y || features.has_width ||
           features.has_height,
@@ -1130,7 +1130,7 @@ static bool PrepareShiftCreatedPage(
       return false;
     }
     state->peek_ = true;
-    disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+    disposition = WindowOpenDisposition::kNewForegroundTab;
     return false;
   }
   if (!CanNavigatePeekSource(admission) || !source_lease || !child ||
@@ -1167,7 +1167,7 @@ bool PrepareNativeCreatedPage(
   if (state && state->source_.get() == source && state->browser_.get() == &browser &&
       !state->offered_ && !state->peek_ && !state->split_lease_ && user_gesture &&
       !child->GetUserData(&kCreatedRouteKey) &&
-      disposition == WindowOpenDisposition::NEW_SPLIT_VIEW && target.SchemeIsHTTPOrHTTPS()) {
+      disposition == WindowOpenDisposition::kNewSplitView && target.SchemeIsHTTPOrHTTPS()) {
     auto* frame = state->document_.AsRenderFrameHostIfValid();
     auto origin = CaptureSplitOrigin(browser, source, frame, *child);
     if (!child || Creation(*child) != state || state->offered_ || state->split_lease_ ||
@@ -1198,8 +1198,8 @@ bool PrepareNativeCreatedPage(
   if (!state || state->source_.get() != source || state->browser_.get() != &browser ||
       state->offered_ || state->peek_ || child->GetUserData(&kCreatedRouteKey) ||
       !target.SchemeIsHTTPOrHTTPS() ||
-      (disposition != WindowOpenDisposition::NEW_FOREGROUND_TAB &&
-       disposition != WindowOpenDisposition::NEW_BACKGROUND_TAB) || !state->Parent(*child)) return false;
+      (disposition != WindowOpenDisposition::kNewForegroundTab &&
+       disposition != WindowOpenDisposition::kNewBackgroundTab) || !state->Parent(*child)) return false;
   auto* frame = state->document_.AsRenderFrameHostIfValid();
   if (!frame) return false;
 
@@ -1213,7 +1213,7 @@ bool PrepareNativeCreatedPage(
       !child || Creation(*child) != state) return false;
   child->SetUserData(&kCreatedRouteKey, std::make_unique<CreatedRoute>(
       std::move(origin), route, space, target,
-      disposition == WindowOpenDisposition::NEW_BACKGROUND_TAB));
+      disposition == WindowOpenDisposition::kNewBackgroundTab));
   return false;
 }
 std::unique_ptr<content::WebContents> HoldNativeCreatedPage(
@@ -1253,7 +1253,7 @@ bool OpenNativePdfLinkInPeek(const ExtensionFunction& function,
       GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(source) : nullptr;
   if (!browser) return false;
   auto params = content::OpenURLParams::CreateRendererInitiated(urls.front(),
-      WindowOpenDisposition::NEW_WINDOW, ui::PAGE_TRANSITION_LINK, content::Referrer(),
+      WindowOpenDisposition::kNewWindow, ui::PAGE_TRANSITION_LINK, content::Referrer(),
       frame->GetCurrentInitiatorNavigationState());
   params.user_gesture = function.user_gesture();
   params.initiator_origin = frame->GetLastCommittedOrigin();
@@ -1274,13 +1274,13 @@ bool PrepareNativeCreatedSplit(BrowserWindowInterface& browser,
                                content::WebContents* source,
                                content::WebContents* child,
                                WindowOpenDisposition& disposition) {
-  if (source && child && disposition == WindowOpenDisposition::NEW_SPLIT_VIEW) {
+  if (source && child && disposition == WindowOpenDisposition::kNewSplitView) {
     const auto source_weak = source->GetWeakPtr();
     const auto child_weak = child->GetWeakPtr();
     const bool native_owner = HasNativeSplitOwner(browser, *source);
     if (!source_weak || !child_weak) return false;
     if (ClassifyNativeSplit(native_owner, false) == NativeSplitDecision::kOrdinary)
-      disposition = WindowOpenDisposition::NEW_BACKGROUND_TAB;
+      disposition = WindowOpenDisposition::kNewBackgroundTab;
   }
   return true;
 }
@@ -1376,7 +1376,7 @@ void AbandonNativeCreatedPagePresentation(content::WebContents& contents) {
   const auto source_lease = source->GetWeakPtr();
   const auto browser_lease = browser->GetWeakPtr();
   content::OpenURLParams params(target, content::Referrer(),
-      WindowOpenDisposition::NEW_FOREGROUND_TAB,
+      WindowOpenDisposition::kNewForegroundTab,
       ui::PAGE_TRANSITION_AUTO_BOOKMARK, false);
 
   content::WebContents* created = source->OpenURL(params, {});

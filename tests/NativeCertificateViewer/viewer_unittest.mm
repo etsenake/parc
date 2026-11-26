@@ -21,7 +21,7 @@
 #import "window_security_reservation.h"
 
 namespace parc_hooks {
-void SetCertificateViewer(void (*)(content::WebContents*,
+void SetCertificateViewer(bool (*)(content::WebContents*,
                                    gfx::NativeWindow,
                                    net::X509Certificate*));
 }
@@ -96,7 +96,7 @@ class NativeCertificateViewerTest : public ParcBrowserWindowTest {
   }
   void Show() {
     ::ShowCertificateViewer(contents(), gfx::NativeWindow(window_),
-                            certificate_.get());
+                            certificate_.get(), CertificateViewerEntrypoint::kPageInfo);
   }
   NSWindow* window_;
   scoped_refptr<net::X509Certificate> certificate_;
@@ -144,7 +144,7 @@ TEST_F(NativeCertificateViewerTest, RejectsDifferentSuppliedWindow) {
   other.releasedWhenClosed = NO;
   [other orderFront:nil];
   ::ShowCertificateViewer(contents(), gfx::NativeWindow(other),
-                          certificate_.get());
+                          certificate_.get(), CertificateViewerEntrypoint::kPageInfo);
   Pump();
   EXPECT_FALSE(other.attachedSheet);
   EXPECT_FALSE(window_.attachedSheet);
@@ -155,7 +155,7 @@ TEST_F(NativeCertificateViewerTest,
   auto other =
       net::ImportCertFromFile(net::GetTestCertsDirectory(), "ok_cert.pem");
   ASSERT_TRUE(other);
-  ::ShowCertificateViewer(contents(), gfx::NativeWindow(window_), other.get());
+  ::ShowCertificateViewer(contents(), gfx::NativeWindow(window_), other.get(), CertificateViewerEntrypoint::kPageInfo);
   Pump();
   EXPECT_FALSE(window_.attachedSheet);
   EXPECT_FALSE(PCNativeWindowHasSecurityReservation(window_));

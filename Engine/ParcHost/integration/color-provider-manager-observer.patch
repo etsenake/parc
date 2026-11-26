@@ -1,119 +1,78 @@
 --- a/ui/color/color_provider_manager.cc
 +++ b/ui/color/color_provider_manager.cc
-@@ -45,6 +45,15 @@
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
 -
 +
- }  // namespace
+ #include "ui/color/color_provider_manager.h"
++#include "ui/color/parc_color_changes.h"
 -
 +
-+void ColorProviderManager::AddObserver(ColorProviderManagerObserver* observer) {
-+  observers_.AddObserver(observer);
-+}
-+
-+void ColorProviderManager::RemoveObserver(
-+    ColorProviderManagerObserver* observer) {
-+  observers_.RemoveObserver(observer);
-+}
-+
- ColorProviderManager::ColorProviderManager() {
-   ResetColorProviderInitializerList();
- }
-@@ -86,9 +95,19 @@
- void ColorProviderManager::ResetColorProviderCache() {
-   if (!color_providers_.empty()) {
-     color_providers_.clear();
-+
-+    for (ColorProviderManagerObserver& observer : observers_) {
-+      observer.OnColorProviderCacheReset();
-+    }
-   }
- }
--
-+
-+void ColorProviderManager::AfterNativeThemeUpdated() {
-+  for (ColorProviderManagerObserver& observer : observers_) {
-+    observer.OnAfterNativeThemeUpdated();
-+  }
-+}
-+
- void ColorProviderManager::AppendColorProviderInitializer(
-     ColorProviderInitializerList::CallbackType initializer) {
-   DCHECK(initializer_list_);
---- a/ui/color/color_provider_manager.h
-+++ b/ui/color/color_provider_manager.h
-@@ -13,12 +13,26 @@
- #include "base/component_export.h"
- #include "base/containers/flat_map.h"
- #include "base/functional/callback.h"
-+#include "base/observer_list.h"
+ #include <algorithm>
+ #include <optional>
+@@ -21,6 +22,21 @@
  #include "ui/color/color_provider_key.h"
+ #include "ui/color/color_provider_utils.h"
+ #include "ui/webui/buildflags.h"
++
++namespace parc_hooks {
++namespace {
++ColorChangeNotifier color_change_notifier = nullptr;
++}
++
++void SetColorChangeNotifier(ColorChangeNotifier notifier) {
++  color_change_notifier = notifier;
++}
++
++void NotifyColorChange(ui::ColorProviderManager& manager, ColorChange change) {
++  if (color_change_notifier)
++    color_change_notifier(manager, change);
++}
++}
 -
 +
  namespace ui {
 -
 +
- class ColorProvider;
+@@ -49,7 +65,9 @@
+   ResetColorProviderInitializerList();
+ }
 -
 +
-+// Observers which are notified when the color provider manager changes.
-+class COMPONENT_EXPORT(COLOR) ColorProviderManagerObserver {
-+ public:
-+  // Called when the color provider cache is reset.
-+  virtual void OnColorProviderCacheReset() {}
-+
-+  // Called after NativeTheme sends OnNativeThemeUpdated notifications.
-+  virtual void OnAfterNativeThemeUpdated() {}
-+
-+ protected:
-+  virtual ~ColorProviderManagerObserver() = default;
-+};
-+
- // Manages and provides color providers.
- //
- // In most cases, use ColorProviderManager::Get() to obtain an instance to the
-@@ -43,6 +57,9 @@
-   // Clears the ColorProviders stored in `color_providers_`.
-   void ResetColorProviderCache();
+-ColorProviderManager::~ColorProviderManager() = default;
++ColorProviderManager::~ColorProviderManager() {
++  parc_hooks::NotifyColorChange(*this, parc_hooks::ColorChange::kRetire);
++}
 -
 +
-+  // Called after NativeTheme sends OnNativeThemeUpdated notifications.
-+  void AfterNativeThemeUpdated();
-+
-   // Appends `initializer` to the end of the current `initializer_list_`.
-   void AppendColorProviderInitializer(
-       ColorProviderInitializerList::CallbackType Initializer);
-@@ -58,6 +75,10 @@
-     return color_providers_.size();
+ // static
+ ColorProviderManager& ColorProviderManager::Get() {
+@@ -86,6 +104,7 @@
+ void ColorProviderManager::ResetColorProviderCache() {
+   if (!color_providers_.empty()) {
+     color_providers_.clear();
++    parc_hooks::NotifyColorChange(*this, parc_hooks::ColorChange::kInvalidate);
    }
+ }
 -
 +
-+  // Add or remove observers.
-+  void AddObserver(ColorProviderManagerObserver* observer);
-+  void RemoveObserver(ColorProviderManagerObserver* observer);
-+
-  protected:
-   ColorProviderManager();
-   virtual ~ColorProviderManager();
-@@ -75,6 +96,9 @@
-   // Tracks the number of ColorProviders constructed and initialized by the
-   // manager for metrics purposes.
-   size_t num_providers_initialized_ = 0;
-+
-+  base::ObserverList<ColorProviderManagerObserver>::UncheckedAndDanglingUntriaged
-+      observers_;
- };
--
-+
- }  // namespace ui
 --- a/ui/native_theme/native_theme.cc
 +++ b/ui/native_theme/native_theme.cc
-@@ -315,6 +315,8 @@
+@@ -36,6 +36,7 @@
+ #include "ui/color/color_provider.h"
+ #include "ui/color/color_provider_key.h"
+ #include "ui/color/color_provider_manager.h"
++#include "ui/color/parc_color_changes.h"
+ #include "ui/color/system_theme.h"
+ #include "ui/gfx/canvas.h"
+ #include "ui/gfx/geometry/insets.h"
+@@ -315,6 +316,8 @@
    }
 -
 +
    NotifyOnNativeThemeUpdatedImpl();
-+
-+  color_provider_manager.AfterNativeThemeUpdated();
++  parc_hooks::NotifyColorChange(color_provider_manager,
++                                parc_hooks::ColorChange::kInvalidate);
 -
 +
    RecordNumColorProvidersInitializedDuringOnNativeThemeUpdated(

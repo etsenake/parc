@@ -174,7 +174,7 @@ TEST_F(NativeBlockedPopupTest, ReleaseKeepsTheOpenerWhileTheSameDocumentAsked) {
   content::RenderFrameHost* opener = contents()->GetPrimaryMainFrame();
   const GURL url("https://popup.example/sign-in");
   EXPECT_FALSE(OpenWindow(opener, url, "signin",
-                          WindowOpenDisposition::NEW_FOREGROUND_TAB));
+                          WindowOpenDisposition::kNewForegroundTab));
   NativeBlockedContent blocked = Blocked();
   EXPECT_EQ(1, g_changes);
   EXPECT_EQ(contents(), g_changed);
@@ -197,7 +197,7 @@ TEST_F(NativeBlockedPopupTest, ReleaseKeepsTheOpenerWhileTheSameDocumentAsked) {
   content::WebContents* popup = delegate_.added[0].contents;
   EXPECT_EQ(delegate_.created[0].contents, popup);
   EXPECT_EQ(url, delegate_.added[0].url);
-  EXPECT_EQ(WindowOpenDisposition::NEW_FOREGROUND_TAB,
+  EXPECT_EQ(WindowOpenDisposition::kNewForegroundTab,
             delegate_.added[0].disposition);
   EXPECT_TRUE(delegate_.added[0].user_gesture);
   EXPECT_EQ(opener, popup->GetOpener());
@@ -217,7 +217,7 @@ TEST_F(NativeBlockedPopupTest, ReleaseDropsTheOpenerOnceItsFrameShowsAnotherDocu
   ASSERT_TRUE(frame);
   const GURL url("https://popup.example/course");
   EXPECT_FALSE(OpenWindow(frame, url, "course",
-                          WindowOpenDisposition::NEW_FOREGROUND_TAB));
+                          WindowOpenDisposition::kNewForegroundTab));
   NativeBlockedContent blocked = Blocked();
   ASSERT_EQ(1u, blocked.items.size());
 
@@ -250,9 +250,9 @@ TEST_F(NativeBlockedPopupTest, OpenAllReleasesEveryPopupThroughTheSourceWindow) 
   const GURL first("https://popup.example/one");
   const GURL second("https://popup.example/two");
   EXPECT_FALSE(OpenWindow(opener, first, "one",
-                          WindowOpenDisposition::NEW_FOREGROUND_TAB));
+                          WindowOpenDisposition::kNewForegroundTab));
   EXPECT_FALSE(
-      OpenWindow(opener, second, "two", WindowOpenDisposition::NEW_POPUP));
+      OpenWindow(opener, second, "two", WindowOpenDisposition::kNewPopup));
   NativeBlockedContent blocked = Blocked();
   ASSERT_EQ(2u, blocked.items.size());
 
@@ -267,10 +267,10 @@ TEST_F(NativeBlockedPopupTest, OpenAllReleasesEveryPopupThroughTheSourceWindow) 
   ASSERT_EQ(2u, delegate_.created.size());
   ASSERT_EQ(2u, delegate_.added.size());
   EXPECT_EQ(first, delegate_.added[0].url);
-  EXPECT_EQ(WindowOpenDisposition::NEW_FOREGROUND_TAB,
+  EXPECT_EQ(WindowOpenDisposition::kNewForegroundTab,
             delegate_.added[0].disposition);
   EXPECT_EQ(second, delegate_.added[1].url);
-  EXPECT_EQ(WindowOpenDisposition::NEW_POPUP, delegate_.added[1].disposition);
+  EXPECT_EQ(WindowOpenDisposition::kNewPopup, delegate_.added[1].disposition);
   for (const SourceWindowDelegate::Added& added : delegate_.added) {
     EXPECT_TRUE(added.user_gesture);
     EXPECT_EQ(opener, added.contents->GetOpener());
@@ -304,7 +304,7 @@ TEST_F(NativeBlockedPopupTest, GoSendsThePageToTheBlockedRedirect) {
       *contents(), NativeBlockedItem::Kind::kRedirect, 0, blocked.revision));
   ASSERT_EQ(1u, delegate_.opened.size());
   EXPECT_EQ(url, delegate_.opened[0].url);
-  EXPECT_EQ(WindowOpenDisposition::CURRENT_TAB, delegate_.opened[0].disposition);
+  EXPECT_EQ(WindowOpenDisposition::kCurrentTab, delegate_.opened[0].disposition);
   EXPECT_EQ(initiator, delegate_.opened[0].initiator_origin);
   EXPECT_TRUE(delegate_.created.empty());
   EXPECT_TRUE(delegate_.added.empty());
@@ -313,7 +313,7 @@ TEST_F(NativeBlockedPopupTest, GoSendsThePageToTheBlockedRedirect) {
 TEST_F(NativeBlockedPopupTest, BlockedLinkPopupsOpenWithATrustedGesture) {
   const GURL url("https://popup.example/link");
   content::OpenURLParams params(url, content::Referrer(),
-                                WindowOpenDisposition::NEW_FOREGROUND_TAB,
+                                WindowOpenDisposition::kNewForegroundTab,
                                 ui::PAGE_TRANSITION_LINK, true);
   params.user_gesture = false;
   EXPECT_TRUE(BlockNativeLinkPopup(contents(), params));
@@ -325,7 +325,7 @@ TEST_F(NativeBlockedPopupTest, BlockedLinkPopupsOpenWithATrustedGesture) {
                                     blocked.items[0].id, blocked.revision));
   ASSERT_EQ(1u, delegate_.opened.size());
   EXPECT_EQ(url, delegate_.opened[0].url);
-  EXPECT_EQ(WindowOpenDisposition::NEW_FOREGROUND_TAB,
+  EXPECT_EQ(WindowOpenDisposition::kNewForegroundTab,
             delegate_.opened[0].disposition);
   EXPECT_TRUE(delegate_.opened[0].user_gesture);
   EXPECT_EQ(blink::mojom::TriggeringEventInfo::kFromTrustedEvent,
@@ -335,7 +335,7 @@ TEST_F(NativeBlockedPopupTest, BlockedLinkPopupsOpenWithATrustedGesture) {
 TEST_F(NativeBlockedPopupTest, ANewDocumentRetiresTheBlockedList) {
   content::RenderFrameHost* opener = contents()->GetPrimaryMainFrame();
   EXPECT_FALSE(OpenWindow(opener, GURL("https://popup.example/stale"), "stale",
-                          WindowOpenDisposition::NEW_FOREGROUND_TAB));
+                          WindowOpenDisposition::kNewForegroundTab));
   NativeBlockedContent blocked = Blocked();
   ASSERT_EQ(1u, blocked.items.size());
 

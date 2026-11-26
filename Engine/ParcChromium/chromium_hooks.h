@@ -211,7 +211,7 @@ using ExternalProtocolPrompt =
              const std::u16string& program_name);
 void SetExternalProtocolPrompt(ExternalProtocolPrompt prompt);
 
-using CertificateViewer = void (*)(content::WebContents* web_contents,
+using CertificateViewer = bool (*)(content::WebContents* web_contents,
                                    gfx::NativeWindow parent,
                                    net::X509Certificate* cert);
 void SetCertificateViewer(CertificateViewer viewer);

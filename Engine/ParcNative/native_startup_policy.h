@@ -46,6 +46,8 @@ inline constexpr const char* kBaselineDisabledFeatures[] = {
     "ExtensionsPinnedByDefault",
     "SkillsEnabled",
     "GoogleSearchAiModeWorkspace",
+    "ContextualTasksSidePanel",
+    "ThreeDSecureTelemetry",
 };
 
 inline void AppendFeature(std::string& list, std::string_view feature) {

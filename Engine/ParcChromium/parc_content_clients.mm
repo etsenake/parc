@@ -4,6 +4,7 @@
 
 #include <utility>
 
+#include "base/containers/flat_set.h"
 #include "base/apple/foundation_util.h"
 #include "base/check.h"
 #include "base/command_line.h"
@@ -231,7 +232,8 @@ ParcContentBrowserClient::CreateHttpAuthCoordinator() {
   return CreateNativeHttpAuthCoordinator();
 }
 
-base::FilePath ParcContentBrowserClient::GetChildProcessPath(int flags) {
+base::FilePath ParcContentBrowserClient::GetChildProcessPath(
+    int flags, content::ChildProcessId child_process_id) {
   if (flags == kChildProcessHelperCdm) {
     return base::apple::AmIBundled() ? HelperExecutablePath(kMacHelperSuffixCdm)
                                      : base::FilePath();
@@ -242,7 +244,7 @@ base::FilePath ParcContentBrowserClient::GetChildProcessPath(int flags) {
                ? HelperExecutablePath(chrome::kMacHelperSuffixAlerts)
                : base::FilePath();
   }
-  return ChromeContentBrowserClient::GetChildProcessPath(flags);
+  return ChromeContentBrowserClient::GetChildProcessPath(flags, child_process_id);
 }
 
 void ParcContentBrowserClient::AppendExtraCommandLineSwitches(
@@ -399,10 +401,11 @@ ParcContentRendererClient::GetSupportedKeySystems(
       render_frame,
       base::BindRepeating(
           [](bool can_persist_data, const media::GetSupportedKeySystemsCB& cb,
-             media::KeySystemInfos key_systems) {
+             media::KeySystemInfos key_systems,
+             base::flat_set<std::string> pending_key_systems) {
             key_systems.push_back(
                 fairplay::CreateFairPlayKeySystemInfo(can_persist_data));
-            cb.Run(std::move(key_systems));
+            cb.Run(std::move(key_systems), std::move(pending_key_systems));
           },
           !process_state::IsIncognitoProcess(), std::move(cb)));
 }

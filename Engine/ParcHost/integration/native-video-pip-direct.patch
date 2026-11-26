@@ -33,32 +33,32 @@
      }
 --- a/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc
 +++ b/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc
-@@ -4,6 +4,12 @@
+@@ -3,6 +3,12 @@
+ // found in the LICENSE file.
 -
 +
  #include "chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.h"
--
 +
 +#include "parc/features.h"
 +#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_PARC)
 +#include "parc/native/native_repost_form_warning_api.h"
 +#include "parc/native/native_split_link_api.h"
 +#endif
+-
 +
  #include "base/check_deref.h"
- #include "base/metrics/histogram_macros.h"
- #include "base/notimplemented.h"
-@@ -546,7 +552,8 @@
+ #include "base/feature_list.h"
+@@ -585,7 +591,8 @@
    // creating a new tab. Return |source| so that WebContentsImpl::OpenURL()
    // sees new_contents == this and skips the DidOpenRequestedURL notification,
    // which is only meant for newly created WebContents.
--  if (params.disposition == WindowOpenDisposition::NEW_SPLIT_VIEW && source) {
-+  if (params.disposition == WindowOpenDisposition::NEW_SPLIT_VIEW && source &&
+-  if (params.disposition == WindowOpenDisposition::kNewSplitView && source) {
++  if (params.disposition == WindowOpenDisposition::kNewSplitView && source &&
 +      !params.native_route_split) {
      tabs::TabInterface* const source_tab =
          tabs::TabInterface::MaybeGetFromContents(source);
      if (source_tab && source_tab->IsSplit()) {
-@@ -566,11 +573,15 @@
+@@ -605,11 +612,15 @@
    nav_params.FillNavigateParamsFromOpenURLParams(params);
    nav_params.source_contents = source;
    nav_params.tabstrip_add_types = AddTabTypes::ADD_NONE;
@@ -75,7 +75,7 @@
    auto popup_delegate =
        std::make_unique<ChromePopupNavigationDelegate>(std::move(nav_params));
    if (is_popup) {
-@@ -586,7 +597,23 @@
+@@ -625,7 +636,23 @@
      }
    }
 -
@@ -93,18 +93,18 @@
 +#endif
 +
 +  if (params.native_route_split &&
-+      params.disposition == WindowOpenDisposition::NEW_SPLIT_VIEW) {
++      params.disposition == WindowOpenDisposition::kNewSplitView) {
 +    popup_delegate->nav_params()->disposition =
-+        WindowOpenDisposition::NEW_BACKGROUND_TAB;
++        WindowOpenDisposition::kNewBackgroundTab;
 +  }
 -
 +
    base::WeakPtr<content::NavigationHandle> navigation_handle =
        Navigate(popup_delegate->nav_params());
-@@ -695,6 +722,14 @@
+@@ -749,6 +776,14 @@
+     blocked_content::PopupTracker::CreateForWebContents(new_contents.get(),
                                                          source, disposition);
    }
--
 +
 +#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_PARC)
 +
@@ -113,11 +113,11 @@
 +    return nullptr;
 +  }
 +#endif
+-
 +
    // Postpone activating popups opened by content-fullscreen tabs. This permits
    // popups on other screens and retains fullscreen focus for exit accelerators.
-   // Popups are activated when the opener exits fullscreen, which happens
-@@ -915,6 +950,12 @@
+@@ -970,6 +1005,12 @@
 -
 +
  void BrowserWebContentsDelegate::ShowRepostFormWarningDialog(
@@ -133,7 +133,7 @@
  }
 --- a/third_party/blink/renderer/core/frame/picture_in_picture_controller.h
 +++ b/third_party/blink/renderer/core/frame/picture_in_picture_controller.h
-@@ -105,6 +105,8 @@
+@@ -104,6 +104,8 @@
    virtual void OnMediaPositionStateChanged(
        const media_session::mojom::blink::MediaPositionPtr& media_position) = 0;
 -
@@ -233,7 +233,7 @@
  #include "third_party/blink/renderer/core/html/shadow/shadow_element_names.h"
  #include "third_party/blink/renderer/core/html/shadow/shadow_element_utils.h"
  #include "third_party/blink/renderer/core/html_names.h"
-@@ -1264,6 +1265,9 @@
+@@ -1255,6 +1256,9 @@
    if (element && element->CanvasForDrawing()) {
      builder.SetIsolation(EIsolation::kIsolate);
    }
@@ -242,20 +242,20 @@
 +  }
 -
 +
-   // z-index is only applicable if positioned, or if a flex/grid/etc item.
-   if (builder.GetPosition() != EPosition::kStatic ||
-@@ -1579,6 +1583,10 @@
+   if (layout_parent_style.AllowsZIndexOnChildren()) {
+     builder.SetIsInZIndexAllowingDisplay();
+@@ -1571,6 +1575,10 @@
+   // Has special handling in a number of places (including depending on
+   // parents' IsContentDrawable() status).
+   if (element.IsCanvasOrInCanvasSubtree()) {
++    return {ElementType::kIsNotElement};
++  }
++
++  if (IsParcPictureInPictureCaptions(element)) {
      return {ElementType::kIsNotElement};
    }
 -
 +
-+  if (IsParcPictureInPictureCaptions(element)) {
-+    return {ElementType::kIsNotElement};
-+  }
-+
-   // Some UA shadow elements have special handling of background and
-   // text-overflow, as well as special slider container style.
-   // (It is possible that we could loosen this check a bit.)
 --- a/third_party/blink/renderer/core/paint/paint_layer_painter.cc
 +++ b/third_party/blink/renderer/core/paint/paint_layer_painter.cc
 @@ -12,6 +12,7 @@
@@ -266,7 +266,7 @@
  #include "third_party/blink/renderer/core/html_names.h"
  #include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
  #include "third_party/blink/renderer/core/layout/fragmentation_utils.h"
-@@ -430,7 +431,8 @@
+@@ -431,7 +432,8 @@
    PaintController& controller = context.GetPaintController();
 -
 +
@@ -279,7 +279,7 @@
          ScopedEffectivelyInvisible::Visibility::kEffectivelyInvisible);
 --- a/third_party/blink/renderer/core/animation/compositor_animations.cc
 +++ b/third_party/blink/renderer/core/animation/compositor_animations.cc
-@@ -56,6 +56,7 @@
+@@ -55,6 +55,7 @@
  #include "third_party/blink/renderer/core/frame/local_frame.h"
  #include "third_party/blink/renderer/core/frame/settings.h"
  #include "third_party/blink/renderer/core/frame/web_feature.h"
@@ -287,7 +287,7 @@
  #include "third_party/blink/renderer/core/layout/layout_box.h"
  #include "third_party/blink/renderer/core/layout/layout_box_model_object.h"
  #include "third_party/blink/renderer/core/layout/layout_object.h"
-@@ -617,6 +618,10 @@
+@@ -614,6 +615,10 @@
    if (target_element.GetDocument().ShouldForceReduceMotion())
      state.disposition |= kAcceleratedAnimationsDisabled;
 -

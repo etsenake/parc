@@ -1,13 +1,11 @@
 --- a/chrome/browser/ui/signin/promos/bubble_signin_promo_delegate.h
 +++ b/chrome/browser/ui/signin/promos/bubble_signin_promo_delegate.h
-@@ -32,6 +32,10 @@
+@@ -32,6 +32,8 @@
        delete;
 -
 +
    virtual ~BubbleSignInPromoDelegate();
 +
-+  // Native presenters can reject a stale page/window before the view closes.
-+  // This predicate must not destroy the view or invoke sign-in itself.
 +  virtual bool CanSignIn() const { return true; }
 -
 +
@@ -15,7 +13,7 @@
    // the browser sign-in page if `account` is empty.
 --- a/chrome/browser/ui/signin/promos/bubble_signin_promo_view.cc
 +++ b/chrome/browser/ui/signin/promos/bubble_signin_promo_view.cc
-@@ -469,6 +469,9 @@
+@@ -465,6 +465,9 @@
  }
 -
 +

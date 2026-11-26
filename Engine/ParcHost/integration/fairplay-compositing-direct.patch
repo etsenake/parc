@@ -15,13 +15,14 @@
 -
 +
    defines = [
-@@ -91,5 +98,6 @@
- test("accelerated_widget_mac_unittests") {
+@@ -91,6 +98,7 @@
    configs += [ "//build/config:precompiled_headers" ]
    sources = [ "ca_layer_tree_unittest_mac.mm" ]
    deps = [
 +    "//ui/accelerated_widget_mac/parc_tests:unit_tests",
      ":accelerated_widget_mac",
+     "//base",
+     "//base/test:run_all_unittests",
 --- a/ui/accelerated_widget_mac/ca_renderer_layer_tree.h
 +++ b/ui/accelerated_widget_mac/ca_renderer_layer_tree.h
 @@ -19,6 +19,7 @@
@@ -32,25 +33,19 @@
  #include "third_party/skia/include/core/SkColor.h"
  #include "ui/accelerated_widget_mac/accelerated_widget_mac_export.h"
  #include "ui/gfx/geometry/rect.h"
-@@ -45,6 +46,10 @@
+@@ -45,6 +46,7 @@
    kVideo,
    // A CAMetalLayer that copies half-float or 10-bit IOSurfaces.
    kHDRCopier,
-+  // Parc: a CALayer this tree owns, hosting the layer a FairPlay player
-+  // registered in ProtectedLayerRegistry (the MSE renderer's
-+  // AVSampleBufferDisplayLayer or the native HLS player's AVPlayerLayer).
 +  kProtectedLayer,
  };
 -
 +
  // The CARendererLayerTree will construct a hierarchy of CALayers from a linear
-@@ -97,8 +102,10 @@
-   class ContentLayer;
+@@ -98,7 +100,7 @@
    friend class ContentLayer;
 -
 +
-+  // Keyed by a content layer's IOSurfaceRef or, for kProtectedLayer, by the
-+  // registered CALayer, so that layer keeps its host across frames.
    using CALayerMap =
 -      std::unordered_map<IOSurfaceRef, base::WeakPtr<ContentLayer>>;
 +      std::unordered_map<const void*, base::WeakPtr<ContentLayer>>;
@@ -59,26 +54,11 @@
    void MatchLayersToOldTree(CARendererLayerTree* old_tree);
 -
 +
-@@ -242,7 +249,9 @@
-                  bool nearest_neighbor_filter,
-                  const gfx::HDRMetadata& hdr_metadata,
-                  gfx::ProtectedVideoType protected_video_type,
--                 bool is_render_pass_draw_quad);
-+                 bool is_render_pass_draw_quad,
-+                 const std::optional<base::UnguessableToken>&
-+                     protected_layer_token);
--
-+
-     ContentLayer(ContentLayer&& layer) = delete;
-     ContentLayer(const ContentLayer&) = delete;
-@@ -298,6 +307,12 @@
+@@ -288,6 +290,9 @@
      // AVSampleBufferDisplayLayer, then |ca_layer| will point to |av_layer|.
      AVSampleBufferDisplayLayer* __strong av_layer_;
 -
 +
-+    // For kProtectedLayer: the registered layer this content layer shows (nil
-+    // if its token is not registered), and the layer `ca_layer_`, its host,
-+    // last took as a sublayer. The host moves between trees with `ca_layer_`.
 +    CALayer* __strong protected_layer_;
 +    CALayer* __strong hosted_layer_;
 +
@@ -87,7 +67,7 @@
      CALayer* __strong update_indicator_layer_;
 --- a/ui/accelerated_widget_mac/ca_renderer_layer_tree.mm
 +++ b/ui/accelerated_widget_mac/ca_renderer_layer_tree.mm
-@@ -26,6 +26,8 @@
+@@ -25,6 +25,8 @@
  #include "components/viz/common/resources/shared_image_format.h"
  #include "third_party/skia/include/core/SkCanvas.h"
  #include "third_party/skia/include/core/SkColor.h"
@@ -96,13 +76,11 @@
  #include "ui/base/cocoa/animation_utils.h"
  #include "ui/base/ui_base_switches.h"
  #include "ui/gfx/geometry/dip_util.h"
-@@ -464,7 +466,11 @@
+@@ -472,7 +474,9 @@
      CALayerMap& old_ca_layer_map,
      int& layer_order,
      int& last_old_layer_order) {
 -  IOSurfaceRef io_surface_ref = io_surface_.get();
-+  // A protected layer has no IOSurface; the registered layer it shows
-+  // identifies it across frames instead, so it keeps its host.
 +  const void* io_surface_ref =
 +      io_surface_ ? static_cast<const void*>(io_surface_.get())
 +                  : (__bridge const void*)protected_layer_;
@@ -110,7 +88,7 @@
 +
    if (!io_surface_ref)
      return;
-@@ -675,7 +681,8 @@
+@@ -683,7 +687,8 @@
            return false;
 -
 +
@@ -121,66 +99,41 @@
            found_video_layer = true;
            if (!transform_layer.transform_.IsPositiveScaleOrTranslation())
              return false;
-@@ -791,7 +798,8 @@
-     bool nearest_neighbor_filter,
-     const gfx::HDRMetadata& hdr_metadata,
-     gfx::ProtectedVideoType protected_video_type,
--    bool is_render_pass_draw_quad)
-+    bool is_render_pass_draw_quad,
-+    const std::optional<base::UnguessableToken>& protected_layer_token)
-     : parent_layer_(parent_layer),
-       io_surface_(io_surface),
-       cv_pixel_buffer_(cv_pixel_buffer),
-@@ -845,9 +853,19 @@
+@@ -849,9 +854,15 @@
    }
 -
 +
    // Determine which type of CALayer subclass we should use.
 -  if (!UseCALayerContentsHeadroom() &&
--      metal::ShouldUseHDRCopier(io_surface.get(), hdr_metadata_,
--                                io_surface_color_space)) {
-+  if (protected_layer_token) {
-+    // Parc: a FairPlay renderer's display layer goes where its video quad is.
-+    // There are no decoded pixels to draw instead, so while no layer is
-+    // registered under the token (its renderer is gone, or the GPU process
-+    // restarted) the area is black rather than whatever lies below.
+-      metal::ShouldUseHDRCopier(io_surface_.get(), hdr_metadata_,
+-                                io_surface_color_space_)) {
++  if (params.protected_layer_token) {
 +    type_ = CALayerType::kProtectedLayer;
-+    protected_layer_ = ProtectedLayerRegistry::Lookup(*protected_layer_token);
++    protected_layer_ = ProtectedLayerRegistry::Lookup(*params.protected_layer_token);
 +    if (!protected_layer_) {
 +      background_color_ = SkColors::kBlack;
 +    }
 +  } else if (!UseCALayerContentsHeadroom() &&
-+             metal::ShouldUseHDRCopier(io_surface.get(), hdr_metadata_,
-+                                       io_surface_color_space)) {
++             metal::ShouldUseHDRCopier(io_surface_.get(), hdr_metadata_,
++                                       io_surface_color_space_)) {
      type_ = CALayerType::kHDRCopier;
-   } else if (io_surface) {
+   } else if (io_surface_) {
      // Only allow YUV frames which fill the layer's contents or protected
-@@ -905,6 +923,12 @@
+@@ -914,6 +925,12 @@
  CARendererLayerTree::ContentLayer::~ContentLayer() {
-   [ca_layer_ removeFromSuperlayer];
+   RemoveFromSuperlayer();
    [update_indicator_layer_ removeFromSuperlayer];
 +  if (protected_layer_) {
 +    ParcUpdateProtectedLayerClaim(
 +        ParcProtectedLayerClaimAction::kRelease, this, &ca_layer_,
 +        &protected_layer_,
-+        /*hosted_layer=*/nullptr, /*scale_factor=*/1.f);
++        nullptr, 1.f);
 +  }
  }
 -
 +
  bool CARendererLayerTree::RootLayer::AddContentLayer(
-@@ -970,7 +994,8 @@
-       params.contents_rect, params.rect, params.background_color,
-       params.io_surface_color_space, params.edge_aa_mask, params.opacity,
-       params.nearest_neighbor_filter, params.hdr_metadata,
--      params.protected_video_type, params.is_render_pass_draw_quad);
-+      params.protected_video_type, params.is_render_pass_draw_quad,
-+      params.protected_layer_token);
- }
--
-+
- void CARendererLayerTree::RootLayer::CommitToCA(CALayer* superlayer,
-@@ -1165,12 +1190,14 @@
+@@ -1169,12 +1186,14 @@
      DCHECK(old_layer_->ca_layer_);
      std::swap(ca_layer_, old_layer_->ca_layer_);
      std::swap(av_layer_, old_layer_->av_layer_);
@@ -196,30 +149,27 @@
      // If the HDR headroom has changed then the HDRCopierLayer's tone mapping
      // may change, so re-draw this layer.
      if (old_layer_->type_ == CALayerType::kHDRCopier &&
-@@ -1211,6 +1238,12 @@
+@@ -1215,6 +1234,10 @@
          break;
        case CALayerType::kDefault:
          ca_layer_ = [[CALayer alloc] init];
 +        break;
 +      case CALayerType::kProtectedLayer:
-+        // A host this tree owns. The tree's reuse and removal act on the host,
-+        // never on the registered layer, which another tree may take next.
 +        ca_layer_ = [[CALayer alloc] init];
 +        break;
      }
      ca_layer_.anchorPoint = CGPointZero;
    }
-@@ -1267,6 +1300,9 @@
+@@ -1271,6 +1294,8 @@
          // https://crbug.com/702369
        }
        break;
 +    case CALayerType::kProtectedLayer:
-+      // The registered layer is placed below, once the host has its frame.
 +      break;
      case CALayerType::kDefault:
        if (update_contents) {
          if (io_surface_) {
-@@ -1281,7 +1317,8 @@
+@@ -1285,7 +1310,8 @@
        break;
    }
 -
@@ -228,9 +178,9 @@
 +  if (UseCALayerContentsHeadroom() && update_contents &&
 +      type_ != CALayerType::kProtectedLayer) {
      if (@available(macOS 26, iOS 26, *)) {
-       float max_hdr_headroom = cc::ToneMapUtil::GetMaxHdrHeadroom(
+       float max_hdr_headroom = gfx::ToneMapUtil::GetMaxHdrHeadroom(
            io_surface_color_space_, hdr_metadata_);
-@@ -1300,7 +1337,7 @@
+@@ -1304,7 +1330,7 @@
    }
 -
 +
@@ -240,25 +190,24 @@
        ca_layer_.contentsRect = contents_rect_.ToCGRect();
    }
    if (update_rect) {
-@@ -1332,6 +1369,11 @@
+@@ -1335,6 +1361,11 @@
+   if (update_ca_filter) {
      ca_layer_.magnificationFilter = ca_filter_;
      ca_layer_.minificationFilter = ca_filter_;
-   }
++  }
 +  if (type_ == CALayerType::kProtectedLayer) {
 +    ParcUpdateProtectedLayerClaim(
 +        ParcProtectedLayerClaimAction::kCommit, this, &ca_layer_,
 +        &protected_layer_, &hosted_layer_, tree()->scale_factor_);
-+  }
+   }
 -
 +
  #if BUILDFLAG(IS_MAC)
-   static bool show_overlay_borders =
-@@ -1362,6 +1404,11 @@
+@@ -1366,6 +1397,10 @@
            green = blue = 1;
          }
          break;
 +      case CALayerType::kProtectedLayer:
-+        // Orange is a FairPlay renderer's layer.
 +        red = 1;
 +        green = 0.5;
 +        break;
@@ -276,12 +225,10 @@
  #include "third_party/skia/include/core/SkColor.h"
  #include "ui/gfx/color_space.h"
  #include "ui/gfx/geometry/point.h"
-@@ -66,6 +67,9 @@
+@@ -66,6 +67,7 @@
    gfx::HDRMetadata hdr_metadata;
    gfx::ProtectedVideoType protected_video_type;
    bool is_render_pass_draw_quad;
-+  // Parc: set for a FairPlay video quad. The layer registered under this token
-+  // in ui::ProtectedLayerRegistry is shown at |rect| instead of |io_surface|.
 +  std::optional<base::UnguessableToken> protected_layer_token;
  };
 -
@@ -298,15 +245,12 @@
  #include "build/build_config.h"
  #include "components/viz/common/quads/aggregated_render_pass.h"
  #include "components/viz/common/quads/texture_draw_quad.h"
-@@ -253,6 +254,11 @@
+@@ -253,6 +254,8 @@
 -
 +
    // The edge anti-aliasing mask property for the CALayer.
    unsigned edge_aa_mask = 0;
 +
-+  // Parc: a FairPlay video, from a VideoHoleDrawQuad. It has no resource; the
-+  // GPU process shows the layer registered under this token in
-+  // ui::ProtectedLayerRegistry.
 +  std::optional<base::UnguessableToken> protected_layer_token;
  #endif  // BUILDFLAG(IS_APPLE)
 -
@@ -322,9 +266,7 @@
  #include "ui/base/cocoa/remote_layer_api.h"
  #include "ui/gfx/buffer_types.h"
  #include "ui/gfx/geometry/rrect_f.h"
-@@ -213,8 +214,11 @@
-   return gfx::kCALayerSuccess;
- }
+@@ -215,6 +216,9 @@
 -
 +
  class CALayerOverlayProcessorInternal {
@@ -335,7 +277,7 @@
    gfx::CALayerResult FromDrawQuad(
        const DisplayResourceProvider* resource_provider,
        const gfx::RectF& display_rect,
-@@ -295,6 +299,17 @@
+@@ -295,6 +299,15 @@
              ca_layer_overlay);
        case DrawQuad::Material::kSurfaceContent:
          return gfx::kCALayerFailedSurfaceContent;
@@ -343,8 +285,6 @@
 +        yuv_draw_quad_count += 1;
 +        had_protected_layer_ = true;
 +        if (!protected_layers_allowed_) {
-+          // Parc: a parked display shows the video black and never places
-+          // the layer, which the display showing the page holds.
 +          ca_layer_overlay->color = SkColors::kBlack;
 +          ca_layer_overlay->is_solid_color = true;
 +          return gfx::kCALayerSuccess;
@@ -353,7 +293,7 @@
        default:
          break;
      }
-@@ -306,8 +321,11 @@
+@@ -306,8 +319,11 @@
    bool video_with_odd_height() { return video_with_odd_height_; }
    bool video_with_odd_x() { return video_with_odd_x_; }
    bool video_with_odd_y() { return video_with_odd_y_; }
@@ -366,15 +306,11 @@
    bool video_with_odd_width_ = false;
    bool video_with_odd_height_ = false;
    bool video_with_odd_x_ = false;
-@@ -403,10 +421,27 @@
+@@ -403,10 +419,21 @@
        }
      }
 -
 +
-+    // Parc: a FairPlay video can't be drawn into the primary plane, so when
-+    // the frame can't be all CALayers it still goes to an underlay below a
-+    // hole in the primary plane, keeping page content drawn over it on top.
-+    // A parked display leaves it in the primary plane, drawn black.
 +    if (quad->material == DrawQuad::Material::kVideoHole) {
 +      had_protected_layer_ = true;
 +      if (protected_layers_allowed_) {
@@ -387,15 +323,13 @@
        if (!PutQuadInSeparateOverlay(it, resource_provider, render_pass,
                                      display_rect, quad, protected_video_type,
                                      ca_layer_overlays)) {
-+        // Parc: a FairPlay hole that can't be a CALayer stays in the primary
-+        // plane, drawn black, without undoing the other videos' underlays.
 +        if (quad->material == DrawQuad::Material::kVideoHole) {
 +          continue;
 +        }
          failed = true;
          break;
        }
-@@ -424,6 +459,7 @@
+@@ -424,6 +451,7 @@
    const QuadList& quad_list = render_pass->quad_list;
    gfx::CALayerResult result = gfx::kCALayerSuccess;
    size_t num_visible_quads = quad_list.size();
@@ -404,7 +338,7 @@
 +
    // Skip overlay processing
    if (!overlays_allowed_ || !enable_ca_renderer_) {
-@@ -447,7 +483,7 @@
+@@ -447,7 +475,7 @@
 -
 +
    int render_pass_draw_quad_count = 0;
@@ -414,7 +348,7 @@
    for (auto it = quad_list.BackToFrontBegin();
         result == gfx::kCALayerSuccess && it != quad_list.BackToFrontEnd();
         ++it) {
-@@ -480,6 +516,10 @@
+@@ -480,6 +508,10 @@
      ca_layer_overlays->push_back(ca_layer);
    }
 -
@@ -426,7 +360,7 @@
    // Fails if there are more draw quads than allowed for CoreAnimation.
    size_t max_number = (yuv_draw_quad_count < kMaxNumVideos)
                            ? layer_limit_default_
-@@ -506,7 +546,7 @@
+@@ -506,7 +538,7 @@
      const DrawQuad* quad,
      gfx::ProtectedVideoType protected_video_type,
      OverlayCandidateList* ca_layer_overlays) const {
@@ -435,7 +369,7 @@
    OverlayCandidate ca_layer;
    bool skip = false;
    bool render_pass_draw_quad = false;
-@@ -534,4 +574,30 @@
+@@ -534,4 +566,30 @@
    ca_layer_result_ = result;
  }
 -
@@ -454,7 +388,7 @@
 +         const gfx::RectF& display_rect, const DrawQuad* quad,
 +         OverlayCandidate* candidate, bool* skip) {
 +        CALayerOverlayProcessorInternal processor(
-+            /*protected_layers_allowed=*/true);
++            true);
 +        bool render_pass_draw_quad = false;
 +        int yuv_draw_quad_count = 0;
 +        return processor.FromDrawQuad(
@@ -469,15 +403,13 @@
  }  // namespace viz
 --- a/components/viz/service/display/skia_renderer.cc
 +++ b/components/viz/service/display/skia_renderer.cc
-@@ -2992,6 +2992,15 @@
+@@ -2994,6 +2994,13 @@
      DCHECK(!overlay.rpdq);
  #endif
 -
 +
 +#if BUILDFLAG(IS_APPLE)
 +    if (overlay.protected_layer_token) {
-+      // Parc: a FairPlay video layer, placed by the GPU process. There is no
-+      // resource to lock or mailbox to send.
 +      DCHECK(!overlay.resource_id);
 +      continue;
 +    }
@@ -488,14 +420,11 @@
        DCHECK(!overlay.resource_id);
 --- a/components/viz/service/display/software_renderer.cc
 +++ b/components/viz/service/display/software_renderer.cc
-@@ -445,7 +445,12 @@
+@@ -445,7 +445,9 @@
        // Quad and the quad would then reach here unexpectedly. Therefore
        // we should skip NOTREACHED() so an untrusted render is not capable
        // of causing a crash.
 -      DrawUnsupportedQuad(quad);
-+      // Parc: FairPlay video under software compositing has no overlay to
-+      // show it, so its area is black, as SkiaRenderer draws a quad that
-+      // requires an overlay.
 +      current_paint_.setColor(SkColors::kBlack);
 +      current_paint_.setAlpha(quad->shared_quad_state->opacity * 255);
 +      current_canvas_->drawRect(gfx::RectToSkRect(quad->rect), current_paint_);
@@ -505,7 +434,7 @@
 +
 --- a/components/viz/service/display_embedder/output_presenter_gl.cc
 +++ b/components/viz/service/display_embedder/output_presenter_gl.cc
-@@ -161,22 +161,23 @@
+@@ -161,22 +161,22 @@
      io_surface_color_space = access->representation()->color_space();
      backpressure_fences = access->GetBackpressureFences();
    }
@@ -539,7 +468,6 @@
 +      overlay_plane_candidate.hdr_metadata,
 +      overlay_plane_candidate.protected_video_type,
 +      overlay_plane_candidate.is_render_pass_draw_quad);
-+  // Parc: a FairPlay video layer, placed by CARendererLayerTree.
 +  params.protected_layer_token = overlay_plane_candidate.protected_layer_token;
 +  presenter_->ScheduleCALayer(params, std::move(backpressure_fences));
 -
@@ -557,24 +485,17 @@
  #include "components/viz/common/quads/aggregated_render_pass.h"
  #include "components/viz/common/quads/compositor_render_pass.h"
  #include "components/viz/service/display/overlay_candidate.h"
-@@ -52,6 +53,25 @@
+@@ -52,6 +53,18 @@
 -
 +
    gfx::CALayerResult ca_layer_result() { return ca_layer_result_; }
 -
 +
-+  // Parc: see OverlayProcessorInterface::SetProtectedLayersAllowed.
 +  void set_protected_layers_allowed(bool allowed) {
 +    protected_layers_allowed_ = allowed;
 +  }
 +  bool had_protected_layer() const { return had_protected_layer_; }
 +
-+  // Parc: places FairPlay videos (VideoHoleDrawQuads) drawn inside non-root
-+  // render passes, such as a player in a dialog that keeps an opacity
-+  // animation. Runs after the root pass, with `all_ca_layers` saying whether
-+  // ProcessForCALayerOverlays succeeded; `root_damage_rect` grows when the
-+  // root, drawn on the underlay route, must be redrawn. A frame with no such
-+  // quad, and no such quad punched last frame, is left exactly as it is.
 +  void ProcessNestedProtectedLayers(
 +      const DisplayResourceProvider* resource_provider,
 +      AggregatedRenderPassList* render_passes,
@@ -585,20 +506,15 @@
   private:
    // Returns whether future candidate quads should be considered
    bool PutQuadInSeparateOverlay(
-@@ -81,6 +101,16 @@
+@@ -81,6 +94,11 @@
 -
 +
    // The error code in ProcessForCALayerOverlays()
    gfx::CALayerResult ca_layer_result_ = gfx::kCALayerSuccess;
 +
-+  // Parc: whether FairPlay protected layers may be placed, and whether the
-+  // last frame had one. Mutable because the underlay pass is const.
 +  bool protected_layers_allowed_ = true;
 +  mutable bool had_protected_layer_ = false;
 +
-+  // Parc: the non-root passes whose FairPlay hole was punched last frame. A
-+  // pass that starts or stops being punched is redrawn whole, with the passes
-+  // drawing it, even when nothing else in it changed.
 +  base::flat_set<AggregatedRenderPassId> punched_passes_;
  };
 -
@@ -606,15 +522,12 @@
  }  // namespace viz
 --- a/components/viz/service/display/overlay_processor_interface.h
 +++ b/components/viz/service/display/overlay_processor_interface.h
-@@ -150,6 +150,12 @@
+@@ -150,6 +150,9 @@
    // If true, page fullscreen mode is enabled for this frame.
    virtual void SetIsPageFullscreen(bool enabled) {}
 -
 +
-+  // Parc: whether FairPlay protected layers (VideoHoleDrawQuads naming a
-+  // registered layer) may be placed. Only processors that place them use it.
 +  virtual void SetProtectedLayersAllowed(bool allowed) {}
-+  // Whether the last processed frame had one, placed or not.
 +  virtual bool HadProtectedLayer() const { return false; }
 +
    virtual gfx::CALayerResult GetCALayerErrorCode() const;
@@ -636,27 +549,26 @@
    // The damage that should be added the next frame for drawing to the output
 --- a/components/viz/service/display/overlay_processor_mac.cc
 +++ b/components/viz/service/display/overlay_processor_mac.cc
-@@ -69,10 +69,18 @@
+@@ -69,10 +69,17 @@
      // RenderPass overlays still point into that list. So instead, to avoid
      // drawing the root RenderPass, we set |damage_rect| to be empty.
      *damage_rect = gfx::Rect();
 +
-+    // Parc: FairPlay videos drawn inside render passes.
 +    ca_layer_overlay_processor_->ProcessNestedProtectedLayers(
-+        resource_provider, render_passes, /*all_ca_layers=*/true, candidates,
++        resource_provider, render_passes, true, candidates,
 +        damage_rect);
    } else {
      ca_layer_overlay_processor_->PutForcedOverlayContentIntoUnderlays(
          resource_provider, render_pass, gfx::RectF(render_pass->output_rect),
          &render_pass->quad_list, candidates);
 +    ca_layer_overlay_processor_->ProcessNestedProtectedLayers(
-+        resource_provider, render_passes, /*all_ca_layers=*/false, candidates,
++        resource_provider, render_passes, false, candidates,
 +        damage_rect);
 -
 +
      // Mac doesn't use the plane_z_order field and it needs to have primary
      // plane last in the list of overlays.
-@@ -88,4 +96,12 @@
+@@ -88,4 +95,12 @@
    return ca_layer_overlay_processor_->ca_layer_result();
  }
 -
@@ -672,19 +584,16 @@
  }  // namespace viz
 --- a/components/viz/service/display/display.h
 +++ b/components/viz/service/display/display.h
-@@ -149,6 +149,10 @@
+@@ -150,6 +150,7 @@
    void SetDisplayColorSpaces(
        const gfx::DisplayColorSpaces& display_color_spaces);
    void SetOutputIsSecure(bool secure);
-+  // Parc: whether this display may show FairPlay protected layers. When not,
-+  // a protected video quad is drawn black and never placed, so a parked pane
-+  // compositor can't take the layer from the display that shows the page.
 +  void SetProtectedLayersAllowed(bool allowed);
    void NotifyMinSupportedVsyncInterval(base::TimeDelta min_vsync_interval);
 -
 +
    const SurfaceId& CurrentSurfaceId() const;
-@@ -309,6 +313,7 @@
+@@ -320,6 +321,7 @@
    gfx::DisplayColorSpaces display_color_spaces_;
    mojom::DisplayVisibility visibility_ = mojom::DisplayVisibility::kInvisible;
    bool output_is_secure_ = false;
@@ -695,7 +604,7 @@
    std::unique_ptr<gpu::ScopedAllowScheduleGpuTask>
 --- a/components/viz/service/display/display.cc
 +++ b/components/viz/service/display/display.cc
-@@ -512,6 +512,23 @@
+@@ -517,6 +517,20 @@
      aggregator_->SetDisplayColorSpaces(display_color_spaces_);
  }
 -
@@ -706,9 +615,6 @@
 +  }
 +  protected_layers_allowed_ = allowed;
 +  overlay_processor_->SetProtectedLayersAllowed(allowed);
-+  // Redraw a frame that had a FairPlay video, so its layer is placed again or
-+  // let go at once (handed to a display that shows it). A display whose last
-+  // frame had none never draws because of this.
 +  if (overlay_processor_->HadProtectedLayer()) {
 +    if (aggregator_ && current_surface_id_.is_valid()) {
 +      aggregator_->SetFullDamageForSurface(current_surface_id_);
@@ -722,7 +628,7 @@
      return;
 --- a/components/viz/service/frame_sinks/root_compositor_frame_sink_impl.h
 +++ b/components/viz/service/frame_sinks/root_compositor_frame_sink_impl.h
-@@ -83,6 +83,7 @@
+@@ -84,6 +84,7 @@
    void SetVSyncDisplayID(int64_t display_id) override;
  #endif
    void SetOutputIsSecure(bool secure) override;
@@ -732,50 +638,45 @@
    void ForceImmediateDrawAndSwapIfPossible() override;
 --- a/components/viz/service/frame_sinks/root_compositor_frame_sink_impl.cc
 +++ b/components/viz/service/frame_sinks/root_compositor_frame_sink_impl.cc
-@@ -384,6 +384,10 @@
-   display_->SetOutputIsSecure(secure);
- }
+@@ -392,6 +392,10 @@
 -
++
+ void RootCompositorFrameSinkImpl::SetOutputIsSecure(bool secure) {
+   display_->SetOutputIsSecure(secure);
++}
 +
 +void RootCompositorFrameSinkImpl::SetProtectedLayersAllowed(bool allowed) {
 +  display_->SetProtectedLayersAllowed(allowed);
-+}
-+
- void RootCompositorFrameSinkImpl::SetDisplayVSyncParameters(
-     base::TimeTicks timebase,
-     base::TimeDelta interval) {
---- a/services/viz/privileged/mojom/compositing/display_private.mojom
-+++ b/services/viz/privileged/mojom/compositing/display_private.mojom
-@@ -59,6 +59,12 @@
-   SetDisplayColorSpaces(gfx.mojom.DisplayColorSpaces display_color_spaces);
-   SetOutputIsSecure(bool secure);
+ }
 -
 +
-+  // Parc: whether this display may show FairPlay protected layers
-+  // (ui::ProtectedLayerRegistry). A parked pane compositor's display may not,
-+  // so it never takes one from the display that shows the page. Defaults to
-+  // true.
+ void RootCompositorFrameSinkImpl::SetDisplayVSyncParameters(
+--- a/services/viz/privileged/mojom/compositing/display_private.mojom
++++ b/services/viz/privileged/mojom/compositing/display_private.mojom
+@@ -58,6 +58,8 @@
+   // effect when using GPU compositing.
+   SetDisplayColorSpaces(gfx.mojom.DisplayColorSpaces display_color_spaces);
+   SetOutputIsSecure(bool secure);
++
 +  SetProtectedLayersAllowed(bool allowed);
+-
 +
    // Sets CGDirectDisplayID for GPU begin frame source.
    [EnableIf=is_mac]
-   SetVSyncDisplayID(int64 display_id);
 --- a/ui/compositor/compositor.h
 +++ b/ui/compositor/compositor.h
-@@ -462,6 +462,10 @@
+@@ -453,6 +453,8 @@
    bool output_is_secure() const { return output_is_secure_; }
    void SetOutputIsSecure(bool output_is_secure);
 -
 +
-+  // Parc: whether this compositor's display may show FairPlay protected
-+  // layers. See viz::Display::SetProtectedLayersAllowed.
 +  void SetProtectedLayersAllowed(bool allowed);
 +
    const cc::LayerTreeDebugState& GetLayerTreeDebugState() const;
    void SetLayerTreeDebugState(const cc::LayerTreeDebugState& debug_state);
 -
 +
-@@ -687,6 +691,7 @@
+@@ -677,6 +679,7 @@
    gfx::DisplayColorSpaces display_color_spaces_;
 -
 +
@@ -787,7 +688,7 @@
    const bool is_pixel_canvas_;
 --- a/ui/compositor/compositor.cc
 +++ b/ui/compositor/compositor.cc
-@@ -366,6 +366,7 @@
+@@ -364,6 +364,7 @@
      display_private_->SetDisplayColorMatrix(
          gfx::SkM44ToTransform(display_color_matrix_));
      display_private_->SetOutputIsSecure(output_is_secure_);
@@ -795,7 +696,7 @@
  #if BUILDFLAG(IS_MAC)
      display_private_->SetVSyncDisplayID(display_id_);
  #endif
-@@ -991,6 +992,16 @@
+@@ -989,6 +990,16 @@
      display_private_->SetOutputIsSecure(output_is_secure);
  }
 -
@@ -825,7 +726,7 @@
  #endif
 --- a/components/viz/service/BUILD.gn
 +++ b/components/viz/service/BUILD.gn
-@@ -383,6 +383,8 @@
+@@ -374,6 +374,8 @@
        "display/ca_layer_overlay.h",
        "display/overlay_processor_mac.cc",
        "display/overlay_processor_mac.h",
@@ -834,13 +735,12 @@
        "display_embedder/software_output_device_mac.cc",
        "display_embedder/software_output_device_mac.h",
      ]
-@@ -753,8 +755,9 @@
-   if (is_mac) {
-     sources += [
-       "display/overlay_ca_unittest.cc",
+@@ -747,6 +749,7 @@
        "display_embedder/software_output_device_mac_unittest.mm",
        "frame_sinks/external_begin_frame_source_mac_unittest.cc",
      ]
 +    deps += [ "//components/viz/service/parc_tests:unit_tests" ]
      frameworks = [ "IOSurface.framework" ]
    }
+-
++

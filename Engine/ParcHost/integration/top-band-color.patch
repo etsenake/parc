@@ -1,6 +1,6 @@
 --- a/third_party/blink/public/mojom/BUILD.gn
 +++ b/third_party/blink/public/mojom/BUILD.gn
-@@ -1195,6 +1195,9 @@
+@@ -1161,6 +1161,9 @@
      "page/prerender_page_param.mojom",
      "page/widget.mojom",
      "page_state/page_state.mojom",
@@ -13,7 +13,7 @@
      "messaging/cloneable_message.mojom",
 --- a/third_party/blink/renderer/core/frame/build.gni
 +++ b/third_party/blink/renderer/core/frame/build.gni
-@@ -148,6 +148,10 @@
+@@ -150,6 +150,10 @@
    "page_scale_constraints_set.h",
    "pagination_state.cc",
    "pagination_state.h",
@@ -26,7 +26,7 @@
    "performance_monitor.cc",
 --- a/third_party/blink/renderer/core/frame/local_frame.cc
 +++ b/third_party/blink/renderer/core/frame/local_frame.cc
-@@ -157,6 +157,8 @@
+@@ -156,6 +156,8 @@
  #include "third_party/blink/renderer/core/frame/local_frame_mojo_handler.h"
  #include "third_party/blink/renderer/core/frame/local_frame_view.h"
  #include "third_party/blink/renderer/core/frame/page_scale_constraints_set.h"
@@ -35,7 +35,7 @@
  #include "third_party/blink/renderer/core/frame/pausable_script_executor.h"
  #include "third_party/blink/renderer/core/frame/performance_monitor.h"
  #include "third_party/blink/renderer/core/frame/picture_in_picture_controller.h"
-@@ -2123,6 +2125,10 @@
+@@ -2115,6 +2117,10 @@
    if (IsOutermostMainFrame()) {
      intersection_state_.occlusion_state =
          mojom::blink::FrameOcclusionState::kGuaranteedNotOccluded;
@@ -49,7 +49,7 @@
    Initialize();
 --- a/third_party/blink/renderer/core/frame/local_frame_view.cc
 +++ b/third_party/blink/renderer/core/frame/local_frame_view.cc
-@@ -96,6 +96,7 @@
+@@ -98,6 +98,7 @@
  #include "third_party/blink/renderer/core/frame/location.h"
  #include "third_party/blink/renderer/core/frame/page_scale_constraints_set.h"
  #include "third_party/blink/renderer/core/frame/pagination_state.h"
@@ -57,7 +57,7 @@
  #include "third_party/blink/renderer/core/frame/remote_frame.h"
  #include "third_party/blink/renderer/core/frame/remote_frame_view.h"
  #include "third_party/blink/renderer/core/frame/root_frame_viewport.h"
-@@ -1117,6 +1118,10 @@
+@@ -1130,6 +1131,10 @@
    }
 -
 +
@@ -72,7 +72,7 @@
  void LocalFrameView::NotifyPostLifecycleObservers() {
 --- a/third_party/blink/renderer/core/dom/document.cc
 +++ b/third_party/blink/renderer/core/dom/document.cc
-@@ -230,6 +230,7 @@
+@@ -229,6 +229,7 @@
  #include "third_party/blink/renderer/core/frame/local_frame_metrics_aggregator.h"
  #include "third_party/blink/renderer/core/frame/local_frame_view.h"
  #include "third_party/blink/renderer/core/frame/page_dismissal_scope.h"
@@ -80,7 +80,7 @@
  #include "third_party/blink/renderer/core/frame/performance_monitor.h"
  #include "third_party/blink/renderer/core/frame/picture_in_picture_controller.h"
  #include "third_party/blink/renderer/core/frame/settings.h"
-@@ -8067,6 +8068,11 @@
+@@ -8061,6 +8062,11 @@
  }
 -
 +
@@ -93,18 +93,17 @@
    MaybeExecuteDelayedAsyncScripts(
        MilestoneForDelayedAsyncScript::kLcpCandidate);
  }
-@@ -8147,6 +8153,10 @@
+@@ -8140,6 +8146,9 @@
+     // parsing is complete and no more static text/images will arrive.
      if (frame->View()) {
        frame->View()->MaybeStopDeferringCommitsWithoutContentfulPaint();
-     }
-+    // Parc: the top band may now report the document background.
++    }
 +    if (TopBandColorTracker* tracker = TopBandColorTracker::From(*frame)) {
 +      tracker->DidFinishParsing();
-+    }
+     }
 -
 +
      // Guarantee at least one call to the client specifying a title. (If
-     // |title_| is not empty, then the title has already been dispatched.)
 --- a/third_party/blink/renderer/core/loader/document_loader.cc
 +++ b/third_party/blink/renderer/core/loader/document_loader.cc
 @@ -109,6 +109,8 @@
@@ -116,13 +115,12 @@
  #include "third_party/blink/renderer/core/frame/settings.h"
  #include "third_party/blink/renderer/core/frame/web_feature.h"
  #include "third_party/blink/renderer/core/html/html_body_element.h"
-@@ -3308,6 +3310,14 @@
+@@ -3335,6 +3337,13 @@
 -
 +
    DidInstallNewDocument(document);
 -
 +
-+  // Parc: a new document restarts the top-band sampling.
 +  if (TopBandColorTracker* tracker = TopBandColorTracker::From(*frame_)) {
 +    tracker->DidCommitNavigation();
 +  }

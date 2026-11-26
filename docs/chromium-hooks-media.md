@@ -15,7 +15,8 @@ Four of these are declared in `parc/chromium_hooks.h`; the rest in a Parc header
   signed without library validation. `content/browser/media/service_factory.cc` builds the CDM
   service's launch options itself. Installed in `ParcContentBrowserClient::CreateBrowserMainParts`
   in `parc_content_clients.mm`, only when the bundle has the helper and before the interface thread
-  forbids blocking; `GetChildProcessPath` there resolves the flag.
+  forbids blocking. `GetChildProcessPath` resolves the CDM and Alerts flags. For other
+  helpers it passes Chromium the original flags and child process ID.
 - **`SetFairPlayCdmCreator`**: FairPlay key requests go to Parc's FairPlay media service.
   `MediaInterfaceProxy::CreateCdm` in `content/browser/media/media_interface_proxy.cc` makes one
   call into Parc's `parc_media_routing.cc` in the same layer, which runs the Widevine request
@@ -62,6 +63,10 @@ Four of these are declared in `parc/chromium_hooks.h`; the rest in a Parc header
   `PreMainMessageLoopRun`; answered by `StartPictureInPictureCaptionsSession` in
   `video_overlay_window.mm`.
 
+The legacy WebKit Clear Key callback reads a V8 array that identifies the media element
+and requesting player. It checks that the element still holds the same player before
+delivering the key. A replaced player cannot receive an earlier request’s response.
+
 ## Blink and renderer hooks
 
 - **`SetMoveWebMediaPlayer`**: a Safari-identity video moved into another frame keeps playing when
@@ -88,7 +93,9 @@ immediately after the cue box receives its default CSS; cue mutation notificatio
   renderers' reverse-playback and mixing calls, plus the FairPlay, Safari-identity and AirPlay hook
   definitions and the GPU sandbox rule. It spans 154 files across `media/base`, `media/filters`,
   `media/formats`, `media/mojo`, `media/renderers`, content's media code and Blink's platform media
-  and loader. Each change sits where Chromium's private player, demuxer and renderer state lives.
+  and loader. Each change sits where Chromium's private player, demuxer and renderer state lives. Parc adds
+  FairPlay to Chromium's results and preserves pending key systems so a page's capability
+  request can finish when its key system is ready.
   Since Chromium 157 the player is built without its frame and binds the user-activation check to the
   creating frame, so the patch drops `const` from `has_transient_user_activation_cb_` in
   `web_media_player_impl.h`; a Safari-identity player moved to another frame re-binds it there, and
@@ -99,6 +106,8 @@ immediately after the cue box receives its default CSS; cue mutation notificatio
   call and the CALayer compositing core, with a per-processor switch for protected layers. Touches 22
   Viz display, frame-sink, CALayer tree, compositor and mojom files; candidate construction, the
   rounded mask, root-pass processing and the parked-compositor flag stay at their call sites.
+  Chromium passes the layer parameters through its CALayer tree. Parc reads them there when
+  deciding whether a protected video layer can be claimed.
 - **`fairplay-identity-workers`**: the worker-identity definition and its four call points.
 - **`fairplay-playback-controls`**: the player observer's two virtuals, the controller's scrub call
   and the picture-in-picture session and scrubbing hooks, across 24 media-session, controller,
@@ -118,7 +127,8 @@ immediately after the cue box receives its default CSS; cue mutation notificatio
   never forked, so these stay patches across 33 media, FFmpeg configuration, WebRTC and Web Audio
   files. AMR and H.263 play only on Safari-identity pages ([decisions](chromium-seams.md#decisions)).
 - **`native-viz-capture-direct`**: a capture fix; failed or stale copies complete the capture oracle's
-  frame, in `frame_sink_video_capturer_impl.cc` and its test.
+  frame, in `frame_sink_video_capturer_impl.cc` and its test. Marking or reusing a frame
+  checks the capture version stored with that frame.
 - **`native-video-pip-direct`**: split links and repost warnings in Chromium's web-contents delegate,
   caption notifications, style, paint and animation integration in Blink, and the Live Caption
   button of Chromium's own picture-in-picture window, which Chromium always builds while laying out

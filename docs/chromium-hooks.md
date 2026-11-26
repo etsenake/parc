@@ -29,15 +29,17 @@ element supplement, are described in the [seams guide](chromium-seams.md#parc-st
 
 Each hook entry says what it does for people using Parc, the Chromium file that holds the hook
 point, why an extension point could not serve, where Parc installs it and which Parc code answers.
-Each patch entry says what it changes, which files it touches and why it must stay a patch.
+Each entry records the outcome of the Chromium 158 audit and why its remaining Chromium change is needed.
+The Cocoa input tracer and the PDF writer now live in Parc-owned helpers. Window color updates use
+a notifier, and protected video uses the layer information Chromium already passes.
 
 ## Counts
 
-The reference covers 70 hooks and 77 patches:
+The reference covers 71 hooks and 77 patches:
 
 - 65 setters in `parc/chromium_hooks.h`, plus its one call-in, `DestroyUnusedOTRProfile`.
-- 5 setters in layer headers: the Widevine request observer, the Safari-identity query, worker
-  identity, the AirPlay playback-target handler and Blink's player move. Their 5 call-ins are the
+- Six setters live in layer headers. They handle Widevine requests, Safari and worker identity,
+  AirPlay targets, Blink player moves and window color changes. Their five media call-ins are the
   Safari-identity check, the three AirPlay answers and picture-in-picture scrubbing. One more
   call-in, `content::NotifyNativeDeferredOpenURL`, lives in `content/public/browser/parc_native_links.h`.
 - 77 patches in [`overlay.json`](../Engine/ParcHost/overlay.json): 76 in
@@ -49,23 +51,22 @@ patches define, list the layer headers' setters, and count the manifest's patche
 ```sh
 rg -o 'Set[A-Z]\w*\(' Engine/ParcChromium/chromium_hooks.h | sort -u | wc -l
 rg -oN --no-filename '^\+(?:[A-Z_]+ )?void (?:parc_hooks::)?(Set[A-Z]\w*)\(' -r '$1' Engine/ParcHost/integration Engine/ParcNative/*.patch | sort -u
-rg -n 'EXPORT .*Set\w+\(' Engine/ParcHost/integration/*.h Engine/ParcNative/fairplay_chromium/parc_fairplay_hooks.h Engine/ParcRenderer/parc_media_player_move.h
+rg -n 'EXPORT(?:\([^)]+\))? .*Set\w+\(' Engine/ParcHost/integration/*.h Engine/ParcNative/fairplay_chromium/parc_fairplay_hooks.h Engine/ParcRenderer/parc_media_player_move.h Engine/ParcChromium/parc_color_changes.h
 python3 -c "import json; print(len(json.load(open('Engine/ParcHost/overlay.json'))['patches']))"
 ```
 
-The first prints 65. The second lists the 66 setters the patches define: 64 header setters plus
-the worker-identity and AirPlay playback-target-handler layer setters; per-object member setters
+The first prints 65. The second lists the 67 setters the patches define, including 64 browser-header setters and the
+worker-identity, AirPlay playback-target and window color setters; per-object member setters
 are indented and left out. The header's `SetFairPlayCdmCreator`, the Widevine and Safari-identity
 setters and the AirPlay call-ins are defined in Parc's own `parc_media_routing.cc`, and Blink's
-player-move setter in `parc_media_element.cc`. The third prints 8 lines: the five layer setters
-and the three AirPlay call-ins.
+player-move setter in `parc_media_element.cc`. The third also covers the window color notifier declared in the color layer.
 
 ## The areas
 
 | Area | Hooks | Patches | Reference |
 |---|---|---|---|
 | Browser and startup | 23 | 14 | [browser, pages and windows](chromium-hooks-browser.md#browser-and-startup-hooks) |
-| Page and window | 18 | 9 | [browser, pages and windows](chromium-hooks-browser.md#page-and-window-hooks) |
+| Page and window | 19 | 9 | [browser, pages and windows](chromium-hooks-browser.md#page-and-window-hooks) |
 | Interface routing and prompts | 20 | 30 | [interface and prompts](chromium-hooks-interface.md) |
 | Media and FairPlay | 8 | 16 | [media and Blink](chromium-hooks-media.md#media-and-fairplay-hooks) |
 | Blink and renderer | 1 | 4 | [media and Blink](chromium-hooks-media.md#blink-and-renderer-hooks) |

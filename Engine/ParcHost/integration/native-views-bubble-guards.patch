@@ -1,12 +1,10 @@
 --- a/chrome/browser/ui/toasts/toast_controller.cc
 +++ b/chrome/browser/ui/toasts/toast_controller.cc
-@@ -144,6 +144,15 @@
+@@ -144,6 +144,13 @@
      return false;
    }
 -
 +
-+  // Parc: native AppKit browser windows register no Views toast anchor, and
-+  // CreateToast CHECKs without one outside tests.
 +  if (browser_window_interface_ && !webui_browser::IsWebUIBrowserEnabled() &&
 +      !GetAnchorView(toast_registry_->GetToastSpecification(params.toast_id)
 +                         ->is_global_scope())) {
@@ -28,12 +26,10 @@
  #include "chrome/browser/ui/views/page_info/page_info_view_factory.h"
  #include "chrome/grit/theme_resources.h"
  #include "components/security_state/core/security_state.h"
-@@ -231,6 +232,12 @@
+@@ -231,6 +232,10 @@
    if (!browser) {
      return;
    }
-+  // Parc: native AppKit browser windows have no BrowserView, which the page
-+  // info anchor helpers below dereference.
 +  if (!BrowserView::GetBrowserViewForBrowser(browser)) {
 +    std::move(close_callback).Run(SafetyTipInteraction::kNotShown);
 +    return;
@@ -44,7 +40,7 @@
        bubble_anchor_util::GetPageInfoAnchorConfiguration(
 --- a/chrome/browser/ui/views/file_system_access/file_system_access_restore_permission_bubble_view.cc
 +++ b/chrome/browser/ui/views/file_system_access/file_system_access_restore_permission_bubble_view.cc
-@@ -10,6 +10,7 @@
+@@ -11,6 +11,7 @@
  #include "chrome/browser/ui/file_system_access/file_system_access_ui_helpers.h"
  #include "chrome/browser/ui/views/bubble_anchor_util_views.h"
  #include "chrome/browser/ui/views/file_system_access/file_system_access_scroll_panel.h"
@@ -52,13 +48,10 @@
  #include "chrome/browser/ui/views/title_origin_label.h"
  #include "chrome/grit/generated_resources.h"
  #include "components/permissions/permission_util.h"
-@@ -141,6 +142,13 @@
+@@ -144,6 +145,10 @@
        browser->GetActiveTabInterface()->GetContents() != web_contents) {
      return nullptr;
    }
-+  // Parc: native AppKit browser windows have no BrowserView, which the page
-+  // info anchor helpers below dereference. Answering keeps this tab's later
-+  // file access requests from waiting on a bubble that never shows.
 +  if (!BrowserView::GetBrowserViewForBrowser(browser)) {
 +    std::move(callback).Run(permissions::PermissionAction::DISMISSED);
 +    return nullptr;

@@ -377,10 +377,11 @@ PrepareAppKitWindow(const NativeWindowRequest& request) {
   PCNativeWindowKind kind = PCNativeWindowKindBrowser;
   if (request.type == BrowserWindowInterface::TYPE_DEVTOOLS) {
     kind = PCNativeWindowKindDeveloperTools;
-  } else if (request.type == BrowserWindowInterface::TYPE_PICTURE_IN_PICTURE) {
+  } else if (request.is_document_picture_in_picture) {
     kind = PCNativeWindowKindPictureInPicture;
   } else if (request.type == BrowserWindowInterface::TYPE_POPUP ||
-             request.type == BrowserWindowInterface::TYPE_APP_POPUP) {
+             request.type == BrowserWindowInterface::TYPE_APP_POPUP ||
+             request.type == BrowserWindowInterface::TYPE_FLOATING) {
     kind = PCNativeWindowKindPopup;
   }
   PCNativeWindowRequest* descriptor =

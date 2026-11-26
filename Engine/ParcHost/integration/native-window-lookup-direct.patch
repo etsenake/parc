@@ -1,17 +1,18 @@
 --- a/chrome/browser/ui/views/frame/browser_view.cc
 +++ b/chrome/browser/ui/views/frame/browser_view.cc
-@@ -1181,12 +1181,14 @@
+@@ -1193,12 +1193,14 @@
    // level NativeView.
    if (const auto* widget = views::Widget::GetTopLevelWidgetForNativeView(
            web_contents->GetNativeView())) {
 -    return BrowserView::GetBrowserViewForNativeWindow(
 -        widget->GetNativeWindow());
+-  }
+-  const auto* browser =
 +    if (auto* view = BrowserView::GetBrowserViewForNativeWindow(
 +            widget->GetNativeWindow())) {
 +      return view;
 +    }
-   }
--  const auto* browser =
++  }
 +  auto* browser =
        GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(web_contents);
 -  return browser ? BrowserView::GetBrowserViewForBrowser(browser) : nullptr;
@@ -43,31 +44,10 @@
  import("//chrome/browser/buildflags.gni")
  import("//chrome/browser/downgrade/buildflags.gni")
  import("//chrome/common/features.gni")
-@@ -496,10 +497,14 @@
-   }
--
-+
-   if (is_mac) {
--    sources += [
--      "//chrome/app/chrome_crash_reporter_client.cc",
--      "//chrome/app/chrome_crash_reporter_client_mac.mm",
--    ]
-+    if (enable_parc) {
-+      deps += [ "//parc:crash_reporter_client" ]
-+    } else {
-+      sources += [
-+        "//chrome/app/chrome_crash_reporter_client.cc",
-+        "//chrome/app/chrome_crash_reporter_client_mac.mm",
-+      ]
-+    }
-     deps += [
-       "//build:branding_buildflags",
-       "//chrome/app_shim",
-@@ -1685,6 +1690,18 @@
--
-+
-     if (is_mac) {
-       deps += [ "//chrome/app_shim:browser_tests" ]
+@@ -1850,6 +1851,18 @@
+         "//chrome/browser/ui/cocoa:browser_tests",
+         "//chrome/browser/webshare:browser_tests",
+       ]
 +      if (enable_parc) {
 +        deps += [
 +          "//parc/tests/parc_native_extensions:context_menu_browser_tests",
@@ -80,16 +60,15 @@
 +          "//parc/tests/parc_native_side_panel:browser_tests",
 +        ]
 +      }
+     } else {
+       data_deps += [ "//chrome:packed_resources" ]
      }
--
-+
-     # Runtime dependencies
-@@ -3852,6 +3869,25 @@
+@@ -3634,6 +3647,25 @@
        "//components/enterprise/common/proto:browser_events_proto_gen",
        "//ui/views/controls/webview:unit_tests",
      ]
 +    if (is_mac) {
-+      sources += [ "../browser/ui/views/frame/parc_native_window_lookup_unittest.cc" ]
++      deps += [ "//parc/tests/parc_native_window_lookup:unit_tests" ]
 +      if (enable_parc) {
 +        deps += [
 +          "//parc/tests/parc_native_autofill:session_tests",
@@ -111,14 +90,14 @@
 +
      deps += [
        "//chrome/browser/ui/views/extensions:unit_tests",
-@@ -3892,6 +3928,9 @@
-     deps += [ "//chrome/browser/ui/startup/default_browser_prompt:unit_tests" ]
-   }
+@@ -3665,6 +3697,9 @@
 -
 +
+   if (enterprise_data_controls) {
+     deps += [ "//chrome/browser/enterprise/data_controls:unit_tests" ]
++  }
 +  if (is_mac && enable_parc) {
 +    deps += [ "//parc:page_preferences_tests" ]
-+  }
+   }
    if (is_chrome_for_testing) {
      deps += [ "//chrome/browser/chrome_for_testing:unit_tests" ]
-   }

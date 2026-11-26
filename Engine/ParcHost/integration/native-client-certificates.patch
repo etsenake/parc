@@ -36,13 +36,11 @@
  void CertificateSelector::InitWithText(
 --- a/chrome/browser/ui/views/certificate_selector.h
 +++ b/chrome/browser/ui/views/certificate_selector.h
-@@ -65,6 +65,10 @@
+@@ -65,6 +65,8 @@
    // Must be called after |InitWithText()|.
    void Show();
 -
 +
-+  // Native auxiliary-window adapters create the genuine dialog widget, then
-+  // use the same first-row initialization as Show(). False means no choices.
 +  bool InitializeSelectionForPresentation();
 +
    // DialogDelegateView:
@@ -50,7 +48,7 @@
    std::u16string GetWindowTitle() const override;
 --- a/chrome/browser/ui/views/ssl_client_certificate_selector.cc
 +++ b/chrome/browser/ui/views/ssl_client_certificate_selector.cc
-@@ -27,7 +27,20 @@
+@@ -27,7 +27,19 @@
  #include "ui/views/controls/label.h"
  #include "ui/views/widget/widget.h"
 -
@@ -62,18 +60,17 @@
 +    net::ClientCertIdentityList client_certs,
 +    std::unique_ptr<content::ClientCertificateDelegate> delegate);
 +void SetClientCertificateSelector(ClientCertificateSelector selector);
-+}  // namespace parc_hooks
++}
 +
  namespace {
 +
-+// Replaces the Views selector below for every page, after Chrome's checks.
 +parc_hooks::ClientCertificateSelector g_parc_client_certificate_selector =
 +    nullptr;
 -
 +
  // Returns the storage of a test hook for `ShowSSLClientCertificateSelector()`.
  ShowSSLClientCertificateSelectorTestingHook&
-@@ -46,11 +59,13 @@
+@@ -46,11 +58,13 @@
    SSLClientAuthObserverImpl(
        content::WebContents* web_contents,
        const scoped_refptr<net::SSLCertRequestInfo>& cert_request_info,
@@ -90,7 +87,7 @@
 +
    void Init(base::OnceClosure close_dialog_callback) {
      close_dialog_callback_ = std::move(close_dialog_callback);
-@@ -72,9 +87,21 @@
+@@ -72,9 +86,19 @@
                         std::move(self), base::Unretained(cert)));
    }
 -
@@ -98,8 +95,6 @@
 +  bool CanAuthorize() const { return !can_authorize_ || can_authorize_.Run(); }
 +
 +  void Complete(net::X509Certificate* cert, net::SSLPrivateKey* key) {
-+    // Validate before broadcasting to other requests, including when an OS
-+    // private-key operation completed after the captured page was detached.
 +    if (CanAuthorize()) {
 +      CertificateSelected(cert, key);
 +    } else {
@@ -115,7 +110,7 @@
 -
 +
    // SSLClientAuthObserver:
-@@ -91,6 +118,7 @@
+@@ -91,6 +115,7 @@
    }
 -
 +
@@ -125,7 +120,7 @@
  };
 -
 +
-@@ -98,26 +126,30 @@
+@@ -98,26 +123,24 @@
      content::WebContents* web_contents,
      const scoped_refptr<net::SSLCertRequestInfo>& cert_request_info,
      net::ClientCertIdentityList client_certs,
@@ -160,12 +155,6 @@
 +                                 base::BindOnce(
 +                                     [](SSLClientCertificateSelector* dialog) {
 +                                       // This is here and not in Cancel() to
-+                                       // give WebContentsDestroyed a chance to
-+                                       // abort instead of proceeding with a
-+                                       // null certificate. (This will be
-+                                       // ignored if there was a previous call
-+                                       // to CertificateSelected or
-+                                       // CancelCertificateSelection.)
 +                                       if (dialog->auth_observer_impl_) {
 +                                         dialog->auth_observer_impl_->Complete(
 +                                             nullptr, nullptr);
@@ -176,7 +165,7 @@
 -
 +
  SSLClientCertificateSelector::~SSLClientCertificateSelector() = default;
-@@ -143,6 +175,10 @@
+@@ -143,6 +166,10 @@
 -
 +
  void SSLClientCertificateSelector::AcceptCertificate(
@@ -188,7 +177,7 @@
    // The SSLClientCertificateSelector will be destroyed after this method
    // returns, so the SSLClientAuthObserverImpl manages its own lifetime while
    // acquiring the private key from |identity|.
-@@ -191,6 +227,12 @@
+@@ -191,6 +218,12 @@
      return base::OnceClosure();
    }
 -
@@ -202,8 +191,8 @@
    SSLClientCertificateSelector* selector = new SSLClientCertificateSelector(
        contents, cert_request_info, std::move(client_certs),
        std::move(delegate));
-@@ -204,3 +246,9 @@
-   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+@@ -204,3 +237,9 @@
+   CHECK_CURRENTLY_ON(content::BrowserThread::UI, base::NotFatalUntil::M162);
    GetShowSSLClientCertificateSelectorTestingHook() = std::move(hook);
  }
 +
@@ -211,7 +200,7 @@
 +void SetClientCertificateSelector(ClientCertificateSelector selector) {
 +  g_parc_client_certificate_selector = selector;
 +}
-+}  // namespace parc_hooks
++}
 --- a/chrome/browser/ui/views/ssl_client_certificate_selector.h
 +++ b/chrome/browser/ui/views/ssl_client_certificate_selector.h
 @@ -29,7 +29,8 @@

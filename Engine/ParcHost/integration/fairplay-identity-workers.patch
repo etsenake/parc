@@ -8,17 +8,15 @@
  #include "content/public/browser/service_worker_context.h"
  #include "content/public/browser/service_worker_external_request_result.h"
  #include "content/public/common/content_client.h"
-@@ -246,7 +247,28 @@
+@@ -248,7 +249,26 @@
    return control;
  }
 -
 +
-+// Parc: see content/public/browser/parc_worker_identity.h.
 +ParcWorkerIdentityHook g_parc_worker_identity_hook = nullptr;
 +
  }  // namespace
 +
-+// Installed on the main thread before content starts, so no thread check.
 +void SetParcWorkerIdentityHook(ParcWorkerIdentityHook hook) {
 +  g_parc_worker_identity_hook = hook;
 +}
@@ -39,15 +37,14 @@
 +
  constexpr base::TimeDelta ServiceWorkerVersion::kTimeoutTimerDelay;
  constexpr base::TimeDelta ServiceWorkerVersion::kStartNewWorkerTimeout;
-@@ -2794,6 +2816,13 @@
+@@ -2824,6 +2844,12 @@
    ContentBrowserClient* browser_client = GetContentClient()->browser();
    params->user_agent = browser_client->GetUserAgent();
    params->ua_metadata = browser_client->GetUserAgentMetadata();
-+  // Parc: the worker presents its site's identity, as its documents do.
 +  if (context() && context()->wrapper()) {
 +    ApplyParcWorkerIdentity(context()->wrapper()->browser_context(),
 +                            script_url_, key_.top_level_site().GetURL(),
-+                            /*creator_frame=*/nullptr, &params->user_agent,
++                            nullptr, &params->user_agent,
 +                            &params->ua_metadata);
 +  }
    params->is_installed = IsInstalled(status_);
@@ -63,25 +60,23 @@
  #include "content/public/browser/permission_controller.h"
  #include "content/public/browser/permission_descriptor_util.h"
  #include "content/public/browser/service_worker_context.h"
-@@ -504,6 +505,16 @@
+@@ -505,6 +506,14 @@
                                     .GetWebExposedIsolationInfo()
                                     .is_isolated();
 -
 +
-+  // Parc: the worker presents its site's identity, as its documents do
-+  // (content/public/browser/parc_worker_identity.h).
 +  std::string user_agent = GetContentClient()->browser()->GetUserAgent();
 +  blink::UserAgentMetadata ua_metadata =
 +      GetContentClient()->browser()->GetUserAgentMetadata();
 +  ApplyParcWorkerIdentity(
 +      GetProcessHost()->GetBrowserContext(), instance_.url(),
 +      instance_.worker_storage_key().top_level_site().GetURL(),
-+      /*creator_frame=*/nullptr, &user_agent, &ua_metadata);
++      nullptr, &user_agent, &ua_metadata);
 +
    // Send the CreateSharedWorker message.
    factory_.Bind(std::move(factory));
    factory_->CreateSharedWorker(
-@@ -511,9 +522,8 @@
+@@ -512,9 +521,8 @@
        instance_.worker_storage_key().origin(),
        creator_policy_container_host_ &&
            creator_policy_container_host_->policies().is_web_secure_context,
@@ -103,15 +98,11 @@
  #include "content/public/browser/storage_partition.h"
  #include "content/public/common/content_client.h"
  #include "content/public/common/content_features.h"
-@@ -301,6 +302,24 @@
+@@ -301,6 +302,20 @@
        /*should_update_existing_headers=*/false, renderer_preferences,
        /*is_for_worker_script=*/true);
 -
 +
-+  // Parc: a Safari site's service worker requests its scripts, imports and
-+  // update checks included, with Safari's user agent, as its own fetches are
-+  // (parc_worker_identity.h). The worker is named by its origin: an import
-+  // from another site follows the worker.
 +  {
 +    const std::string default_user_agent =
 +        GetContentClient()->browser()->GetUserAgent();
@@ -119,7 +110,7 @@
 +    blink::UserAgentMetadata metadata;
 +    ApplyParcWorkerIdentity(&browser_context, storage_key.origin().GetURL(),
 +                            storage_key.top_level_site().GetURL(),
-+                            /*creator_frame=*/nullptr, &user_agent, &metadata);
++                            nullptr, &user_agent, &metadata);
 +    if (user_agent != default_user_agent) {
 +      request.headers.SetHeader(net::HttpRequestHeaders::kUserAgent,
 +                                user_agent);
@@ -151,14 +142,11 @@
 -
 +
    // TODO(nhiroki): Return early when the request is neither HTTP nor HTTPS
-@@ -126,6 +129,21 @@
+@@ -126,6 +129,18 @@
        &resource_request->headers, browser_context,
        /*should_update_existing_headers=*/false, renderer_preferences,
        /*is_for_worker_script=*/true);
 +
-+  // Parc: a worker script is requested with the user agent its worker will
-+  // have (parc_worker_identity.h): a dedicated worker's is its creating
-+  // document's, a shared worker's is its site's.
 +  const std::string default_user_agent =
 +      GetContentClient()->browser()->GetUserAgent();
 +  std::string user_agent = default_user_agent;
@@ -174,7 +162,7 @@
 -
 +
  // Build `PolicyContainerPolicies` from the worker script response headers or
-@@ -410,7 +428,12 @@
+@@ -410,7 +425,12 @@
        outside_fetch_client_settings_object->insecure_requests_policy ==
        blink::mojom::InsecureRequestsPolicy::kUpgrade;
 -

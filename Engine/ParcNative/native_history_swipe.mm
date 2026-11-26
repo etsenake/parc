@@ -347,7 +347,7 @@ __weak id<PCNativeHistorySwipeClient> history_swipe_client;
   auto* contents = [self originalContents];
   if (!contents || ![self allowsHistorySwipe]) return;
   contents->BackNavigationLikely(content::preloading_predictor::kBackGestureNavigation,
-                                 WindowOpenDisposition::CURRENT_TAB);
+                                 WindowOpenDisposition::kCurrentTab);
 }
 - (void)sessionDidCancel {
   [_handler historySwipeSourceDidCancel:_source];

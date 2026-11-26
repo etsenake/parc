@@ -64,7 +64,7 @@
    DesktopMediaPicker(const DesktopMediaPicker&) = delete;
 --- a/chrome/browser/ui/views/desktop_capture/desktop_media_picker_views.cc
 +++ b/chrome/browser/ui/views/desktop_capture/desktop_media_picker_views.cc
-@@ -1332,6 +1332,7 @@
+@@ -1333,6 +1333,7 @@
  #endif
 -
 +
@@ -74,7 +74,7 @@
    }
 -
 +
-@@ -1528,6 +1529,7 @@
+@@ -1529,6 +1530,7 @@
      }
      dialog_->DetachParent();
      dialog_->GetWidget()->Close();
@@ -83,7 +83,7 @@
  }
 -
 +
-@@ -1566,11 +1568,17 @@
+@@ -1567,11 +1569,17 @@
  // static
  std::unique_ptr<DesktopMediaPicker> DesktopMediaPicker::Create(
      const content::MediaStreamRequest* request) {
@@ -95,14 +95,16 @@
 +    picker = std::make_unique<ShareThisTabMediaPicker>();
    } else {
 -    return std::make_unique<DesktopMediaPickerImpl>();
+-  }
+-}
 +    picker = std::make_unique<DesktopMediaPickerImpl>();
-   }
++  }
 +#if BUILDFLAG(IS_MAC)
 +  return DesktopMediaPicker::MaybeWrapNative(std::move(picker), request);
 +#else
 +  return picker;
 +#endif
- }
++}
 --- a/chrome/browser/media/webrtc/media_stream_capture_indicator.cc
 +++ b/chrome/browser/media/webrtc/media_stream_capture_indicator.cc
 @@ -233,6 +233,13 @@
@@ -449,7 +451,7 @@
  import("//chrome/common/features.gni")
  import("//components/captive_portal/core/features.gni")
  import("//components/compose/features.gni")
-@@ -533,6 +534,7 @@
+@@ -544,6 +545,7 @@
      }
 -
 +
@@ -458,7 +460,7 @@
        ":tab_group",
        ":tab_model",
        ":tab_strip",
-@@ -770,6 +772,10 @@
+@@ -787,6 +789,10 @@
        ]
      }
 -
@@ -472,22 +474,21 @@
          "//chrome/browser:font_prewarmer_tab_helper",
 --- a/chrome/browser/ui/tabs/tab_features.cc
 +++ b/chrome/browser/ui/tabs/tab_features.cc
-@@ -4,6 +4,11 @@
+@@ -3,6 +3,11 @@
+ // found in the LICENSE file.
 -
 +
  #include "chrome/browser/ui/tabs/public/tab_features.h"
--
 +
 +#include "parc/features.h"
 +#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_PARC)
 +#include "parc/native/native_tab_preview.h"
 +#endif
+-
 +
  #include <memory>
  #include <optional>
--
-+
-@@ -841,7 +846,12 @@
+@@ -860,7 +865,12 @@
    intent_picker_tab_helper_ =
        std::make_unique<IntentPickerTabHelper>(tab, tab.GetContents());
 -
@@ -531,7 +532,7 @@
 -
 +
  // Called after a deleted profile was checked and cleaned up.
-@@ -377,11 +395,16 @@
+@@ -382,11 +400,16 @@
 -
 +
    // Attempt to load the profile before deleting it to properly clean up
@@ -554,7 +555,7 @@
    if (!IsProfileDirectoryMarkedForDeletion(profile_dir)) {
      // Prevents CreateProfileAsync from re-creating the profile.
      MarkProfileDirectoryForDeletion(profile_dir);
-@@ -422,7 +445,9 @@
+@@ -427,7 +450,9 @@
 -
 +
      // Clean-up pref data that won't be cleaned up by deleting the profile dir.
@@ -656,7 +657,7 @@
    if (!IsAllowedProfilePath(path)) {
      LOG(ERROR) << "Cannot create profile at path " << path.AsUTF8Unsafe();
      return false;
-@@ -1771,10 +1824,16 @@
+@@ -1783,10 +1836,16 @@
    bool ephemeral =
        IsRegisteredAsEphemeral(&GetProfileAttributesStorage(), profile_dir);
    bool marked_for_deletion = IsProfileDirectoryMarkedForDeletion(profile_dir);
@@ -675,7 +676,7 @@
 +
    if (!ephemeral && !marked_for_deletion)
      return;
-@@ -2185,6 +2244,9 @@
+@@ -2197,6 +2256,9 @@
 -
 +
    std::vector<base::OnceClosure> callbacks = std::move(it->second);

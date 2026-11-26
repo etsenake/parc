@@ -1,6 +1,6 @@
 --- a/chrome/browser/profiles/profile_impl.cc
 +++ b/chrome/browser/profiles/profile_impl.cc
-@@ -293,6 +293,15 @@
+@@ -299,6 +299,15 @@
 -
 +
  class ScopedAllowBlockingForProfile : public base::ScopedAllowBlocking {};
@@ -13,13 +13,13 @@
 +void SetSessionRestorePolicy(bool (*policy)()) {
 +  session_restore_policy = policy;
 +}
-+}  // namespace parc_hooks
++}
 +
  namespace {
 -
 +
  #if BUILDFLAG(ENABLE_SESSION_SERVICE)
-@@ -1298,6 +1307,9 @@
+@@ -1348,6 +1357,9 @@
  }
 -
 +

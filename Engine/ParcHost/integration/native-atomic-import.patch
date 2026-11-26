@@ -1,6 +1,6 @@
 --- a/components/history/core/browser/history_backend.cc
 +++ b/components/history/core/browser/history_backend.cc
-@@ -1557,11 +1557,68 @@
+@@ -1561,11 +1561,64 @@
  // TODO(crbug.com/40279741): Determine if we want to record these URLs in the
  // VisitedLinkDatabase, and if so, plumb the correct value for `top_level_site`.
  void HistoryBackend::AddPagesWithDetails(const URLRows& urls,
@@ -22,8 +22,6 @@
 +    return result;
 +  }
 +
-+  // Finish earlier ordinary history work before opening the import's atomic
-+  // batch. Never roll back another writer's pending transaction on cancellation.
 +  CancelScheduledCommit();
 +  if (!CommitSingletonTransactionIfItExists()) {
 +    BeginSingletonTransaction();
@@ -38,8 +36,6 @@
 +      AddPagesWithDetailsImpl(urls, visit_source, &result, &changed_urls);
 +  result.cancelled = is_cancelled.Run();
 +  if (!inserted || result.cancelled) {
-+    // Transaction destruction rolls back the exact batch; no change
-+    // notification has been sent for it.
 +    singleton_transaction_.reset();
 +    first_recorded_time_ = previous_first_recorded_time;
 +    result.imported = 0;
@@ -73,7 +69,7 @@
 -
 +
    URLRows changed_urls;
-@@ -1570,6 +1627,8 @@
+@@ -1574,6 +1627,8 @@
 -
 +
      // As of M37, we no longer maintain an archived database, ignore old visits.
@@ -84,7 +80,7 @@
      }
 -
 +
-@@ -1580,7 +1639,7 @@
+@@ -1584,7 +1639,7 @@
        url_id = db_->AddURL(*i);
        if (!url_id) {
          DLOG(ERROR) << "AddPagesWithDetails: Adding URL failed: " << i->url();
@@ -94,7 +90,7 @@
 -
 +
        changed_urls.push_back(*i);
-@@ -1600,13 +1659,15 @@
+@@ -1604,13 +1659,15 @@
        visit_info.source = visit_source;
        if (!db_->AddVisit(&visit_info)) {
          DLOG(ERROR) << "AddPagesWithDetails: Adding visit failed: " << i->url();
@@ -113,7 +109,7 @@
 -
 +
    // Broadcast a notification for typed URLs that have been modified. This
-@@ -1614,8 +1675,13 @@
+@@ -1618,8 +1675,13 @@
    //
    // TODO(brettw) bug 1140015: Add an "add page" notification so the history
    // views can keep in sync.
@@ -130,7 +126,7 @@
 -
 +
  bool HistoryBackend::IsExpiredVisitTime(const base::Time& time) const {
-@@ -3684,14 +3750,14 @@
+@@ -3688,14 +3750,14 @@
    }
  }
 -
@@ -150,7 +146,7 @@
 -
 +
    DCHECK(db_->HasActiveTransactions())
-@@ -3705,6 +3771,7 @@
+@@ -3709,6 +3771,7 @@
    // The crash reports are again predominantly on Windows. More discussion in
    // https://crbug.com/40874369 and https://crbug.com/385734240#comment4.
    singleton_transaction_.reset();
@@ -161,15 +157,11 @@
  ////////////////////////////////////////////////////////////////////////////////
 --- a/components/history/core/browser/history_backend.h
 +++ b/components/history/core/browser/history_backend.h
-@@ -863,6 +863,21 @@
+@@ -863,6 +863,17 @@
    // Each visit will have the visit_source type set.
    void AddPagesWithDetails(const URLRows& info, VisitSource visit_source);
 -
 +
-+  // Profile-owned import on the history sequence. Retains normal expiration and
-+  // visit-source policy, but publishes a result only after the actual database
-+  // transaction commits. A storage failure or cancellation before commit rolls
-+  // back this batch, preserving earlier unrelated history transactions.
 +  struct ImportPagesResult {
 +    size_t imported = 0;
 +    size_t expired = 0;
@@ -185,21 +177,20 @@
    HistoryDatabase* db() const { return db_.get(); }
 -
 +
-@@ -889,6 +904,11 @@
+@@ -888,6 +899,11 @@
+   friend class HistoryBackendTest;
    friend class HistoryBackendDBBaseTest;
    FRIEND_TEST_ALL_PREFIXES(OrderingHistoryServiceTest, EnsureCorrectOrder);
--
 +
 +  bool AddPagesWithDetailsImpl(const URLRows& info,
 +                              VisitSource visit_source,
 +                              ImportPagesResult* result,
 +                              URLRows* changed_urls);
+-
 +
    // Returns the name of the Favicons database.
    base::FilePath GetFaviconsFileName() const;
--
-+
-@@ -1021,7 +1041,7 @@
+@@ -1021,7 +1037,7 @@
    // If the singleton transaction exists, commits it and checks all invariants.
    // Does nothing if `singleton_transaction_` is nullptr. Caller is responsible
    // for starting a new singleton transaction.
@@ -253,15 +244,11 @@
  #include "base/memory/raw_ptr.h"
  #include "base/memory/scoped_refptr.h"
  #include "components/webdata/common/web_database_table.h"
-@@ -112,6 +113,12 @@
+@@ -112,6 +113,8 @@
    void BeginTransaction();
    void CommitTransaction();
 -
 +
-+  // Runs one synchronous profile import on the existing database sequence.
-+  // Commits earlier legacy transaction work first, then owns the batch's real
-+  // transaction. False means this batch did not commit. Restores the normal
-+  // legacy transaction afterward; scoped-transaction mode stays scoped.
 +  bool RunAtomicImport(base::OnceCallback<bool()> write);
 +
    // Acquire a scoped transaction. The `AcquireTransaction` is meant to replace

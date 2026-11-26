@@ -179,7 +179,7 @@ the overlay together: the overlay records the exact Chromium commit it fits, so
 every bump needs a new overlay version even when no patch breaks. Never commit
 the lock alone; the next release would move its engine to the new version and
 then stop at the overlay check. A minor bump (same milestone, new patch number)
-usually breaks a few of the 76 patches and keeps the compiler, so the build is
+usually breaks a few of the patches and keeps the compiler, so the build is
 incremental. A major bump (new milestone) breaks many patches, adds and drops
 dependencies and usually rolls the compiler, so the next build recompiles
 nearly everything; also check the new version's required macOS SDK in its
@@ -196,14 +196,15 @@ so releases keep using the current engine:
    `SHIPPING_PGO_PROFILE` to the profile the new tag's
    `chrome/build/mac-arm.pgo.txt` names and that file's SHA-256, and
    `SHIPPING_V8_BUILTINS_PROFILE` to the new tag's V8 version (from
-   `v8/include/v8-version.h`) and its downloaded `x64.profile` SHA-256.
+   `v8/include/v8-version.h`) and its downloaded `x64.profile` SHA-256. Shipping checks the cached V8 profile against that
+   digest and fetches a fresh copy for the pinned revision when the previous version is still cached.
 2. Make an APFS copy of an idle engine and adopt it with
    `--previous-lock "$PWD/work/previous-source-lock.json"` (see the clone
    commands above).
 3. Record Parc's current changes as commits in the copy. In `chromium/src`,
    `git switch -c parc-previous`, `git add` exactly the overlay's targets and
-   commit; do the same in `third_party/ffmpeg` and
-   `third_party/devtools-frontend/src` for their targets. Prove the branch equals
+   commit. Repeat in each dependency whose files the overlay changes, including
+   `third_party/ffmpeg`, `third_party/devtools-frontend/src` and `third_party/webrtc`. Prove the branch equals
    the overlay with `scripts/engine-overlay-export.py --repository
    <copy>/chromium/src --branch parc-previous --manifest
    "$PWD/Engine/ParcHost/overlay.json" --lock "$PWD/work/previous-source-lock.json"

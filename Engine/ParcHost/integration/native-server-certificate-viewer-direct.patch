@@ -9,7 +9,7 @@
  import("//base/allocator/allocator.gni")
  import("//build/buildflag_header.gni")
  import("//build/config/buildflags_paint_preview.gni")
-@@ -1695,7 +1696,12 @@
+@@ -1797,7 +1798,12 @@
      }
    }
 -
@@ -25,45 +25,43 @@
        "browser_process_platform_part_mac.mm",
 --- a/chrome/browser/ui/webui/certificate_viewer/certificate_viewer_webui.cc
 +++ b/chrome/browser/ui/webui/certificate_viewer/certificate_viewer_webui.cc
-@@ -48,7 +48,17 @@
+@@ -50,7 +50,16 @@
 -
 +
  using chrome_browser_server_certificate_database::CertificateTrust;
 -
 +
 +namespace parc_hooks {
-+using CertificateViewer = void (*)(content::WebContents* web_contents,
++using CertificateViewer = bool (*)(content::WebContents* web_contents,
 +                                   gfx::NativeWindow parent,
 +                                   net::X509Certificate* cert);
 +void SetCertificateViewer(CertificateViewer viewer);
-+}  // namespace parc_hooks
++}
 +
  namespace {
 +
-+// Replaces the WebUI viewer below for every page.
 +parc_hooks::CertificateViewer g_parc_certificate_viewer = nullptr;
 -
 +
  CertificateViewerDialog::MockShowCallback& GetMockCallbackInstance() {
    static base::NoDestructor<CertificateViewerDialog::MockShowCallback> instance;
-@@ -341,9 +351,19 @@
- void ShowCertificateViewer(WebContents* web_contents,
+@@ -363,8 +372,18 @@
                             gfx::NativeWindow parent,
-                            net::X509Certificate* cert) {
-+  if (g_parc_certificate_viewer) {
-+    g_parc_certificate_viewer(web_contents, parent, cert);
+                            net::X509Certificate* cert,
+                            CertificateViewerEntrypoint entrypoint) {
++  if (g_parc_certificate_viewer &&
++      g_parc_certificate_viewer(web_contents, parent, cert)) {
 +    return;
 +  }
    CertificateViewerDialog::ShowConstrained(cert->CopyCertBuffers(),
-                                            web_contents, parent);
- }
+                                            web_contents, parent, entrypoint);
++}
 +
 +namespace parc_hooks {
 +void SetCertificateViewer(CertificateViewer viewer) {
 +  g_parc_certificate_viewer = viewer;
 +}
-+}  // namespace parc_hooks
+ }
 -
 +
  #if !(BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC))
- void ShowCertificateViewerForClientAuth(content::WebContents* web_contents,

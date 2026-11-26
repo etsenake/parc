@@ -2306,7 +2306,7 @@ void MarkAlternateNavigationClone(Browser* browser, content::WebContents* source
     const auto before = TabContents(browser);
     const bool active = browser->GetTabStripModel()->GetActiveWebContents() == contents;
     chrome::NavigateToIndexWithDisposition(
-        browser, index, WindowOpenDisposition::NEW_BACKGROUND_TAB);
+        browser, index, WindowOpenDisposition::kNewBackgroundTab);
     MarkAlternateNavigationClone(browser, contents, active, before, false);
   } else {
     contents->GetController().GoToIndex(index);
@@ -2366,8 +2366,8 @@ bool CanNativePageHistorySwipe(PCNativePage* page) {
   auto* browser = NavigationBrowser(self, true);
   if (!browser || ![self canPerformNavigationAction:action] ||
       (inNewTab && action == PCNativeNavigationActionStop)) return NO;
-  auto disposition = inNewTab ? WindowOpenDisposition::NEW_FOREGROUND_TAB
-                              : WindowOpenDisposition::CURRENT_TAB;
+  auto disposition = inNewTab ? WindowOpenDisposition::kNewForegroundTab
+                              : WindowOpenDisposition::kCurrentTab;
   auto* source = parc::ContentsForNativePage(self);
   const auto before = inNewTab ? TabContents(browser)
                                : std::vector<content::WebContents*>();

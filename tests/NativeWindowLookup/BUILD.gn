@@ -1,0 +1,18 @@
+assert(is_mac)
+
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "//chrome/browser/ui/views/frame/parc_native_window_lookup_unittest.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/ui:browser_window_header",
+    "//chrome/browser/ui/autofill",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/test/base:browser_with_test_window_test",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//testing/gtest",
+    "//url",
+  ]
+}

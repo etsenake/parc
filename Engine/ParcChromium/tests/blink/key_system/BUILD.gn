@@ -1,5 +1,3 @@
-# Installed at //third_party/blink/renderer/platform/media/parc_key_system_tests.
-
 assert(is_mac)
 
 source_set("unit_tests") {
@@ -23,7 +21,6 @@ source_set("unit_tests") {
     "//testing/gtest",
     "//third_party/blink/public:blink",
     "//third_party/blink/public:test_headers",
-    "//third_party/blink/public/platform/media",
     "//third_party/blink/renderer/platform/media",
     "//third_party/blink/renderer/platform:test_support",
   ]

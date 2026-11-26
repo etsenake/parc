@@ -18,7 +18,7 @@
      "//chrome/browser:browser_process",
      "//chrome/browser:primitives",
      "//chrome/browser/actor",
-@@ -354,6 +356,9 @@
+@@ -358,6 +360,9 @@
    }
 -
 +
@@ -42,7 +42,7 @@
  #include "chrome/browser/download/download_prefs.h"
  #include "chrome/browser/platform_util.h"
  #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
-@@ -54,9 +58,15 @@
+@@ -57,9 +61,15 @@
        download_item_
            ? content::DownloadItemUtils::GetWebContents(download_item_)
            : nullptr;
@@ -59,7 +59,7 @@
             download::DownloadSource::EXTENSION_API &&
         (!web_contents || !web_contents->GetNativeView()))) {
      base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
-@@ -65,8 +75,10 @@
+@@ -68,8 +78,10 @@
      return;
    }
 -

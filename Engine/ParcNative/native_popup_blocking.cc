@@ -194,7 +194,7 @@ void ReleaseWindowPopup(std::unique_ptr<WindowRelease> release) {
   create_params.opener_suppressed = suppressed;
   create_params.opened_by_another_window = !suppressed;
   create_params.initially_hidden =
-      disposition == WindowOpenDisposition::NEW_BACKGROUND_TAB;
+      disposition == WindowOpenDisposition::kNewBackgroundTab;
   create_params.starting_sandbox_flags = release->sandbox_flags;
   content::GlobalRenderFrameHostId opener_id;
   if (opener) {
@@ -230,7 +230,7 @@ void ReleaseWindowPopup(std::unique_ptr<WindowRelease> release) {
   content::NavigationController::LoadURLParams load_params =
       LoadURLParamsFromNavigateParams(contents.get(), &params);
   contents->GetController().LoadURLWithParams(load_params);
-  if (contents && disposition == WindowOpenDisposition::NEW_POPUP) {
+  if (contents && disposition == WindowOpenDisposition::kNewPopup) {
     mojo::AssociatedRemote<chrome::mojom::ChromeRenderFrame> client;
     contents->GetPrimaryMainFrame()
         ->GetRemoteAssociatedInterfaces()
@@ -456,7 +456,7 @@ bool OpenNativeBlockedItem(content::WebContents& contents,
     return false;
   }
   const base::WeakPtr<content::WebContents> weak = contents.GetWeakPtr();
-  popups->ShowBlockedPopup(id, WindowOpenDisposition::CURRENT_TAB);
+  popups->ShowBlockedPopup(id, WindowOpenDisposition::kCurrentTab);
   if (weak) {
     NoteBlockedContentChanged(*weak);
   }
@@ -490,7 +490,7 @@ bool OpenAllNativeBlockedPopups(content::WebContents& contents,
       continue;
     }
     helper->ShowBlockedPopup(request.first,
-                             WindowOpenDisposition::CURRENT_TAB);
+                             WindowOpenDisposition::kCurrentTab);
     opened = true;
   }
   if (weak) {

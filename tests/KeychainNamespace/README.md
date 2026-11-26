@@ -10,6 +10,12 @@ and its synthetic provider/client tests.
 
 ## Product namespace and existing encrypted data
 
+The outer Parc app declares `Parc/Chromium-v1` as its default engine directory under
+Application Support. Profiles and Spaces in that standard physical directory
+continue to use their existing encrypted cookies and saved passwords.
+Chromium uses a separate encryption format for custom data directories. See
+[automation profiles](../../docs/developer-mode.md#automation-profiles).
+
 Direct Chromium startup sets the shared Keychain service and account before
 initializing any provider or Profile. Fresh engine roots use `Parc Safe Storage` / `Parc`. An existing root with `Local State`
 or restored Profile cookie/password databases and no namespace marker keeps its

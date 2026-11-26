@@ -275,6 +275,8 @@ class V8BuiltinsProfileTests(unittest.TestCase):
         self.v8 = self.workspace / "chromium/src/v8"
         (self.v8 / "include").mkdir(parents=True)
         self.write_version("15.7.112.43")
+        self.revision = "a" * 40
+        (self.v8.parent / "DEPS").write_text(f"'v8_revision': '{self.revision}',\n")
         self.profile = self.v8 / "tools/builtins-pgo/profiles" / engine.SHIPPING_V8_BUILTINS_PROFILE["name"]
         self.content = b"builtins profile"
         self.pin = patch.dict(engine.SHIPPING_V8_BUILTINS_PROFILE, version="15.7.112.43",
@@ -291,6 +293,22 @@ class V8BuiltinsProfileTests(unittest.TestCase):
     def download(self, argv, cwd, env):
         self.profile.parent.mkdir(parents=True, exist_ok=True)
         self.profile.write_bytes(self.content)
+        (self.profile.parent / "meta.json").write_text(json.dumps({
+            "version": "15.7.112.43", "revision": self.revision,
+        }))
+
+    def test_complete_profile_from_an_interrupted_download_rechecks_the_revision(self):
+        self.download(None, None, None)
+        metadata = self.profile.parent / "meta.json"
+        for raw in (None, "{", '{"version":"15.7.112.43","revision":"wrong"}'):
+            with self.subTest(raw=raw):
+                if raw is None:
+                    metadata.unlink()
+                else:
+                    metadata.write_text(raw)
+                with patch.object(engine, "run", side_effect=self.download) as fetch:
+                    engine.ensure_v8_builtins_profile(self.workspace, {})
+                fetch.assert_called_once()
 
     def test_missing_profile_is_downloaded_for_the_pinned_v8_and_checked(self):
         with patch.object(engine, "run", side_effect=self.download) as run:
@@ -301,13 +319,22 @@ class V8BuiltinsProfileTests(unittest.TestCase):
         self.assertEqual(argv[argv.index("--depot-tools") + 1], str(self.workspace / "depot_tools"))
         self.assertEqual(run.call_args.args[1], self.workspace / "chromium/src")
 
+    def test_previous_engine_profile_is_replaced_with_the_pinned_profile(self):
+        self.download(None, None, None)
+        self.profile.write_bytes(b"previous V8 release profile")
+        with patch.object(engine, "run", side_effect=self.download) as run:
+            self.assertEqual(engine.ensure_v8_builtins_profile(self.workspace, {}), self.profile)
+        self.assertIn("--force", run.call_args.args[0])
+        self.assertIn("--check-v8-revision", run.call_args.args[0])
+        self.assertEqual(self.profile.read_bytes(), self.content)
+
     def test_present_profile_is_not_downloaded_again(self):
         self.download(None, None, None)
         with patch.object(engine, "run", side_effect=AssertionError("downloaded again")):
             engine.ensure_v8_builtins_profile(self.workspace, {})
 
     def test_wrong_profile_contents_are_refused(self):
-        self.profile.parent.mkdir(parents=True)
+        self.download(None, None, None)
         self.profile.write_bytes(b"other data")
         with patch.object(engine, "run"), self.assertRaisesRegex(engine.Refusal, "digest mismatch"):
             engine.ensure_v8_builtins_profile(self.workspace, {})

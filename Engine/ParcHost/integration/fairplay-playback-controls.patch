@@ -10,7 +10,7 @@
    RequestPlay(bool triggered_by_user);
 -
 +
-@@ -73,6 +75,25 @@
+@@ -73,6 +75,14 @@
 -
 +
    // Request the media player to save the current video frame.
@@ -18,43 +18,25 @@
 +  RequestHandlePlaybackControlsAction(media_session.mojom.PlaybackControlsAction action,
 +      mojo_base.mojom.TimeDelta seek_time);
 +
-+  // Parc: AirPlay for a media element of a Safari-identity page (WebKit's
-+  // MediaPlaybackTargetClient). Whether the browser's route detector sees an
-+  // AirPlay device (externalOutputDeviceAvailableDidChange).
 +  ParcSetPlaybackTargetAvailability(bool available);
-+  // The browser's route picker AVOutputContext, by its UUID (empty for
-+  // none), the name of the device it routes to, and whether this element's
-+  // player plays to it (setWirelessPlaybackTarget and
-+  // setShouldPlayToPlaybackTarget); `tint_argb` and `tint_on_light_argb`
-+  // are the window's Space tint for AirPlay on dark and on light surfaces,
-+  // 0 for none.
 +  ParcSetPlaybackTarget(string output_context_id, string device_name,
 +                        bool should_play, uint32 tint_argb,
 +                        uint32 tint_on_light_argb);
-+  // The route list this element opened closed without a choice
-+  // (playbackTargetPickerWasDismissed).
 +  ParcPlaybackTargetPickerDismissed();
  };
 -
 +
  // Implemented by the MediaWebContentsObserver. The remote lives in the renderer
-@@ -135,6 +156,19 @@
+@@ -135,6 +145,12 @@
 -
 +
    // Notifies the browser process of save video frame's availability.
    OnVideoFrameAvailabilityChanged(bool available);
 +
-+  // Parc: a Safari-identity page's media element's AirPlay state: whether
-+  // it needs AirPlay devices watched (availability listeners, or a player
-+  // that can play to one), whether its player can, whether it plays to the
-+  // browser's target or should, and whether it plays to the device now.
 +  OnParcPlaybackTargetStateChanged(bool requires_monitoring,
 +                                   bool supports_target,
 +                                   bool plays_to_target,
 +                                   bool wireless);
-+  // webkitShowPlaybackTargetPicker(): the AirPlay route list at `position`,
-+  // the last mouse position in the frame's widget, in DIPs (WebKit's
-+  // Document::showPlaybackTargetPicker).
 +  OnParcShowPlaybackTargetPicker(gfx.mojom.Point position);
  };
 -
@@ -62,18 +44,17 @@
  // Implemented by MediaWebContentsObserver::MediaPlayerHostImpl in the browser
 --- a/services/media_session/public/mojom/media_session.mojom
 +++ b/services/media_session/public/mojom/media_session.mojom
-@@ -9,7 +9,7 @@
+@@ -9,7 +9,6 @@
  import "ui/gfx/geometry/mojom/geometry.mojom";
  import "url/mojom/url.mojom";
 -
 +
 -// Next MinVersion: 26
-+// Next MinVersion: 27
 -
 +
  [Stable, Extensible]
  enum MediaPlaybackState {
-@@ -248,6 +248,7 @@
+@@ -248,6 +247,7 @@
    // Indicates if this MediaSession can enter browser-initiated automatic
    // picture-in-picture.
    [MinVersion=24] bool can_enter_browser_initiated_autopip;
@@ -82,13 +63,12 @@
 -
 +
  // Contains debugging information about a MediaSession. This will be displayed
-@@ -290,7 +291,16 @@
+@@ -290,7 +290,15 @@
 -
 +
  // A MediaSession manages the media session and audio focus for a given
  // WebContents or ARC app.
 -// Next Method ID: 28
-+// Next Method ID: 30
 +[Stable, Extensible]
 +enum PlaybackControlsAction {
 +  [Default] kSeekTo,
@@ -101,37 +81,36 @@
  [Stable]
  interface MediaSession {
    [Stable, Extensible]
-@@ -417,4 +427,6 @@
+@@ -417,4 +425,6 @@
 -
 +
    // Save the current video frame.
    [MinVersion=25] SaveVideoFrame@28();
+-};
 +  [MinVersion=26] HandlePlaybackControlsAction@29(PlaybackControlsAction action,
 +      mojo_base.mojom.TimeDelta seek_time);
- };
++};
 --- a/services/media_session/public/mojom/media_controller.mojom
 +++ b/services/media_session/public/mojom/media_controller.mojom
-@@ -8,7 +8,7 @@
+@@ -8,7 +8,6 @@
  import "mojo/public/mojom/base/unguessable_token.mojom";
  import "services/media_session/public/mojom/media_session.mojom";
 -
 +
 -// Next MinVersion: 9
-+// Next MinVersion: 10
 -
 +
  // Next Method ID: 3
  [Stable, Uuid="1ed3225e-33c8-487b-b79f-4c3ec13ad623"]
-@@ -33,7 +33,7 @@
+@@ -33,7 +32,6 @@
  // session, otherwise media sessions will be associated with a particular media
  // session provided to the service when creating the media controller. If the
  // media session is not controllable then the commands will be no-ops.
 -// Next Method ID: 23
-+// Next Method ID: 24
  [Stable]
  interface MediaController {
    // Suspend the media session.
-@@ -125,6 +125,8 @@
+@@ -125,6 +123,8 @@
 -
 +
    // Save the current video frame.
@@ -382,11 +361,10 @@
 +}
 --- a/content/browser/picture_in_picture/video_picture_in_picture_window_controller_impl.h
 +++ b/content/browser/picture_in_picture/video_picture_in_picture_window_controller_impl.h
-@@ -80,6 +80,10 @@
+@@ -80,6 +80,9 @@
    bool GetMuteStatus() override;
    void PreviousSlide() override;
    void NextSlide() override;
-+  // Parc: WebKit's beginScrubbing and endScrubbing for the session's player.
 +  void SetScrubbing(bool scrubbing);
 +  bool ParcPresentsSafariIdentity() const;
 +  bool parc_scrubbing_ = false;
@@ -460,7 +438,7 @@
  void MediaSessionNotificationItem::Dismiss() {
 --- a/components/global_media_controls/public/media_session_notification_item.h
 +++ b/components/global_media_controls/public/media_session_notification_item.h
-@@ -113,6 +113,8 @@
+@@ -114,6 +114,8 @@
    void SetView(media_message_center::MediaNotificationView* view) override;
    void OnMediaSessionActionButtonPressed(
        media_session::mojom::MediaSessionAction action) override;
@@ -469,13 +447,11 @@
    void SeekTo(base::TimeDelta time) override;
    // This will stop the media session associated with this item. The item will
    // then call |MediaNotificationController::RemoveItem()| to ensure removal.
-@@ -146,6 +148,9 @@
+@@ -147,6 +149,7 @@
    void Freeze(base::OnceClosure unfrozen_callback);
 -
 +
    bool frozen() const { return frozen_; }
-+  // Parc: frozen and waiting for its freeze to time out. An item hidden at
-+  // that timeout keeps frozen() without one.
 +  bool ParcFreezePending() const { return freeze_timer_.IsRunning(); }
 -
 +
@@ -643,7 +619,7 @@
    // https://webaudio.github.io/web-audio-api/#BaseAudioContext
 --- a/components/global_media_controls/public/views/media_progress_view.cc
 +++ b/components/global_media_controls/public/views/media_progress_view.cc
-@@ -365,6 +365,21 @@
+@@ -380,6 +380,19 @@
    OnProgressDragEnded();
  }
 -
@@ -657,8 +633,6 @@
 +    paused_for_dragging_ = false;
 +    UpdateProgressColors(is_paused_);
 +    thickness_animation_.Hide();
-+    // End playback-controls scrubbing without synthesizing a legacy play
-+    // action or another seek on capture loss.
 +    drag_state_change_callback_.Run(DragState::kDragEnded);
 +  }
 +}

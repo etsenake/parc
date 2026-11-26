@@ -131,22 +131,19 @@ inline void SetParcWebKitNeedKeyHook(ScriptState* script_state,
       context, ParcWebKitNeedKeyHookKey(isolate), hook);
 }
 
-// The provideKey(keyId, key) the hook gets with a clearkey:// request, bound
-// to the element and the player that made the request: the script calls it
-// with a key its WebKitMediaKeys hold for the request
-// (MediaPlayerPrivateAVFoundationObjC::keyAdded, fulfillRequestWithKeyData),
-// and that player takes it. A request lives as long as its player (WebKit's
-// m_keyURIToRequestMap), so a key for an element that has loaded another
-// player since goes nowhere. The player is only compared, never used.
 inline void ParcProvideClearKey(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   v8::Isolate* isolate = info.GetIsolate();
   v8::Local<v8::Context> context = isolate->GetCurrentContext();
   v8::Local<v8::Value> wrapper;
   v8::Local<v8::Value> requester;
-  if (!info.Data()->IsArray() ||
-      !info.Data().As<v8::Array>()->Get(context, 0).ToLocal(&wrapper) ||
-      !info.Data().As<v8::Array>()->Get(context, 1).ToLocal(&requester) ||
+  const v8::Local<v8::Data> data = info.DataV2();
+  if (data.IsEmpty() || !data->IsValue() || !data.As<v8::Value>()->IsArray()) {
+    return;
+  }
+  const auto binding = data.As<v8::Value>().As<v8::Array>();
+  if (!binding->Get(context, 0).ToLocal(&wrapper) ||
+      !binding->Get(context, 1).ToLocal(&requester) ||
       !requester->IsExternal() || info.Length() < 2 || !info[0]->IsString() ||
       !info[1]->IsUint8Array()) {
     return;

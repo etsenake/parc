@@ -65,7 +65,11 @@ Defaults applied only when the command line has not explicitly named a feature:
   `NetworkTimeServiceQuerying`, `LiveCaption`, `MerchantTrust`,
   `PageInfoAboutThisSite`, `PageInfoAboutThisSiteMoreLangs`,
   `TailoredSecurityIntegration`, `CredentialManagementUnifiedUi`,
-  `ExtensionsPinnedByDefault`, `SkillsEnabled` and `GoogleSearchAiModeWorkspace`.
+  `ExtensionsPinnedByDefault`, `SkillsEnabled`, `GoogleSearchAiModeWorkspace`,
+  `ContextualTasksSidePanel` and `ThreeDSecureTelemetry`. Parc keeps the Google AI
+  side-panel service and page off for regular profiles. Disabling the 3-D Secure
+  telemetry observer keeps checkout requests out of its metrics. Card authentication
+  still follows the payment provider’s normal flow.
   `CredentialManagementUnifiedUi` and `ExtensionsPinnedByDefault` keep automatic
   sign-in on Parc's password prompt instead of Chromium's toast, and keep newly
   installed extensions unpinned. `SkillsEnabled` turns off Gemini skills, whose
@@ -76,6 +80,13 @@ Defaults applied only when the command line has not explicitly named a feature:
   Chromium's own picture-in-picture window, which extension pages still use:
   signed Parc can't load the speech library Chromium downloads for them. Nothing
   else in Chromium on Mac reads the feature; Parc's two media patches check it.
+
+Parc follows Chromium’s security default for XSLT. Older sites that apply XSLT in the browser
+can lose their formatted XML view. Ordinary XML parsing still works. [Chromium’s XSLT removal](https://developer.chrome.com/docs/web-platform/deprecating-xslt)
+
+Chromium also disables the legacy `unload` event by default on HTTP and HTTPS pages.
+Sites can use `pagehide` to save state. Parc’s close confirmation uses `beforeunload`.
+[Chromium’s unload guidance](https://developer.chrome.com/docs/web-platform/deprecating-unload)
 
 Back/forward cache, ServiceWorkerAutoPreload and Privacy Sandbox attestation
 retain upstream defaults. On-device omnibox suggestions and the web Translator

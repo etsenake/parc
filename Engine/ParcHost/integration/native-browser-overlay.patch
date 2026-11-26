@@ -1,6 +1,6 @@
 --- a/chrome/browser/ui/browser.cc
 +++ b/chrome/browser/ui/browser.cc
-@@ -209,6 +209,30 @@
+@@ -208,6 +208,30 @@
  using ui::WebDialogDelegate;
  using web_modal::WebContentsModalDialogManager;
 -
@@ -33,7 +33,7 @@
  // Browser, CreateParams:
 -
 +
-@@ -235,6 +259,9 @@
+@@ -234,6 +258,9 @@
    // should handle this; see e.g. crbug.com/40154317 and crbug.com/40798999.
    CHECK_EQ(CreationStatus::kOk,
             GetBrowserWindowCreationStatusForProfile(*params.profile));
@@ -44,7 +44,7 @@
 +
    Profile* const profile_ptr = &*params.profile;
    std::unique_ptr<Browser> browser =
-@@ -254,6 +281,9 @@
+@@ -253,6 +280,9 @@
    // should handle this; see e.g. crbug.com/40154317 and crbug.com/40798999.
    CHECK_EQ(CreationStatus::kOk,
             GetBrowserWindowCreationStatusForProfile(*params.profile));
@@ -55,7 +55,7 @@
 +
    Profile* const profile_ptr = &*params.profile;
    std::unique_ptr<Browser> browser =
-@@ -280,6 +310,9 @@
+@@ -279,6 +309,9 @@
        keep_alive_(
            std::make_unique<ScopedKeepAlive>(KeepAliveOrigin::BROWSER,
                                              KeepAliveRestartOption::DISABLED)) {
@@ -65,19 +65,20 @@
    const bool user_gesture = params.from_user_gesture;
    const bool in_tab_dragging = params.in_tab_dragging;
    BrowserWindow* const custom_window = params.window;
-@@ -394,6 +427,10 @@
+@@ -392,6 +425,10 @@
+-
++
    if (service) {
      service->WindowClosed(session_id_);
-   }
++  }
 +
 +  if (parc_hooks::browser_destroyed) {
 +    parc_hooks::browser_destroyed(*this);
-+  }
+   }
  }
 -
 +
- Profile* Browser::GetProfile() {
-@@ -891,6 +928,10 @@
+@@ -890,6 +927,10 @@
  // Browser, Assorted utility functions (private):
 -
 +
@@ -286,7 +287,7 @@
  BrowserWindowFeatures::~BrowserWindowFeatures() = default;
 -
 +
-@@ -686,6 +720,10 @@
+@@ -666,6 +700,10 @@
        BrowserView::GetBrowserViewForBrowser(browser);
    WebUIBrowserWindow* const webui_browser_window =
        WebUIBrowserWindow::FromBrowser(browser);
@@ -297,7 +298,7 @@
    views::FocusManager* focus_manager = nullptr;
    if (browser_view) {
      focus_manager = browser_view->GetFocusManager();
-@@ -721,6 +759,9 @@
+@@ -701,6 +739,9 @@
      browser_focus_controller_ =
          GetUserDataFactory().CreateInstance<BrowserFocusControllerWebUI>(
              *browser, browser->GetWindow(), browser->GetUnownedUserDataHost());
@@ -307,7 +308,7 @@
    } else {
      browser_focus_controller_ =
          GetUserDataFactory().CreateInstance<StubBrowserFocusController>(
-@@ -742,6 +783,10 @@
+@@ -722,6 +763,10 @@
      color_provider_browser_helper_ =
          std::make_unique<ColorProviderBrowserHelper>(
              browser->GetTabStripModel(), browser_view->GetWidget(), browser);
@@ -319,7 +320,7 @@
 -
 +
    if (browser_view) {
-@@ -792,6 +837,9 @@
+@@ -772,6 +817,9 @@
      devtools_ui_controller_ =
          GetUserDataFactory().CreateInstance<DevtoolsUIController>(
              *browser, browser_, browser_view->GetContentsContainerViews());
@@ -330,7 +331,7 @@
 -
 +
    // Must be before exclusive_access_manager_ (whose construction calls
-@@ -811,11 +859,20 @@
+@@ -791,11 +839,20 @@
 -
 +
    // Must be after exclusive_access_manager_,
@@ -392,7 +393,7 @@
    if (!widget) {
 --- a/chrome/browser/ui/navigator/browser_navigator.cc
 +++ b/chrome/browser/ui/navigator/browser_navigator.cc
-@@ -108,6 +108,30 @@
+@@ -114,6 +114,30 @@
  using content::WebContents;
  using WebExposedIsolationLevel = content::WebExposedIsolationLevel;
 -
@@ -425,10 +426,11 @@
 -
 +
  struct AdditionalParams {
-@@ -244,6 +268,15 @@
-              : BrowserWindowCreateParams::ValueSpecified::kUnspecified;
- }
--
+@@ -295,6 +319,15 @@
+   }
+   return split_tabs::SplitTabVisualData(
+       layout, new_tab_first ? new_tab_ratio : 1.0 - new_tab_ratio);
++}
 +
 +BrowserWindowInterface* CreateBrowserWindowFrom(
 +    const NavigateParams& params,
@@ -437,12 +439,11 @@
 +    return creator(params.browser, std::move(browser_params));
 +  }
 +  return CreateBrowserWindow(std::move(browser_params));
-+}
+ }
+-
 +
  // Returns a Browser and tab index. The browser can host the navigation or
- // tab addition specified in |params|.  This might just return the same
- // Browser specified in |params|, or some other if that Browser is deemed
-@@ -348,7 +381,7 @@
+@@ -401,7 +434,7 @@
                                                               display);
 -
 +
@@ -450,9 +451,9 @@
 -      return {CreateBrowserWindow(std::move(browser_params)), -1};
 +      return {CreateBrowserWindowFrom(params, std::move(browser_params)), -1};
      }
-     case WindowOpenDisposition::NEW_POPUP: {
+     case WindowOpenDisposition::kNewPopup: {
        // Make a new popup window.
-@@ -376,7 +409,7 @@
+@@ -448,7 +481,7 @@
          browser_params.can_fullscreen = !additional_params.tab_modal_popup;
          browser_params.should_trigger_session_restore =
              should_trigger_session_restore;
@@ -461,16 +462,16 @@
        }
        BrowserWindowCreateParams browser_params =
            BrowserWindowCreateParams::CreateForAppPopup(
-@@ -385,7 +418,7 @@
+@@ -457,7 +490,7 @@
        browser_params.initial_origin_specified = GetOriginSpecified(params);
        browser_params.should_trigger_session_restore =
            should_trigger_session_restore;
 -      return {CreateBrowserWindow(std::move(browser_params)), -1};
 +      return {CreateBrowserWindowFrom(params, std::move(browser_params)), -1};
      }
-     case WindowOpenDisposition::NEW_WINDOW: {
+     case WindowOpenDisposition::kNewWindow: {
        // Make a new normal browser window.
-@@ -395,7 +428,7 @@
+@@ -467,7 +500,7 @@
          BrowserWindowCreateParams browser_params(profile, params.user_gesture);
          browser_params.should_trigger_session_restore =
              should_trigger_session_restore;
@@ -479,7 +480,7 @@
        }
        return {browser, -1};
      }
-@@ -528,7 +561,11 @@
+@@ -600,7 +633,11 @@
    }
  #endif
 -
@@ -494,7 +495,7 @@
 -
 +
  }  // namespace
-@@ -597,6 +634,9 @@
+@@ -669,6 +706,9 @@
    TRACE_EVENT1("navigation", "chrome::Navigate", "disposition",
                 params->disposition);
    CHECK(params);
@@ -515,15 +516,15 @@
  #include <set>
  #include <string_view>
  #include <utility>
-@@ -94,6 +95,7 @@
- #include "content/public/browser/render_widget_host_view.h"
+@@ -95,6 +96,7 @@
  #include "content/public/browser/security_principal.h"
+ #include "content/public/browser/site_instance.h"
  #include "content/public/browser/web_contents.h"
 +#include "content/public/browser/weak_document_ptr.h"
  #include "content/public/common/content_client.h"
  #include "content/public/common/content_features.h"
  #include "content/public/common/url_constants.h"
-@@ -137,6 +139,43 @@
+@@ -140,6 +142,43 @@
  using content::GlobalRenderFrameHostId;
  using content::WebContents;
 -
@@ -569,7 +570,7 @@
 -
 +
  typedef std::vector<DevToolsWindow*> DevToolsWindows;
-@@ -255,6 +294,10 @@
+@@ -258,6 +297,10 @@
  bool DevToolsToolboxDelegate::HandleKeyboardEvent(
      content::WebContents* source,
      const input::NativeWebKeyboardEvent& event) {
@@ -580,7 +581,7 @@
  #if BUILDFLAG(IS_ANDROID)
    return false;
  #else
-@@ -889,6 +932,9 @@
+@@ -892,6 +935,9 @@
        case DevToolsToggleAction::kShowElementsPanel:
          panel = "elements";
          break;
@@ -590,7 +591,7 @@
        case DevToolsToggleAction::kShowConsolePanel:
          panel = "console";
          break;
-@@ -1015,7 +1061,70 @@
+@@ -1018,7 +1064,70 @@
    registry.AddThrottle(std::make_unique<Throttle>(registry, window));
  }
 -
@@ -662,7 +663,7 @@
    if (life_stage_ == kLoadCompleted) {
      Show(action);
      return;
-@@ -1426,6 +1535,10 @@
+@@ -1429,6 +1538,10 @@
                            has_other_clients, browser_connection));
    std::unique_ptr<WebContents> main_web_contents =
        WebContents::Create(WebContents::CreateParams(profile));
@@ -673,7 +674,7 @@
    main_web_contents->GetController().LoadURL(
        DecorateFrontendURL(url), content::Referrer(),
        ui::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
-@@ -1734,7 +1847,8 @@
+@@ -1737,7 +1850,8 @@
  }
 -
 +
@@ -684,7 +685,7 @@
      Close(DevToolsClosedByAction::kCloseButton);
    } else {
  #if BUILDFLAG(IS_ANDROID)
-@@ -1748,7 +1862,9 @@
+@@ -1751,7 +1865,9 @@
  }
 -
 +
@@ -696,21 +697,29 @@
    life_stage_ = kClosing;
    main_web_contents_->DispatchBeforeUnload(false /* auto_cancel */);
    closed_by_ = closed_by;
-@@ -1898,10 +2014,10 @@
-                                        /*navigation_handle_callback=*/{})) {
+@@ -1921,18 +2037,9 @@
  #if BUILDFLAG(IS_ANDROID)
      NOTIMPLEMENTED();
  #else
+-    // Either there is no inspected WebContents, or its delegate did not handle
+-    // the request. Navigate through NavigateParams, which carries the
+-    // attribution from `params`, rather than through AddSelectedTabWithURL(),
+-    // which only takes a URL.
 -    chrome::ScopedTabbedBrowserDisplayer displayer(profile_);
--    chrome::AddSelectedTabWithURL(displayer.browser_window_interface(),
--                                  fixed_url, ui::PAGE_TRANSITION_LINK);
+-    NavigateParams nav_params(displayer.browser_window_interface(), fixed_url,
+-                              ui::PAGE_TRANSITION_LINK);
+-    nav_params.FillNavigateParamsFromOpenURLParams(params);
+-    // Like AddSelectedTabWithURL(), don't let web apps capture the new tab.
+-    nav_params.web_app_navigation_data.emplace();
+-    nav_params.web_app_navigation_data->SetNavigationCapturingForceOff(true);
+-    Navigate(&nav_params);
 +    if (!inspected_web_contents && parc_hooks::devtools_link_opener) {
 +      parc_hooks::devtools_link_opener(*profile_, fixed_url);
 +    }
  #endif
    }
  }
-@@ -2104,8 +2220,20 @@
+@@ -2136,8 +2243,20 @@
        BrowserWindowInterface::CreationStatus::kOk) {
      return;
    }
@@ -733,7 +742,7 @@
    browser_->GetTabStripModel()->AddWebContents(
        OwnedMainWebContents::TakeWebContents(
            std::move(owned_main_web_contents_)),
-@@ -2116,6 +2244,10 @@
+@@ -2148,6 +2267,10 @@
 -
 +
  void DevToolsWindow::DoAction(const DevToolsToggleAction& action) {
@@ -776,8 +785,8 @@
 +    transition = parc_hooks::add_tab_transition();
 +  }
 +  NavigateParams params(browser, resolved_url, transition);
-   params.disposition = foreground ? WindowOpenDisposition::NEW_FOREGROUND_TAB
-                                   : WindowOpenDisposition::NEW_BACKGROUND_TAB;
+   params.disposition = foreground ? WindowOpenDisposition::kNewForegroundTab
+                                   : WindowOpenDisposition::kNewBackgroundTab;
    if (window_action) {
 --- a/chrome/browser/ui/browser_ui_controller/browser_ui_controller.cc
 +++ b/chrome/browser/ui/browser_ui_controller/browser_ui_controller.cc
@@ -800,7 +809,7 @@
 -
 +
  // The time in milliseconds that we coalesce UI updates.
-@@ -267,6 +277,10 @@
+@@ -268,6 +278,10 @@
 -
 +
  void BrowserUiController::NotifyTabUIChanged(tabs::TabInterface* tab,

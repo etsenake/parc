@@ -1,8 +1,8 @@
 --- a/chrome/browser/ui/views/permissions/permission_prompt_factory.cc
 +++ b/chrome/browser/ui/views/permissions/permission_prompt_factory.cc
-@@ -44,6 +44,14 @@
- #include "chrome/browser/web_applications/os_integration/mac/web_app_shortcut_mac.h"
- #endif
+@@ -39,6 +39,14 @@
+ #include "third_party/blink/public/common/features_generated.h"
+ #include "url/origin.h"
 -
 +
 +namespace parc_hooks {
@@ -11,33 +11,31 @@
 +        content::WebContents* web_contents,
 +        permissions::PermissionPrompt::Delegate* delegate);
 +void SetPermissionPromptFactory(PermissionPromptFactory factory);
-+}  // namespace parc_hooks
++}
 +
  namespace {
 -
 +
  BrowserWindowInterface* GetBrowser(content::WebContents* web_contents) {
-@@ -258,8 +266,17 @@
+@@ -280,7 +288,15 @@
    }
  }
 -
 +
-+// Replaces every Chrome prompt below, including a null "no prompt" result.
 +parc_hooks::PermissionPromptFactory g_parc_permission_prompt_factory = nullptr;
 +
  }  // namespace
--
 +
 +namespace parc_hooks {
 +void SetPermissionPromptFactory(PermissionPromptFactory factory) {
 +  g_parc_permission_prompt_factory = factory;
 +}
-+}  // namespace parc_hooks
++}
+-
 +
  bool ShouldShowPermissionPromptEvenIfOmniboxEditedOrEmpty(
      content::WebContents* web_contents) {
-   if (!web_contents) {
-@@ -292,6 +309,10 @@
+@@ -314,6 +330,10 @@
  std::unique_ptr<permissions::PermissionPrompt> CreatePermissionPrompt(
      content::WebContents* web_contents,
      permissions::PermissionPrompt::Delegate* delegate) {

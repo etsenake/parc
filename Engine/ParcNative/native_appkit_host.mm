@@ -28,6 +28,7 @@
 #include "chrome/browser/ui/accelerator_table.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+#include "chrome/browser/ui/browser_window/public/desktop_browser_window_capabilities.h"
 #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 #include "chrome/browser/ui/exclusive_access/exclusive_access_manager.h"
 #include "chrome/browser/ui/exclusive_access/exclusive_access_context.h"
@@ -369,7 +370,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   void DidAttachWindow(gfx::NativeWindow window) override {
     CHECK(window.GetNativeNSWindow() == binding_.window);
     window_ = window.GetNativeNSWindow();
-    if (browser_.GetType() != BrowserWindowInterface::TYPE_PICTURE_IN_PICTURE)
+    if (!DesktopBrowserWindowCapabilities::IsDocumentPictureInPicture(&browser_))
       InstallNativeFullscreenWindow(window_);
     was_attached_ = true;
     focus_ = FocusManager(window_);
@@ -688,7 +689,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       std::move(callback).Run(FullscreenRequestResult::kRejected);
       return;
     }
-    if (browser_.GetType() == BrowserWindowInterface::TYPE_PICTURE_IN_PICTURE) {
+    if (DesktopBrowserWindowCapabilities::IsDocumentPictureInPicture(&browser_)) {
       if (params.display_id != display::kInvalidDisplayId) {
         std::move(callback).Run(FullscreenRequestResult::kRejected);
         return;

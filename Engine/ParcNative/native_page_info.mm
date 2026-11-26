@@ -743,7 +743,8 @@ void RefreshNativeSiteControls(content::WebContents* contents) {
   if (!self.canShowCertificate) return NO;
   auto* contents = parc::ContentsForNativePage(self);
   ShowCertificateViewer(contents, contents->GetTopLevelNativeWindow(),
-                        contents->GetController().GetVisibleEntry()->GetSSL().certificate.get());
+                        contents->GetController().GetVisibleEntry()->GetSSL().certificate.get(),
+                        CertificateViewerEntrypoint::kPageInfo);
   return YES;
 }
 @end

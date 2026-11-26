@@ -1,11 +1,10 @@
 --- a/chrome/browser/renderer_context_menu/render_view_context_menu.h
 +++ b/chrome/browser/renderer_context_menu/render_view_context_menu.h
-@@ -580,6 +580,9 @@
+@@ -584,6 +584,8 @@
    // Video frame sub-menu handling.
    ui::SimpleMenuModel video_frame_submenu_model_;
 -
 +
-+  // Parc observer runs first for commands, last for menu construction.
 +  std::unique_ptr<RenderViewContextMenuObserver> first_observer_;
 +
    // An observer that handles spelling suggestions, "Add to dictionary", and
@@ -13,12 +12,10 @@
    std::unique_ptr<SpellingMenuObserver> spelling_suggestions_menu_observer_;
 --- a/chrome/browser/ui/cocoa/renderer_context_menu/render_view_context_menu_mac_cocoa.mm
 +++ b/chrome/browser/ui/cocoa/renderer_context_menu/render_view_context_menu_mac_cocoa.mm
-@@ -22,6 +22,19 @@
- #import "ui/menus/cocoa/menu_controller.h"
+@@ -23,6 +23,19 @@
  #include "ui/views/controls/menu/menu_controller_cocoa_delegate_params.h"
  #include "ui/views/interaction/element_tracker_views.h"
  #include "ui/views/widget/widget.h"
--
 +
 +namespace parc_hooks {
 +using NativePageContextMenu =
@@ -31,10 +28,16 @@
 +void SetNativePageContextMenu(NativePageContextMenu presenter) {
 +  native_page_context_menu = presenter;
 +}
-+}  // namespace parc_hooks
++}
+-
 +
  namespace {
-@@ -77,3 +90,9 @@
+-
++
+@@ -75,6 +88,12 @@
+ }
+-
++
  void RenderViewContextMenuMacCocoa::Show() {
 +  if (parc_hooks::native_page_context_menu &&
 +      parc_hooks::native_page_context_menu(*this, parent_view_,
@@ -44,3 +47,5 @@
 +
    views::Widget* widget = views::Widget::GetTopLevelWidgetForNativeView(
        source_web_contents_->GetNativeView());
+-
++

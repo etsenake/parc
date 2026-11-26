@@ -57,12 +57,12 @@ bool IsLinkTransition(ui::PageTransition transition) {
 std::optional<PCNativeNoteLinkDisposition> NewNoteLinkDisposition(
     WindowOpenDisposition disposition) {
   switch (disposition) {
-    case WindowOpenDisposition::NEW_FOREGROUND_TAB:
+    case WindowOpenDisposition::kNewForegroundTab:
       return PCNativeNoteLinkDispositionForegroundTab;
-    case WindowOpenDisposition::NEW_BACKGROUND_TAB:
+    case WindowOpenDisposition::kNewBackgroundTab:
       return PCNativeNoteLinkDispositionBackgroundTab;
-    case WindowOpenDisposition::NEW_WINDOW:
-    case WindowOpenDisposition::NEW_POPUP:
+    case WindowOpenDisposition::kNewWindow:
+    case WindowOpenDisposition::kNewPopup:
       return PCNativeNoteLinkDispositionNewWindow;
     default:
       return std::nullopt;

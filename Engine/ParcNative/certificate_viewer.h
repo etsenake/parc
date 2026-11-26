@@ -10,9 +10,7 @@ class X509Certificate;
 }
 namespace parc {
 void InstallNativeServerCertificateViewer(content::WebContents& contents);
-// Chromium's ShowCertificateViewer for every page: installed pages get the
-// native viewer, any other page Chromium's WebUI one.
-void ShowServerCertificateViewer(content::WebContents* contents,
+bool ShowServerCertificateViewer(content::WebContents* contents,
                                  gfx::NativeWindow parent,
                                  net::X509Certificate* certificate);
 // Set false before native reparenting. A later attach never revives a request.

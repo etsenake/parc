@@ -14,13 +14,12 @@
  #include <utility>
 -
 +
-@@ -837,6 +840,14 @@
+@@ -839,6 +842,13 @@
    return desired_audio_focus_type_ == AudioFocusType::kGain;
  }
 -
 +
 +void MediaSessionImpl::SetUserVolumeMultiplier(double multiplier) {
-+  // Reject NaN as well as infinities before sending a player multiplier.
 +  if (!std::isfinite(multiplier))
 +    return;
 +  user_volume_multiplier_ = std::clamp(multiplier, 0.0, 1.0);
@@ -30,7 +29,7 @@
  void MediaSessionImpl::SetDuckingVolumeMultiplier(double multiplier) {
    ducking_volume_multiplier_ = std::clamp(multiplier, 0.0, 1.0);
  }
-@@ -903,7 +914,8 @@
+@@ -905,7 +915,8 @@
  }
 -
 +
@@ -42,7 +41,7 @@
 -
 +
  bool MediaSessionImpl::IsActive() const {
-@@ -1116,6 +1128,9 @@
+@@ -1118,6 +1129,9 @@
  MediaSessionImpl::GetMediaSessionInfoSync() {
    media_session::mojom::MediaSessionInfoPtr info(
        media_session::mojom::MediaSessionInfo::New());
@@ -53,7 +52,7 @@
 +
    switch (audio_focus_state_) {
      case State::ACTIVE:
-@@ -1299,6 +1314,46 @@
+@@ -1301,6 +1315,46 @@
    DidReceiveAction(media_session::mojom::MediaSessionAction::kNextSlide);
  }
 -
@@ -103,13 +102,11 @@
    // should pass it to the site and let them handle it.
 --- a/content/browser/media/session/media_session_impl.h
 +++ b/content/browser/media/session/media_session_impl.h
-@@ -202,6 +202,12 @@
+@@ -202,6 +202,10 @@
    void DidReceiveAction(
        media_session::mojom::MediaSessionAction action) override;
 -
 +
-+  // Parc's independent per-session UI volume, composed with system ducking.
-+  // The site-owned media volume remains unchanged; new players inherit this.
 +  CONTENT_EXPORT void SetUserVolumeMultiplier(double multiplier);
 +  double user_volume_multiplier() const { return user_volume_multiplier_; }
 +  bool has_user_volume_players() const { return !normal_players_.empty(); }
@@ -118,7 +115,7 @@
    CONTENT_EXPORT void SetDuckingVolumeMultiplier(double multiplier) override;
 -
 +
-@@ -279,6 +285,8 @@
+@@ -279,6 +283,8 @@
    CONTENT_EXPORT void NextSlide() override;
 -
 +
@@ -129,21 +126,19 @@
 -
 +
    // Scrub ("fast seek") the media session to a specific time.
-@@ -613,6 +621,11 @@
+@@ -613,6 +619,9 @@
 -
 +
    std::unique_ptr<AudioFocusDelegate> delegate_;
 -
 +
-+  // Internal player pauses can remove a player from normal_players_. Keep
-+  // scrubbing addressed to the players that received its beginning.
 +  std::vector<std::pair<base::WeakPtr<MediaSessionPlayerObserver>, int>>
 +      parc_playback_controls_players_;
 +
    // Standard video playback (e.g. WebMediaPlayerImpl players).
    std::map<PlayerIdentifier, media_session::mojom::AudioFocusType>
        normal_players_;
-@@ -660,6 +673,7 @@
+@@ -660,6 +669,7 @@
    base::UnguessableToken audio_focus_group_id_ = base::UnguessableToken::Null();
 -
 +

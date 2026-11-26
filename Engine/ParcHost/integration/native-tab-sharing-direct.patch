@@ -30,18 +30,19 @@
 -
 +
  constexpr int kCapturedSurfaceControlIndicatorButtonIconHeight = 16;
-@@ -149,6 +169,10 @@
+@@ -148,6 +168,10 @@
+-
++
+   void Click(infobars::InfoBar* infobar) override {
      if (!web_contents_) {
-       return;
-     }
-+    if (g_parc_tab_sharing_page_info) {
-+      g_parc_tab_sharing_page_info(web_contents_.get());
 +      return;
 +    }
++    if (g_parc_tab_sharing_page_info) {
++      g_parc_tab_sharing_page_info(web_contents_.get());
+       return;
+     }
      ShowPageInfoDialog(web_contents_.get(), base::DoNothing(),
-                        bubble_anchor_util::Anchor::kLocationBar,
-                        ContentSettingsType::CAPTURED_SURFACE_CONTROL);
-@@ -213,12 +237,19 @@
+@@ -214,12 +238,19 @@
    CHECK(infobar_manager);
    CHECK(ui);
 -
@@ -69,7 +70,7 @@
 +
    return old_infobar ? infobar_manager->ReplaceInfoBar(old_infobar,
                                                         std::move(new_infobar))
-@@ -345,3 +376,12 @@
+@@ -346,3 +377,12 @@
    return const_cast<TabSharingInfoBarDelegateButton&>(
        const_cast<const TabSharingInfoBarDelegate*>(this)->GetButton(button));
  }
@@ -84,7 +85,7 @@
 +}
 --- a/chrome/browser/ui/views/tab_sharing/tab_sharing_ui_views.cc
 +++ b/chrome/browser/ui/views/tab_sharing/tab_sharing_ui_views.cc
-@@ -84,8 +84,16 @@
+@@ -84,7 +84,15 @@
  #include "ui/views/widget/native_widget_aura.h"
  #endif
 -
@@ -96,13 +97,12 @@
 +}
 +
  namespace {
--
 +
 +parc_hooks::TabSharingProfile g_parc_tab_sharing_profile = nullptr;
+-
 +
  using TabRole = ::TabSharingInfoBarDelegate::TabRole;
  using content::GlobalRenderFrameHostId;
- using content::RenderFrameHost;
 @@ -203,7 +211,9 @@
      TabSharingInfoBarDelegate::TabShareType capture_type,
      bool captured_surface_control_active)
@@ -114,7 +114,7 @@
        capturer_(capturer),
        capturer_origin_(GetOriginFromId(capturer)),
        can_focus_capturer_(GetOriginFromId(capturer).scheme() !=
-@@ -942,3 +952,9 @@
+@@ -943,3 +953,9 @@
    }
  }
  #endif

@@ -20,7 +20,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/unload_controller.h"
 #include "chrome/browser/ui/web_applications/web_app_tabbed_utils.h"
-#include "components/performance_manager/public/execution_context_priority/execution_context_priority.h"
+#include "components/performance_manager/public/priority/priority.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
@@ -33,9 +33,6 @@
 namespace parc {
 namespace {
 
-// The reply follows the actual page through TabStripModel moves. Storing this
-// only on the old Browser would let a late Leave fall through the new Browser's
-// ordinary close path after a cancelled transaction.
 class TabClosePendingReply final
     : public content::WebContentsUserData<TabClosePendingReply>,
       public content::WebContentsObserver {
@@ -109,9 +106,6 @@ struct TabCloseRequest {
   bool awaiting = false;
 };
 
-// The close and transfer transactions of one UnloadController. Its
-// WebContentsCollection starts and stops exactly where the controller's does,
-// so it sees the same navigations and destructions.
 class UnloadTransactions final : public WebContentsCollection::Observer {
  public:
   UnloadTransactions(UnloadController& controller,
@@ -150,7 +144,6 @@ class UnloadTransactions final : public WebContentsCollection::Observer {
   bool ConsumesBeforeUnloadReply(content::WebContents* contents, bool proceed);
 
  private:
-  // WebContentsCollection::Observer:
   void WebContentsDestroyed(content::WebContents* contents) override;
   void DidFinishNavigation(content::WebContents* contents,
                            content::NavigationHandle* navigation) override;
@@ -173,8 +166,6 @@ class UnloadTransactions final : public WebContentsCollection::Observer {
   std::unique_ptr<TabCloseRequest> tab_close_request_;
   std::optional<TabCloseToken> tab_transfer_token_;
   bool tab_transfer_saw_empty_ = false;
-  // Retain cancelled outstanding reply identities until the real reply arrives.
-  // A late Leave must never fall through to ordinary destructive tab closure.
   std::map<raw_ptr<content::WebContents>, TabCloseToken> tab_close_pending_;
   base::WeakPtrFactory<UnloadTransactions> weak_factory_{this};
 };
@@ -367,8 +358,6 @@ void UnloadTransactions::AdvanceTabClosePreflight(TabCloseToken token) {
     if (!weak || !tab_close_request_ || tab_close_request_->token != token) {
       return;
     }
-    // A custom confirmation can synchronously settle the request. Do not send
-    // a second decision or access the old target reference after its callback.
     if (!pending && contents && tab_close_pending_.contains(contents.get())) {
       TabClosePendingReply::Complete(contents, token, true);
     }
@@ -447,9 +436,6 @@ void UnloadTransactions::ClosePreparedTabs(TabCloseToken token) {
   if (!CheckCommittedTabClose(token)) {
     return;
   }
-  // Snapshot weak identities: ClosePage can synchronously destroy this Browser
-  // or run shell callbacks. A target moved elsewhere must never be closed in
-  // its new owner by this old transaction.
   auto targets = tab_close_request_->targets;
   auto weak = weak_factory_.GetWeakPtr();
   for (const auto& target : targets) {
@@ -486,14 +472,11 @@ void UnloadTransactions::CancelTabClosePreflight() {
     return;
   }
   auto callback = std::move(request->callback);
-  // All controller state is retired before touching actual dialog managers.
-  // Outstanding renderer replies remain in tab_close_pending_ and are consumed
-  // without allowing unload even if cancellation delivery is asynchronous.
   for (const auto& target : request->targets) {
     if (!target.contents || target.contents->IsBeingDestroyed()) {
       continue;
     }
-    performance_manager::execution_context_priority::SetPageIsClosing(
+    performance_manager::priority::SetPageIsClosing(
         target.contents.get(), false);
     if (target.contents) {
       DevToolsWindow::OnPageCloseCanceled(target.contents.get());
@@ -518,8 +501,6 @@ void UnloadTransactions::TabDetached(content::WebContents* contents) {
     if (!tab_close_request_->committed) {
       CancelTabClosePreflight();
     } else {
-      // Normal ClosePage detachment destroys the page in this stack. An
-      // independent live transfer instead invalidates the approved owner.
       base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
           FROM_HERE,
           base::BindOnce(
@@ -612,7 +593,7 @@ void UnloadTransactions::WebContentsDestroyed(content::WebContents* contents) {
     CancelTabClosePreflight();
   }
 }
-}  // namespace
+}
 
 std::optional<TabCloseToken> ReserveTabTransfer(UnloadController& controller) {
   return TransactionsOf(controller).ReserveTabTransfer();
@@ -671,7 +652,6 @@ void OnUnloadControllerDestroyed(UnloadController& controller) {
     return;
   }
   found->second->CancelTabClosePreflight();
-  // Out of the registry before destruction, which posts nothing.
   std::unique_ptr<UnloadTransactions> state = std::move(found->second);
   Registry().erase(found);
 }
@@ -739,4 +719,4 @@ bool ConsumesBeforeUnloadReply(UnloadController& controller,
   auto* state = StateOf(controller);
   return state && state->ConsumesBeforeUnloadReply(contents, proceed);
 }
-}  // namespace parc
+}

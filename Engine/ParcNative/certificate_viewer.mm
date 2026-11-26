@@ -12,7 +12,6 @@
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
-#include "chrome/browser/ui/webui/certificate_viewer/certificate_viewer_webui.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
@@ -242,15 +241,14 @@ void InstallNativeServerCertificateViewer(content::WebContents& contents) {
     contents.SetUserData(kContextKey, std::make_unique<Context>());
   }
 }
-void ShowServerCertificateViewer(content::WebContents* contents,
+bool ShowServerCertificateViewer(content::WebContents* contents,
                                  gfx::NativeWindow parent,
                                  net::X509Certificate* certificate) {
   if (auto* context = GetContext(contents)) {
     context->Show(*contents, parent, certificate);
-    return;
+    return true;
   }
-  CertificateViewerDialog::ShowConstrained(certificate->CopyCertBuffers(),
-                                           contents, parent);
+  return false;
 }
 void SetNativeServerCertificateViewerAttached(content::WebContents& contents,
                                               bool attached) {
